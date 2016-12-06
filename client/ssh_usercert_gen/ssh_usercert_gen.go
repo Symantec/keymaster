@@ -8,7 +8,7 @@ import (
 	//"fmt"
 	//"github.com/prometheus/client_golang/prometheus"
 	//"gopkg.in/ldap.v2"
-	//"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 	//"io"
 	"io/ioutil"
 	"log"
@@ -22,6 +22,27 @@ import (
 	//"sync"
 	//"time"
 )
+
+// describes the network config and the mechanism for user auth.
+// While the contents of the certificaes are public, we want to
+// restrict generation to authenticated users
+type baseConfig struct {
+	HttpAddress     string
+	TLSCertFilename string
+	TLSKeyFilename  string
+	UserAuth        string
+	SSH_CA_Filename string
+}
+
+type LdapConfig struct {
+	BindPattern   string
+	LDAPTargetURL string
+}
+
+type AppConfigFile struct {
+	Base baseConfig
+	//	Ldap   LdapConfig
+}
 
 func getUserPubKey(username string) (string, error) {
 	cmd := exec.Command("/usr/bin/sss_ssh_authorizedkeys", username)
@@ -104,7 +125,23 @@ func genUserCert(userName string, users_ca_filename string) (string, error) {
 }
 
 func main() {
-	cert, err := genUserCert("camilo_viecco1", "/home/camilo_viecco1/ssh-test/users_ca")
+
+	configFilename := "config.yml"
+	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
+		log.Printf("Missing config file\n")
+		panic(err)
+	}
+	var config AppConfigFile
+	source, err := ioutil.ReadFile(configFilename)
+	if err != nil {
+		panic(err)
+	}
+	err = yaml.Unmarshal(source, &config)
+	if err != nil {
+		panic(err)
+	}
+
+	cert, err := genUserCert("camilo_viecco1", config.Base.SSH_CA_Filename)
 	if err != nil {
 		log.Fatal(err)
 	}
