@@ -189,9 +189,54 @@ func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
 	return config, nil
 }
 
+func checkUserPassword(username string, password string, config AppConfigFile) (bool, error) {
+	if username == "user" && password == "pass" {
+		return true, nil
+	}
+	return false, nil
+}
+
+func writeUnauthorizedResponse(w http.ResponseWriter) {
+	w.Header().Set("WWW-Authenticate", `Basic realm="User Credentials"`)
+	w.WriteHeader(401)
+	w.Write([]byte("401 Unauthorized\n"))
+}
+
+// Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
+func checkAuth(w http.ResponseWriter, r *http.Request, config AppConfigFile) (string, error) {
+	//For now just check http basic
+	user, pass, ok := r.BasicAuth()
+	if !ok {
+		writeUnauthorizedResponse(w)
+		err := errors.New("Invalid or no auth header")
+		return "", err
+	}
+	valid, err := checkUserPassword(user, pass, config)
+	if err != nil {
+		w.WriteHeader(500)
+		w.Write([]byte("400 Internal Error\n"))
+		return "", err
+	}
+	if !valid {
+		writeUnauthorizedResponse(w)
+		err := errors.New("Invalid Credentials")
+		return "", err
+	}
+	return user, nil
+	//return pair[0] == "user" && pair[1] == "pass"
+
+}
+
 const CERTGEN_PATH = "/certgen/"
 
 func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Request) {
+	_, err := checkAuth(w, r, config)
+	if err != nil {
+		log.Printf("%v", err)
+
+		return
+	}
+
 	targetUser := r.URL.Path[len(CERTGEN_PATH):]
 	//fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
 	//fmt.Fprintf(w, "Hi there, I love %s!", targetUser)
@@ -202,13 +247,6 @@ func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Reques
 	fmt.Fprintf(w, "%s", cert)
 }
 
-/*
-func certGenHandler(w http.ResponseWriter, r *http.Request) {
-	targetUser := r.URL.Path[len(CERTGEN_PATH):]
-	//fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
-	fmt.Fprintf(w, "Hi there, I love %s!", targetUser)
-}
-*/
 func main() {
 	flag.Parse()
 
@@ -221,7 +259,6 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Printf("cert=%s", cert)
-	//log.Fatal(http.ListenAndServe(":8080", http.FileServer(http.Dir("/usr/share/doc"))))
 	// Expose the registered metrics via HTTP.
 	http.Handle("/metrics", prometheus.Handler())
 	//http.HandleFunc(CERTGEN_PATH, certGenHandler)
