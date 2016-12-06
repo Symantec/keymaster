@@ -115,13 +115,22 @@ func gen_cert_internal(username string, userPubKey string, users_ca_filename str
 	return string(fileBytes[:]), nil
 }
 
+func getHostIdentity() (string, error) {
+	return os.Hostname()
+}
+
 func genUserCert(userName string, users_ca_filename string) (string, error) {
 
 	userPubKey, err := getUserPubKey(userName)
 	if err != nil {
+		log.Println(err)
+		return "", err
+	}
+
+	hostIdentity, err := getHostIdentity()
+	if err != nil {
 		log.Fatal(err)
 	}
-	hostIdentity := "mon-sre-dev"
 	cert, err := gen_cert_internal(userName, userPubKey, users_ca_filename, hostIdentity)
 	if err != nil {
 		log.Fatal(err)
