@@ -5,15 +5,15 @@ import (
 	//"crypto/tls"
 	"errors"
 	"flag"
-	//"fmt"
-	//"github.com/prometheus/client_golang/prometheus"
+	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
 	//"gopkg.in/ldap.v2"
 	"gopkg.in/yaml.v2"
 	//"io"
 	"io/ioutil"
 	"log"
 	//"net"
-	//"net/http"
+	"net/http"
 	"os"
 	"os/exec"
 	"regexp"
@@ -27,11 +27,11 @@ import (
 // While the contents of the certificaes are public, we want to
 // restrict generation to authenticated users
 type baseConfig struct {
-	HttpAddress     string
-	TLSCertFilename string
-	TLSKeyFilename  string
-	UserAuth        string
-	SSH_CA_Filename string
+	Http_Address      string
+	TLS_Cert_Filename string
+	TLS_Key_Filename  string
+	UserAuth          string
+	SSH_CA_Filename   string
 }
 
 type LdapConfig struct {
@@ -56,7 +56,7 @@ func getUserPubKey(username string) (string, error) {
 	cmd.Stdout = &out
 	err := cmd.Run()
 	if err != nil {
-		log.Fatal(err)
+		//log.Fatal(err)
 		return "", err
 	}
 	log.Printf("Pub key: %s\n", out.String())
@@ -129,13 +129,28 @@ func genUserCert(userName string, users_ca_filename string) (string, error) {
 
 	hostIdentity, err := getHostIdentity()
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return "", err
 	}
 	cert, err := gen_cert_internal(userName, userPubKey, users_ca_filename, hostIdentity)
 	if err != nil {
 		log.Fatal(err)
 	}
 	return cert, err
+}
+
+func exitsAndCanRead(fileName string, description string) error {
+	if _, err := os.Stat(fileName); os.IsNotExist(err) {
+		err = errors.New("mising " + description + " file")
+		return err
+	}
+	_, err := ioutil.ReadFile(fileName)
+	if err != nil {
+		//panic(err)
+		err = errors.New("cannot read " + description + "file")
+		return err
+	}
+	return nil
 }
 
 func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
@@ -158,15 +173,42 @@ func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
 	}
 
 	//verify config
-	if _, err := os.Stat(config.Base.SSH_CA_Filename); os.IsNotExist(err) {
-		//log.Printf("Missing config file\n")
-		err = errors.New("mising ssh CA file")
+	err = exitsAndCanRead(config.Base.SSH_CA_Filename, "ssh CA File")
+	if err != nil {
+		return config, err
+	}
+	err = exitsAndCanRead(config.Base.TLS_Cert_Filename, "http cert file")
+	if err != nil {
+		return config, err
+	}
+	err = exitsAndCanRead(config.Base.TLS_Key_Filename, "http key file")
+	if err != nil {
 		return config, err
 	}
 
 	return config, nil
 }
 
+const CERTGEN_PATH = "/certgen/"
+
+func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Request) {
+	targetUser := r.URL.Path[len(CERTGEN_PATH):]
+	//fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
+	//fmt.Fprintf(w, "Hi there, I love %s!", targetUser)
+	cert, err := genUserCert(targetUser, config.Base.SSH_CA_Filename)
+	if err != nil {
+		http.NotFound(w, r)
+	}
+	fmt.Fprintf(w, "%s", cert)
+}
+
+/*
+func certGenHandler(w http.ResponseWriter, r *http.Request) {
+	targetUser := r.URL.Path[len(CERTGEN_PATH):]
+	//fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
+	fmt.Fprintf(w, "Hi there, I love %s!", targetUser)
+}
+*/
 func main() {
 	flag.Parse()
 
@@ -179,4 +221,17 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Printf("cert=%s", cert)
+	//log.Fatal(http.ListenAndServe(":8080", http.FileServer(http.Dir("/usr/share/doc"))))
+	// Expose the registered metrics via HTTP.
+	http.Handle("/metrics", prometheus.Handler())
+	//http.HandleFunc(CERTGEN_PATH, certGenHandler)
+	http.HandleFunc(CERTGEN_PATH, config.certGenHandler)
+	err = http.ListenAndServeTLS(
+		config.Base.Http_Address,
+		config.Base.TLS_Cert_Filename,
+		config.Base.TLS_Key_Filename,
+		nil)
+	if err != nil {
+		panic(err)
+	}
 }
