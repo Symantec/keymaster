@@ -4,7 +4,7 @@ import (
 	"bytes"
 	//"crypto/tls"
 	"errors"
-	//"flag"
+	"flag"
 	//"fmt"
 	//"github.com/prometheus/client_golang/prometheus"
 	//"gopkg.in/ldap.v2"
@@ -43,6 +43,11 @@ type AppConfigFile struct {
 	Base baseConfig
 	//	Ldap   LdapConfig
 }
+
+var (
+	configFilename = flag.String("config", "config.yml", "The filename of the configuration")
+	debug          = flag.Bool("debug", false, "Enable debug messages to console")
+)
 
 func getUserPubKey(username string) (string, error) {
 	cmd := exec.Command("/usr/bin/sss_ssh_authorizedkeys", username)
@@ -125,41 +130,38 @@ func genUserCert(userName string, users_ca_filename string) (string, error) {
 }
 
 func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
-	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
-		log.Printf("Missing config file\n")
-		panic(err)
-	}
 	var config AppConfigFile
+	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
+		//log.Printf("Missing config file\n")
+		err = errors.New("mising config file failure")
+		return config, err
+	}
 	source, err := ioutil.ReadFile(configFilename)
 	if err != nil {
-		panic(err)
+		//panic(err)
+		err = errors.New("cannot read config file")
+		return config, err
 	}
 	err = yaml.Unmarshal(source, &config)
 	if err != nil {
-		panic(err)
+		err = errors.New("Cannot parse config file")
+		return config, err
 	}
+
+	//verify config
+	if _, err := os.Stat(config.Base.SSH_CA_Filename); os.IsNotExist(err) {
+		//log.Printf("Missing config file\n")
+		err = errors.New("mising ssh CA file")
+		return config, err
+	}
+
 	return config, nil
 }
 
 func main() {
+	flag.Parse()
 
-	configFilename := "config.yml"
-	/*
-		if _, err := os.Stat(configFilename); os.IsNotExist(err) {
-			log.Printf("Missing config file\n")
-			panic(err)
-		}
-		var config AppConfigFile
-		source, err := ioutil.ReadFile(configFilename)
-		if err != nil {
-			panic(err)
-		}
-		err = yaml.Unmarshal(source, &config)
-		if err != nil {
-			panic(err)
-		}
-	*/
-	config, err := loadVerifyConfigFile(configFilename)
+	config, err := loadVerifyConfigFile(*configFilename)
 	if err != nil {
 		panic(err)
 	}
