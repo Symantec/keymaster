@@ -334,6 +334,8 @@ func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		http.NotFound(w, r)
 	}
+	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
+	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", cert)
 }
 
