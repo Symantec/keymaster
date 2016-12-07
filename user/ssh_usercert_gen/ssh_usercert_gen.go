@@ -2,25 +2,26 @@ package main
 
 import (
 	"bytes"
-	//"crypto/tls"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
-	//"gopkg.in/ldap.v2"
+	"gopkg.in/ldap.v2"
 	"gopkg.in/yaml.v2"
 	//"io"
 	"io/ioutil"
 	"log"
-	//"net"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"regexp"
 	//"strconv"
 	"strings"
 	//"sync"
-	//"time"
+	"time"
 )
 
 // describes the network config and the mechanism for user auth.
@@ -35,13 +36,13 @@ type baseConfig struct {
 }
 
 type LdapConfig struct {
-	BindPattern   string
-	LDAPTargetURL string
+	Bind_Pattern     string
+	LDAP_Target_URLs string
 }
 
 type AppConfigFile struct {
 	Base baseConfig
-	//	Ldap   LdapConfig
+	Ldap LdapConfig
 }
 
 var (
@@ -189,9 +190,87 @@ func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
 	return config, nil
 }
 
+func checkLDAPUserPassword(u url.URL, bindDN string, bindPassword string, timeoutSecs uint) (bool, error) {
+	if u.Scheme != "ldaps" {
+		err := errors.New("Invalid ldap scheme (we only support ldaps")
+		return false, err
+	}
+	//connectionAttemptCounter.WithLabelValues(server).Add(1)
+	//hostnamePort := server + ":636"
+	serverPort := strings.Split(u.Host, ":")
+	port := "636"
+	if len(serverPort) == 2 {
+		port = serverPort[1]
+	}
+	server := serverPort[0]
+	hostnamePort := server + ":" + port
+	if *debug {
+		log.Println("about to connect to:" + hostnamePort)
+	}
+
+	timeout := time.Duration(time.Duration(timeoutSecs) * time.Second)
+	start := time.Now()
+	tlsConn, err := tls.DialWithDialer(&net.Dialer{Timeout: timeout}, "tcp", hostnamePort, &tls.Config{ServerName: server})
+	if err != nil {
+		errorTime := time.Since(start).Seconds() * 1000
+		log.Printf("connction failure for:%s (%s)(time(ms)=%v)", server, err.Error(), errorTime)
+		return false, err
+	}
+
+	// we dont close the tls connection directly  close defer to the new ldap connection
+	conn := ldap.NewConn(tlsConn, true)
+	defer conn.Close()
+
+	connectionTime := time.Since(start).Seconds() * 1000
+	if *debug {
+		log.Printf("connectionDelay = %v connecting to: %v:", connectionTime, hostnamePort)
+	}
+
+	conn.SetTimeout(timeout)
+	conn.Start()
+	err = conn.Bind(bindDN, bindPassword)
+	if err != nil {
+		log.Printf("Bind failure for server %s (%s)", server, err.Error())
+		return false, err
+	}
+	return true, nil
+
+}
+
+func parseLDAPURL(ldapUrl string) (*url.URL, error) {
+	u, err := url.Parse(ldapUrl)
+	if err != nil {
+		return nil, err
+	}
+	if u.Scheme != "ldaps" {
+		err := errors.New("Invalid ldap scheme (we only support ldaps")
+		return nil, err
+	}
+	//extract port if any... and if NIL then set it to 636
+	return u, nil
+}
+
+func convertToBindDN(username string, bind_pattern string) string {
+	return fmt.Sprintf(bind_pattern, username)
+}
+
 func checkUserPassword(username string, password string, config AppConfigFile) (bool, error) {
-	if username == "user" && password == "pass" {
-		return true, nil
+	const timeoutSecs = 3
+	bindDN := convertToBindDN(username, config.Ldap.Bind_Pattern)
+	for _, ldapUrl := range strings.Split(config.Ldap.LDAP_Target_URLs, ",") {
+		u, err := parseLDAPURL(ldapUrl)
+		if err != nil {
+			log.Printf("Failed to parse %s", ldapUrl)
+			continue
+		}
+		vaild, err := checkLDAPUserPassword(*u, bindDN, password, timeoutSecs)
+		if err != nil {
+			//log.Printf("Failed to parse %s", ldapUrl)
+			continue
+		}
+		// the ldap exchange was successful (user might be invaid)
+		return vaild, nil
+
 	}
 	return false, nil
 }
@@ -202,13 +281,19 @@ func writeUnauthorizedResponse(w http.ResponseWriter) {
 	w.Write([]byte("401 Unauthorized\n"))
 }
 
+func writeForbiddenResponse(w http.ResponseWriter) {
+	w.Header().Set("WWW-Authenticate", `Basic realm="User Credentials"`)
+	w.WriteHeader(403)
+	w.Write([]byte("403 Forbidden\n"))
+}
+
 // Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
 func checkAuth(w http.ResponseWriter, r *http.Request, config AppConfigFile) (string, error) {
 	//For now just check http basic
 	user, pass, ok := r.BasicAuth()
 	if !ok {
 		writeUnauthorizedResponse(w)
-		err := errors.New("Invalid or no auth header")
+		err := errors.New("check_Auth, Invalid or no auth header")
 		return "", err
 	}
 	valid, err := checkUserPassword(user, pass, config)
@@ -223,14 +308,13 @@ func checkAuth(w http.ResponseWriter, r *http.Request, config AppConfigFile) (st
 		return "", err
 	}
 	return user, nil
-	//return pair[0] == "user" && pair[1] == "pass"
 
 }
 
 const CERTGEN_PATH = "/certgen/"
 
 func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Request) {
-	_, err := checkAuth(w, r, config)
+	authUser, err := checkAuth(w, r, config)
 	if err != nil {
 		log.Printf("%v", err)
 
@@ -238,6 +322,12 @@ func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	targetUser := r.URL.Path[len(CERTGEN_PATH):]
+	if authUser != targetUser {
+		writeForbiddenResponse(w)
+		log.Printf("User %s asking for creds for %s", authUser, targetUser)
+		return
+	}
+
 	//fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
 	//fmt.Fprintf(w, "Hi there, I love %s!", targetUser)
 	cert, err := genUserCert(targetUser, config.Base.SSH_CA_Filename)
