@@ -64,8 +64,17 @@ func getUserPubKey(username string) (string, error) {
 	return out.String(), nil
 }
 
+func signUserPubKey(username string, userPubKey string, users_ca_filename string) (string, error) {
+	hostIdentity, err := getHostIdentity()
+	if err != nil {
+		log.Println(err)
+		return "", err
+	}
+	return signUserPubKeyHostIdent(username, userPubKey, users_ca_filename, hostIdentity)
+}
+
 // gen_user_cert a username and key, returns a short lived cert for that user
-func gen_cert_internal(username string, userPubKey string, users_ca_filename string, host_identity string) (string, error) {
+func signUserPubKeyHostIdent(username string, userPubKey string, users_ca_filename string, host_identity string) (string, error) {
 
 	//Convert userKey into temp file
 	content := []byte(userPubKey)
@@ -128,12 +137,7 @@ func genUserCert(userName string, users_ca_filename string) (string, error) {
 		return "", err
 	}
 
-	hostIdentity, err := getHostIdentity()
-	if err != nil {
-		log.Println(err)
-		return "", err
-	}
-	cert, err := gen_cert_internal(userName, userPubKey, users_ca_filename, hostIdentity)
+	cert, err := signUserPubKey(userName, userPubKey, users_ca_filename)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -255,6 +259,10 @@ func convertToBindDN(username string, bind_pattern string) string {
 }
 
 func checkUserPassword(username string, password string, config AppConfigFile) (bool, error) {
+	//if username == "camilo_viecco1" && password == "pass" {
+	//	return true, nil
+	//}
+
 	const timeoutSecs = 3
 	bindDN := convertToBindDN(username, config.Ldap.Bind_Pattern)
 	for _, ldapUrl := range strings.Split(config.Ldap.LDAP_Target_URLs, ",") {
@@ -282,7 +290,6 @@ func writeUnauthorizedResponse(w http.ResponseWriter) {
 }
 
 func writeForbiddenResponse(w http.ResponseWriter) {
-	w.Header().Set("WWW-Authenticate", `Basic realm="User Credentials"`)
 	w.WriteHeader(403)
 	w.Write([]byte("403 Forbidden\n"))
 }
@@ -314,6 +321,7 @@ func checkAuth(w http.ResponseWriter, r *http.Request, config AppConfigFile) (st
 const CERTGEN_PATH = "/certgen/"
 
 func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Request) {
+	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, err := checkAuth(w, r, config)
 	if err != nil {
 		log.Printf("%v", err)
@@ -328,11 +336,58 @@ func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	//fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
-	//fmt.Fprintf(w, "Hi there, I love %s!", targetUser)
-	cert, err := genUserCert(targetUser, config.Base.SSH_CA_Filename)
-	if err != nil {
-		http.NotFound(w, r)
+	var cert string
+	switch r.Method {
+	case "GET":
+		cert, err = genUserCert(targetUser, config.Base.SSH_CA_Filename)
+		if err != nil {
+			http.NotFound(w, r)
+		}
+	case "POST":
+		err = r.ParseMultipartForm(1e7)
+		if err != nil {
+			w.WriteHeader(400)
+			w.Write([]byte("400 Error parsing Form\n"))
+			return
+		}
+
+		file, _, err := r.FormFile("pubkeyfile")
+		if err != nil {
+			log.Println(err)
+			w.WriteHeader(400)
+			w.Write([]byte("400 Missing file\n"))
+			return
+		}
+		defer file.Close()
+		buf := new(bytes.Buffer)
+		buf.ReadFrom(file)
+		userPubKey := buf.String()
+		//validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? .*$", userPubKey)
+		validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? .{1,512}\n?$", userPubKey)
+		if err != nil {
+			log.Println(err)
+			w.WriteHeader(500)
+			w.Write([]byte("500 MatchString internal error\n"))
+			return
+		}
+		if !validKey {
+			log.Printf("invalid file, bad re")
+			w.WriteHeader(400)
+			w.Write([]byte("400 Bad Key File"))
+			return
+
+		}
+
+		cert, err = signUserPubKey(targetUser, userPubKey, config.Base.SSH_CA_Filename)
+		if err != nil {
+			http.NotFound(w, r)
+		}
+
+	default:
+		w.WriteHeader(405)
+		w.Write([]byte("405 Method Not Allowed\n"))
+		return
+
 	}
 	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
 	w.WriteHeader(200)
