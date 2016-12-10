@@ -346,6 +346,7 @@ func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Reques
 	case "POST":
 		err = r.ParseMultipartForm(1e7)
 		if err != nil {
+			log.Println(err)
 			w.WriteHeader(400)
 			w.Write([]byte("400 Error parsing Form\n"))
 			return
@@ -363,7 +364,7 @@ func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Reques
 		buf.ReadFrom(file)
 		userPubKey := buf.String()
 		//validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? .*$", userPubKey)
-		validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? .{1,512}\n?$", userPubKey)
+		validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? ?.{0,512}\n?$", userPubKey)
 		if err != nil {
 			log.Println(err)
 			w.WriteHeader(500)
