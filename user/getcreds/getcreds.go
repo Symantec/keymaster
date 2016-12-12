@@ -19,7 +19,7 @@ import (
 	"net/http"
 	"os"
 	"os/user"
-    "path/filepath"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -136,13 +136,13 @@ func main() {
 	}
 
 	//sshPath := homeDir + "/.ssh/"
-    privateKeyPath := filepath.Join(homeDir, "/.ssh/", FILE_PREFIX)
+	privateKeyPath := filepath.Join(homeDir, "/.ssh/", FILE_PREFIX)
 	pubKeyFilename, err := genKeyPair(privateKeyPath)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-    var cert []byte
+	var cert []byte
 	success := false
 	for _, baseUrl := range strings.Split(config.Base.Gen_Cert_URLS, ",") {
 		targetUrl := baseUrl + userName
@@ -198,14 +198,14 @@ func main() {
 			log.Printf("got error from call %s", resp.Status)
 			continue
 		}
-        body, err := ioutil.ReadAll(resp.Body)
-        if err != nil {
-            log.Printf("failed to parse body")
-            log.Println(err)
-            continue
-        }
-        log.Printf("%s", body)
-        cert = body
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Printf("failed to parse body")
+			log.Println(err)
+			continue
+		}
+		log.Printf("%s", body)
+		cert = body
 		// now save the file
 		success = true
 		break
@@ -214,15 +214,15 @@ func main() {
 		log.Fatal("failed to get creds")
 	}
 	log.Printf("Success")
-    // now we write the cert file...
+	// now we write the cert file...
 
-    certPath := privateKeyPath + "-cert.pub"
-    //TODO: change deletion for atomic rename
-    os.Remove(certPath)
-    err = ioutil.WriteFile(certPath, cert, 0644)
-    if !success {
-                 log.Fatal("failed to get creds")
-    }
+	certPath := privateKeyPath + "-cert.pub"
+	//TODO: change deletion for atomic rename
+	os.Remove(certPath)
+	err = ioutil.WriteFile(certPath, cert, 0644)
+	if !success {
+		log.Fatal("failed to get creds")
+	}
 	// post to the signers
 
 }
