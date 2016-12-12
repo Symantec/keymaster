@@ -119,7 +119,7 @@ func main() {
 		log.Printf("cannot get current user info")
 		log.Fatal(err)
 	}
-	userName := usr.Name
+	userName := usr.Username
 
 	fmt.Printf("Password for %s: ", userName)
 	password, err := gopass.GetPasswd()
@@ -139,6 +139,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+    
 	success := false
 	for _, baseUrl := range strings.Split(config.Base.Gen_Cert_URLS, ",") {
 		targetUrl := baseUrl + userName
@@ -194,6 +195,9 @@ func main() {
 			log.Printf("got error from call %s", resp.Status)
 			continue
 		}
+        body, err := ioutil.ReadAll(resp.Body)
+        log.Printf("%s", body)
+
 		// now save the file
 		success = true
 		break
