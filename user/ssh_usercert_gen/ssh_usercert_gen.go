@@ -234,7 +234,7 @@ func checkLDAPUserPassword(u url.URL, bindDN string, bindPassword string, timeou
 	conn.Start()
 	err = conn.Bind(bindDN, bindPassword)
 	if err != nil {
-		log.Printf("Bind failure for server %s (%s)", server, err.Error())
+		log.Printf("Bind failure for server:%s bindDN:'%s' (%s)", server, bindDN, err.Error())
 		return false, err
 	}
 	return true, nil
