@@ -424,15 +424,32 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Printf("cert='%s'", cert)
+
+	mux := http.NewServeMux()
 	// Expose the registered metrics via HTTP.
-	http.Handle("/metrics", prometheus.Handler())
-	//http.HandleFunc(CERTGEN_PATH, certGenHandler)
-	http.HandleFunc(CERTGEN_PATH, config.certGenHandler)
-	err = http.ListenAndServeTLS(
-		config.Base.Http_Address,
+	mux.Handle("/metrics", prometheus.Handler())
+	mux.HandleFunc(CERTGEN_PATH, config.certGenHandler)
+
+	cfg := &tls.Config{
+		ClientAuth:               tls.RequestClientCert,
+		MinVersion:               tls.VersionTLS12,
+		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		PreferServerCipherSuites: true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+		},
+	}
+	srv := &http.Server{
+		Addr:         config.Base.Http_Address,
+		Handler:      mux,
+		TLSConfig:    cfg,
+		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
+	}
+
+	err = srv.ListenAndServeTLS(
 		config.Base.TLS_Cert_Filename,
-		config.Base.TLS_Key_Filename,
-		nil)
+		config.Base.TLS_Key_Filename)
 	if err != nil {
 		panic(err)
 	}
