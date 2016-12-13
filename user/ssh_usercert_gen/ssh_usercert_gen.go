@@ -59,10 +59,11 @@ func getUserPubKey(username string) (string, error) {
 	cmd.Stdout = &out
 	err := cmd.Run()
 	if err != nil {
-		//log.Fatal(err)
 		return "", err
 	}
-	log.Printf("Pub key: %s\n", out.String())
+	if *debug {
+		log.Printf("Pub key(%s): %s\n", username, out.String())
+	}
 	return out.String(), nil
 }
 
@@ -76,13 +77,10 @@ func signUserPubKey(username string, userPubKey string, users_ca_filename string
 }
 
 func goCertToFileString(c ssh.Certificate, username string) (string, error) {
-	//log.Printf("%+v", c)
 	certBytes := c.Marshal()
 	encoded := base64.StdEncoding.EncodeToString(certBytes)
 	fileComment := "/tmp/" + username + "-cert.pub"
 	return "ssh-rsa-cert-v01@openssh.com " + encoded + " " + fileComment, nil
-
-	//return "", nil
 }
 
 // gen_user_cert a username and key, returns a short lived cert for that user
@@ -104,7 +102,6 @@ func signUserPubKeyHostIdent(username string, userPubKey string, users_ca_filena
 		log.Printf("Cannot Parse User Public Key")
 		return "", err
 	}
-	//log.Printf("After all parsing and loading")
 	keyIdentity := host_identity + "_" + username
 
 	currentEpoch := uint64(time.Now().Unix())
@@ -166,7 +163,6 @@ func exitsAndCanRead(fileName string, description string) error {
 	}
 	_, err := ioutil.ReadFile(fileName)
 	if err != nil {
-		//panic(err)
 		err = errors.New("cannot read " + description + "file")
 		return err
 	}
@@ -176,13 +172,11 @@ func exitsAndCanRead(fileName string, description string) error {
 func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
 	var config AppConfigFile
 	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
-		//log.Printf("Missing config file\n")
 		err = errors.New("mising config file failure")
 		return config, err
 	}
 	source, err := ioutil.ReadFile(configFilename)
 	if err != nil {
-		//panic(err)
 		err = errors.New("cannot read config file")
 		return config, err
 	}
@@ -214,7 +208,6 @@ func checkLDAPUserPassword(u url.URL, bindDN string, bindPassword string, timeou
 		err := errors.New("Invalid ldap scheme (we only support ldaps")
 		return false, err
 	}
-	//connectionAttemptCounter.WithLabelValues(server).Add(1)
 	//hostnamePort := server + ":636"
 	serverPort := strings.Split(u.Host, ":")
 	port := "636"
@@ -416,6 +409,7 @@ func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", cert)
+	log.Printf("Generated Certifcate for %s", targetUser)
 }
 
 func main() {
