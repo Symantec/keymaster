@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/crypto/ssh"
 	"gopkg.in/ldap.v2"
 	"gopkg.in/yaml.v2"
 	//"io"
@@ -73,56 +75,69 @@ func signUserPubKey(username string, userPubKey string, users_ca_filename string
 	return signUserPubKeyHostIdent(username, userPubKey, users_ca_filename, hostIdentity)
 }
 
+func goCertToFileString(c ssh.Certificate, username string) (string, error) {
+	//log.Printf("%+v", c)
+	certBytes := c.Marshal()
+	encoded := base64.StdEncoding.EncodeToString(certBytes)
+	fileComment := "/tmp/" + username + "-cert.pub"
+	return "ssh-rsa-cert-v01@openssh.com " + encoded + " " + fileComment, nil
+
+	//return "", nil
+}
+
 // gen_user_cert a username and key, returns a short lived cert for that user
 func signUserPubKeyHostIdent(username string, userPubKey string, users_ca_filename string, host_identity string) (string, error) {
+	const numValidHours = 24
 
-	//Convert userKey into temp file
-	content := []byte(userPubKey)
-	tmpfile, err := ioutil.TempFile("/tmp/", "userkey")
+	// load private key and make signer
+	buffer, err := ioutil.ReadFile(users_ca_filename)
 	if err != nil {
-		log.Fatal(err)
+		return "", err
 	}
-	defer tmpfile.Close()
-	defer os.Remove(tmpfile.Name()) // clean up
-
-	if _, err := tmpfile.Write(content); err != nil {
-		log.Fatal(err)
+	signer, err := ssh.ParsePrivateKey(buffer)
+	if err != nil {
+		log.Printf("Cannot parse Priave Key file")
+		return "", err
 	}
-
+	userKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(userPubKey))
+	if err != nil {
+		log.Printf("Cannot Parse User Public Key")
+		return "", err
+	}
+	//log.Printf("After all parsing and loading")
 	keyIdentity := host_identity + "_" + username
 
-	cmd := exec.Command("ssh-keygen", "-s", users_ca_filename, "-I", keyIdentity, "-n", username, "-V", "+1d", tmpfile.Name())
-	cmd.Stdin = strings.NewReader("\n")
-	var out bytes.Buffer
-	cmd.Stdout = &out
+	currentEpoch := uint64(time.Now().Unix())
+	expireEpoch := currentEpoch + (3600 * numValidHours)
 
-	var cmderr bytes.Buffer
-	cmd.Stderr = &cmderr
-	err = cmd.Run()
+	// The values of the permissions are taken from the default values used
+	// by ssh-keygen
+	cert := ssh.Certificate{
+		Key:             userKey,
+		CertType:        ssh.UserCert,
+		SignatureKey:    signer.PublicKey(),
+		ValidPrincipals: []string{username},
+		KeyId:           keyIdentity,
+		ValidAfter:      currentEpoch,
+		ValidBefore:     expireEpoch,
+		Permissions: ssh.Permissions{Extensions: map[string]string{
+			"permit-X11-forwarding":   "",
+			"permit-agent-forwarding": "",
+			"permit-port-forwarding":  "",
+			"permit-pty":              "",
+			"permit-user-rc":          ""}}}
+
+	err = cert.SignCert(bytes.NewReader(cert.Marshal()), signer)
 	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("stdout: %q\n", out.String())
-	log.Printf("stderr: %q\n", cmderr.String())
-
-	//Signed user key /tmp/userkey322296953-cert.pub: id "foo" serial 0 for bar valid from 2016-12-05T21:38:00 to 2016-12-06T19:39:45
-	re := regexp.MustCompile("^Signed user key ([^:]+):")
-	match := re.FindStringSubmatch(cmderr.String())
-	if len(match) != 2 {
-		log.Printf("badmatch; %v\n", match)
-		err := errors.New("cannot find signed key name, re find failure")
+		log.Printf("Cannot sign cert")
 		return "", err
 	}
-	outFilename := match[1]
-	log.Printf("outfilename: %v\n", outFilename)
-	defer os.Remove(outFilename)
-
-	fileBytes, err := ioutil.ReadFile(outFilename)
+	certString, err := goCertToFileString(cert, username)
 	if err != nil {
+		log.Printf("Cannot convert cert to string")
 		return "", err
 	}
-
-	return string(fileBytes[:]), nil
+	return certString, nil
 }
 
 func getHostIdentity() (string, error) {
@@ -322,6 +337,7 @@ const CERTGEN_PATH = "/certgen/"
 
 func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
+
 	authUser, err := checkAuth(w, r, config)
 	if err != nil {
 		log.Printf("%v", err)
@@ -335,6 +351,9 @@ func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Reques
 		log.Printf("User %s asking for creds for %s", authUser, targetUser)
 		return
 	}
+	if *debug {
+		log.Printf("auth succedded for %s", authUser)
+	}
 
 	var cert string
 	switch r.Method {
@@ -344,6 +363,9 @@ func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Reques
 			http.NotFound(w, r)
 		}
 	case "POST":
+		if *debug {
+			log.Printf("Got client POST connection")
+		}
 		err = r.ParseMultipartForm(1e7)
 		if err != nil {
 			log.Println(err)
@@ -381,6 +403,7 @@ func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Reques
 
 		cert, err = signUserPubKey(targetUser, userPubKey, config.Base.SSH_CA_Filename)
 		if err != nil {
+			log.Printf("signUserPubkey Err")
 			http.NotFound(w, r)
 		}
 
@@ -406,7 +429,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("cert=%s", cert)
+	log.Printf("cert='%s'", cert)
 	// Expose the registered metrics via HTTP.
 	http.Handle("/metrics", prometheus.Handler())
 	//http.HandleFunc(CERTGEN_PATH, certGenHandler)
