@@ -47,6 +47,11 @@ type AppConfigFile struct {
 	Ldap LdapConfig
 }
 
+type RuntimeState struct {
+	Config AppConfigFile
+	Signer ssh.Signer
+}
+
 var (
 	configFilename = flag.String("config", "config.yml", "The filename of the configuration")
 	debug          = flag.Bool("debug", false, "Enable debug messages to console")
@@ -67,13 +72,13 @@ func getUserPubKey(username string) (string, error) {
 	return out.String(), nil
 }
 
-func signUserPubKey(username string, userPubKey string, users_ca_filename string) (string, error) {
+func signUserPubKey(username string, userPubKey string, signer ssh.Signer) (string, error) {
 	hostIdentity, err := getHostIdentity()
 	if err != nil {
 		log.Println(err)
 		return "", err
 	}
-	return signUserPubKeyHostIdent(username, userPubKey, users_ca_filename, hostIdentity)
+	return signUserPubKeyHostIdent(username, userPubKey, signer, hostIdentity)
 }
 
 func goCertToFileString(c ssh.Certificate, username string) (string, error) {
@@ -84,19 +89,9 @@ func goCertToFileString(c ssh.Certificate, username string) (string, error) {
 }
 
 // gen_user_cert a username and key, returns a short lived cert for that user
-func signUserPubKeyHostIdent(username string, userPubKey string, users_ca_filename string, host_identity string) (string, error) {
+func signUserPubKeyHostIdent(username string, userPubKey string, signer ssh.Signer, host_identity string) (string, error) {
 	const numValidHours = 24
 
-	// load private key and make signer
-	buffer, err := ioutil.ReadFile(users_ca_filename)
-	if err != nil {
-		return "", err
-	}
-	signer, err := ssh.ParsePrivateKey(buffer)
-	if err != nil {
-		log.Printf("Cannot parse Priave Key file")
-		return "", err
-	}
 	userKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(userPubKey))
 	if err != nil {
 		log.Printf("Cannot Parse User Public Key")
@@ -141,7 +136,7 @@ func getHostIdentity() (string, error) {
 	return os.Hostname()
 }
 
-func genUserCert(userName string, users_ca_filename string) (string, error) {
+func genUserCert(userName string, signer ssh.Signer) (string, error) {
 
 	userPubKey, err := getUserPubKey(userName)
 	if err != nil {
@@ -149,7 +144,7 @@ func genUserCert(userName string, users_ca_filename string) (string, error) {
 		return "", err
 	}
 
-	cert, err := signUserPubKey(userName, userPubKey, users_ca_filename)
+	cert, err := signUserPubKey(userName, userPubKey, signer)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -169,38 +164,51 @@ func exitsAndCanRead(fileName string, description string) error {
 	return nil
 }
 
-func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
-	var config AppConfigFile
+func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
+	//var config AppConfigFile
+	var runtimeState RuntimeState
 	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
 		err = errors.New("mising config file failure")
-		return config, err
+		return runtimeState, err
 	}
 	source, err := ioutil.ReadFile(configFilename)
 	if err != nil {
 		err = errors.New("cannot read config file")
-		return config, err
+		return runtimeState, err
 	}
-	err = yaml.Unmarshal(source, &config)
+	err = yaml.Unmarshal(source, &runtimeState.Config)
 	if err != nil {
 		err = errors.New("Cannot parse config file")
-		return config, err
+		return runtimeState, err
 	}
 
 	//verify config
-	err = exitsAndCanRead(config.Base.SSH_CA_Filename, "ssh CA File")
+	sshCAFilename := runtimeState.Config.Base.SSH_CA_Filename
+	err = exitsAndCanRead(sshCAFilename, "ssh CA File")
 	if err != nil {
-		return config, err
+		return runtimeState, err
 	}
-	err = exitsAndCanRead(config.Base.TLS_Cert_Filename, "http cert file")
+	// load private key and make signer
+	buffer, err := ioutil.ReadFile(sshCAFilename)
 	if err != nil {
-		return config, err
+		return runtimeState, err
 	}
-	err = exitsAndCanRead(config.Base.TLS_Key_Filename, "http key file")
+	runtimeState.Signer, err = ssh.ParsePrivateKey(buffer)
 	if err != nil {
-		return config, err
+		log.Printf("Cannot parse Priave Key file")
+		return runtimeState, err
 	}
 
-	return config, nil
+	err = exitsAndCanRead(runtimeState.Config.Base.TLS_Cert_Filename, "http cert file")
+	if err != nil {
+		return runtimeState, err
+	}
+	err = exitsAndCanRead(runtimeState.Config.Base.TLS_Key_Filename, "http key file")
+	if err != nil {
+		return runtimeState, err
+	}
+
+	return runtimeState, nil
 }
 
 func checkLDAPUserPassword(u url.URL, bindDN string, bindPassword string, timeoutSecs uint) (bool, error) {
@@ -325,10 +333,10 @@ func checkAuth(w http.ResponseWriter, r *http.Request, config AppConfigFile) (st
 
 const CERTGEN_PATH = "/certgen/"
 
-func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Request) {
+func (state RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 
-	authUser, err := checkAuth(w, r, config)
+	authUser, err := checkAuth(w, r, state.Config)
 	if err != nil {
 		log.Printf("%v", err)
 
@@ -348,7 +356,7 @@ func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Reques
 	var cert string
 	switch r.Method {
 	case "GET":
-		cert, err = genUserCert(targetUser, config.Base.SSH_CA_Filename)
+		cert, err = genUserCert(targetUser, state.Signer)
 		if err != nil {
 			http.NotFound(w, r)
 			return
@@ -388,7 +396,7 @@ func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Reques
 
 		}
 
-		cert, err = signUserPubKey(targetUser, userPubKey, config.Base.SSH_CA_Filename)
+		cert, err = signUserPubKey(targetUser, userPubKey, state.Signer)
 		if err != nil {
 			writeFailureResponse(w, http.StatusInternalServerError, "")
 			log.Printf("signUserPubkey Err")
@@ -409,11 +417,11 @@ func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Reques
 func main() {
 	flag.Parse()
 
-	config, err := loadVerifyConfigFile(*configFilename)
+	runtimeState, err := loadVerifyConfigFile(*configFilename)
 	if err != nil {
 		panic(err)
 	}
-	cert, err := genUserCert("camilo_viecco1", config.Base.SSH_CA_Filename)
+	cert, err := genUserCert("camilo_viecco1", runtimeState.Signer)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -421,7 +429,7 @@ func main() {
 
 	// Expose the registered metrics via HTTP.
 	http.Handle("/metrics", prometheus.Handler())
-	http.HandleFunc(CERTGEN_PATH, config.certGenHandler)
+	http.HandleFunc(CERTGEN_PATH, runtimeState.certGenHandler)
 
 	cfg := &tls.Config{
 		ClientAuth:               tls.RequestClientCert,
@@ -434,14 +442,14 @@ func main() {
 		},
 	}
 	srv := &http.Server{
-		Addr:         config.Base.Http_Address,
+		Addr:         runtimeState.Config.Base.Http_Address,
 		TLSConfig:    cfg,
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 	}
 
 	err = srv.ListenAndServeTLS(
-		config.Base.TLS_Cert_Filename,
-		config.Base.TLS_Key_Filename)
+		runtimeState.Config.Base.TLS_Cert_Filename,
+		runtimeState.Config.Base.TLS_Key_Filename)
 	if err != nil {
 		panic(err)
 	}
