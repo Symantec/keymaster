@@ -291,15 +291,13 @@ func checkUserPassword(username string, password string, config AppConfigFile) (
 	return false, nil
 }
 
-func writeUnauthorizedResponse(w http.ResponseWriter) {
-	w.Header().Set("WWW-Authenticate", `Basic realm="User Credentials"`)
-	w.WriteHeader(401)
-	w.Write([]byte("401 Unauthorized\n"))
-}
-
-func writeForbiddenResponse(w http.ResponseWriter) {
-	w.WriteHeader(403)
-	w.Write([]byte("403 Forbidden\n"))
+func writeFailureResponse(w http.ResponseWriter, code int, message string) {
+	if code == http.StatusUnauthorized {
+		w.Header().Set("WWW-Authenticate", `Basic realm="User Credentials"`)
+	}
+	w.WriteHeader(code)
+	publicErrorText := fmt.Sprintf("%d %s %s\n", code, http.StatusText(code), message)
+	w.Write([]byte(publicErrorText))
 }
 
 // Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
@@ -307,18 +305,17 @@ func checkAuth(w http.ResponseWriter, r *http.Request, config AppConfigFile) (st
 	//For now just check http basic
 	user, pass, ok := r.BasicAuth()
 	if !ok {
-		writeUnauthorizedResponse(w)
+		writeFailureResponse(w, http.StatusUnauthorized, "")
 		err := errors.New("check_Auth, Invalid or no auth header")
 		return "", err
 	}
 	valid, err := checkUserPassword(user, pass, config)
 	if err != nil {
-		w.WriteHeader(500)
-		w.Write([]byte("400 Internal Error\n"))
+		writeFailureResponse(w, http.StatusInternalServerError, "")
 		return "", err
 	}
 	if !valid {
-		writeUnauthorizedResponse(w)
+		writeFailureResponse(w, http.StatusUnauthorized, "")
 		err := errors.New("Invalid Credentials")
 		return "", err
 	}
@@ -340,7 +337,7 @@ func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Reques
 
 	targetUser := r.URL.Path[len(CERTGEN_PATH):]
 	if authUser != targetUser {
-		writeForbiddenResponse(w)
+		writeFailureResponse(w, http.StatusForbidden, "")
 		log.Printf("User %s asking for creds for %s", authUser, targetUser)
 		return
 	}
@@ -354,6 +351,7 @@ func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Reques
 		cert, err = genUserCert(targetUser, config.Base.SSH_CA_Filename)
 		if err != nil {
 			http.NotFound(w, r)
+			return
 		}
 	case "POST":
 		if *debug {
@@ -362,16 +360,14 @@ func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Reques
 		err = r.ParseMultipartForm(1e7)
 		if err != nil {
 			log.Println(err)
-			w.WriteHeader(400)
-			w.Write([]byte("400 Error parsing Form\n"))
+			writeFailureResponse(w, http.StatusBadRequest, "Error parsing form")
 			return
 		}
 
 		file, _, err := r.FormFile("pubkeyfile")
 		if err != nil {
 			log.Println(err)
-			w.WriteHeader(400)
-			w.Write([]byte("400 Missing file\n"))
+			writeFailureResponse(w, http.StatusBadRequest, "Missing public key file")
 			return
 		}
 		defer file.Close()
@@ -382,27 +378,25 @@ func (config AppConfigFile) certGenHandler(w http.ResponseWriter, r *http.Reques
 		validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? ?.{0,512}\n?$", userPubKey)
 		if err != nil {
 			log.Println(err)
-			w.WriteHeader(500)
-			w.Write([]byte("500 MatchString internal error\n"))
+			writeFailureResponse(w, http.StatusInternalServerError, "")
 			return
 		}
 		if !validKey {
+			writeFailureResponse(w, http.StatusBadRequest, "Invalid File, bad re")
 			log.Printf("invalid file, bad re")
-			w.WriteHeader(400)
-			w.Write([]byte("400 Bad Key File"))
 			return
 
 		}
 
 		cert, err = signUserPubKey(targetUser, userPubKey, config.Base.SSH_CA_Filename)
 		if err != nil {
+			writeFailureResponse(w, http.StatusInternalServerError, "")
 			log.Printf("signUserPubkey Err")
-			http.NotFound(w, r)
+			return
 		}
 
 	default:
-		w.WriteHeader(405)
-		w.Write([]byte("405 Method Not Allowed\n"))
+		writeFailureResponse(w, http.StatusMethodNotAllowed, "")
 		return
 
 	}
