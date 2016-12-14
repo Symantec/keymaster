@@ -165,7 +165,6 @@ func exitsAndCanRead(fileName string, description string) error {
 }
 
 func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
-	//var config AppConfigFile
 	var runtimeState RuntimeState
 	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
 		err = errors.New("mising config file failure")
