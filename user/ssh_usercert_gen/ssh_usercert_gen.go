@@ -425,10 +425,9 @@ func main() {
 	}
 	log.Printf("cert='%s'", cert)
 
-	mux := http.NewServeMux()
 	// Expose the registered metrics via HTTP.
-	mux.Handle("/metrics", prometheus.Handler())
-	mux.HandleFunc(CERTGEN_PATH, config.certGenHandler)
+	http.Handle("/metrics", prometheus.Handler())
+	http.HandleFunc(CERTGEN_PATH, config.certGenHandler)
 
 	cfg := &tls.Config{
 		ClientAuth:               tls.RequestClientCert,
@@ -442,7 +441,6 @@ func main() {
 	}
 	srv := &http.Server{
 		Addr:         config.Base.Http_Address,
-		Handler:      mux,
 		TLSConfig:    cfg,
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 	}
