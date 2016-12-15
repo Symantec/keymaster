@@ -3,11 +3,12 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
-	"encoding/base64"
+	//"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
 	"github.com/Symantec/Dominator/lib/logbuf"
+	"github.com/Symantec/keymaster/lib/certgen"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/ldap.v2"
@@ -19,7 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
+	//"os/exec"
 	"regexp"
 	//"strconv"
 	"strings"
@@ -58,75 +59,12 @@ var (
 	debug          = flag.Bool("debug", false, "Enable debug messages to console")
 )
 
-func getUserPubKey(username string) (string, error) {
-	cmd := exec.Command("/usr/bin/sss_ssh_authorizedkeys", username)
-	cmd.Stdin = strings.NewReader("some input")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	err := cmd.Run()
-	if err != nil {
-		return "", err
-	}
-	if *debug {
-		log.Printf("Pub key(%s): %s\n", username, out.String())
-	}
-	return out.String(), nil
-}
-
 func signUserPubKey(username string, userPubKey string, signer ssh.Signer) (string, error) {
 	hostIdentity, err := getHostIdentity()
 	if err != nil {
 		return "", err
 	}
-	return signUserPubKeyHostIdent(username, userPubKey, signer, hostIdentity)
-}
-
-func goCertToFileString(c ssh.Certificate, username string) (string, error) {
-	certBytes := c.Marshal()
-	encoded := base64.StdEncoding.EncodeToString(certBytes)
-	fileComment := "/tmp/" + username + "-cert.pub"
-	return "ssh-rsa-cert-v01@openssh.com " + encoded + " " + fileComment, nil
-}
-
-// gen_user_cert a username and key, returns a short lived cert for that user
-func signUserPubKeyHostIdent(username string, userPubKey string, signer ssh.Signer, host_identity string) (string, error) {
-	const numValidHours = 24
-
-	userKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(userPubKey))
-	if err != nil {
-		return "", err
-	}
-	keyIdentity := host_identity + "_" + username
-
-	currentEpoch := uint64(time.Now().Unix())
-	expireEpoch := currentEpoch + (3600 * numValidHours)
-
-	// The values of the permissions are taken from the default values used
-	// by ssh-keygen
-	cert := ssh.Certificate{
-		Key:             userKey,
-		CertType:        ssh.UserCert,
-		SignatureKey:    signer.PublicKey(),
-		ValidPrincipals: []string{username},
-		KeyId:           keyIdentity,
-		ValidAfter:      currentEpoch,
-		ValidBefore:     expireEpoch,
-		Permissions: ssh.Permissions{Extensions: map[string]string{
-			"permit-X11-forwarding":   "",
-			"permit-agent-forwarding": "",
-			"permit-port-forwarding":  "",
-			"permit-pty":              "",
-			"permit-user-rc":          ""}}}
-
-	err = cert.SignCert(bytes.NewReader(cert.Marshal()), signer)
-	if err != nil {
-		return "", err
-	}
-	certString, err := goCertToFileString(cert, username)
-	if err != nil {
-		return "", err
-	}
-	return certString, nil
+	return certgen.GenSSHCertFileString(username, userPubKey, signer, hostIdentity)
 }
 
 func getHostIdentity() (string, error) {
@@ -135,7 +73,7 @@ func getHostIdentity() (string, error) {
 
 func genUserCert(userName string, signer ssh.Signer) (string, error) {
 
-	userPubKey, err := getUserPubKey(userName)
+	userPubKey, err := certgen.GetUserPubKeyFromSSSD(userName)
 	if err != nil {
 		log.Println(err)
 		return "", err
