@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/Symantec/Dominator/lib/logbuf"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/ldap.v2"
@@ -75,7 +76,6 @@ func getUserPubKey(username string) (string, error) {
 func signUserPubKey(username string, userPubKey string, signer ssh.Signer) (string, error) {
 	hostIdentity, err := getHostIdentity()
 	if err != nil {
-		log.Println(err)
 		return "", err
 	}
 	return signUserPubKeyHostIdent(username, userPubKey, signer, hostIdentity)
@@ -94,7 +94,6 @@ func signUserPubKeyHostIdent(username string, userPubKey string, signer ssh.Sign
 
 	userKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(userPubKey))
 	if err != nil {
-		log.Printf("Cannot Parse User Public Key")
 		return "", err
 	}
 	keyIdentity := host_identity + "_" + username
@@ -121,12 +120,10 @@ func signUserPubKeyHostIdent(username string, userPubKey string, signer ssh.Sign
 
 	err = cert.SignCert(bytes.NewReader(cert.Marshal()), signer)
 	if err != nil {
-		log.Printf("Cannot sign cert")
 		return "", err
 	}
 	certString, err := goCertToFileString(cert, username)
 	if err != nil {
-		log.Printf("Cannot convert cert to string")
 		return "", err
 	}
 	return certString, nil
@@ -334,7 +331,6 @@ const CERTGEN_PATH = "/certgen/"
 
 func (state RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-
 	authUser, err := checkAuth(w, r, state.Config)
 	if err != nil {
 		log.Printf("%v", err)
@@ -416,10 +412,20 @@ func (state RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request)
 func main() {
 	flag.Parse()
 
+	circularBuffer := logbuf.New()
+	if circularBuffer == nil {
+		panic("Cannot create circular buffer")
+	}
+	log.New(circularBuffer, "", log.LstdFlags)
+
 	runtimeState, err := loadVerifyConfigFile(*configFilename)
 	if err != nil {
 		panic(err)
 	}
+	if *debug || true {
+		log.Printf("After load verify")
+	}
+
 	cert, err := genUserCert("camilo_viecco1", runtimeState.Signer)
 	if err != nil {
 		log.Fatal(err)
