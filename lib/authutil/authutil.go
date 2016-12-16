@@ -70,7 +70,10 @@ func CheckLDAPUserPassword(u url.URL, bindDN string, bindPassword string, timeou
 	err = conn.Bind(bindDN, bindPassword)
 	if err != nil {
 		log.Printf("Bind failure for server:%s bindDN:'%s' (%s)", server, bindDN, err.Error())
-		return false, nil
+		if strings.Contains(err.Error(), "Invalid Credentials") {
+			return false, nil
+		}
+		return false, err
 	}
 	return true, nil
 
