@@ -3,6 +3,7 @@ package certgen
 import (
 	"golang.org/x/crypto/ssh"
 	//"strings"
+	"os/user"
 	"testing"
 )
 
@@ -96,5 +97,22 @@ func TestGenSSHCertFileStringGenerateSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Log("got '%s'", c)
+	t.Logf("got '%s'", c)
+}
+
+func TestGetUserPubKeyFromSSSD(t *testing.T) {
+	usr, err := user.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	username := usr.Username
+	if username != "camilo_viecco1" || usr.Name != "camilo_viecco1" {
+		t.SkipNow()
+	}
+	pk, err := GetUserPubKeyFromSSSD(username)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("got ''%s", pk)
+
 }

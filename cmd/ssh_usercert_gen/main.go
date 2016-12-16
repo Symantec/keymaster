@@ -364,12 +364,6 @@ func main() {
 		log.Printf("After load verify")
 	}
 
-	cert, err := genUserCert("camilo_viecco1", runtimeState.Signer)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("cert='%s'", cert)
-
 	// Expose the registered metrics via HTTP.
 	http.Handle("/metrics", prometheus.Handler())
 	http.HandleFunc(CERTGEN_PATH, runtimeState.certGenHandler)
