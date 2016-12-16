@@ -3,6 +3,8 @@ package authutil
 import (
 	"crypto/tls"
 	"errors"
+	"github.com/foomo/htpasswd"
+	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/ldap.v2"
 	"log"
 	"net"
@@ -10,6 +12,29 @@ import (
 	"strings"
 	"time"
 )
+
+func CheckHtpasswdUserPassword(username string, password string, htpasswdBytes []byte) (bool, error) {
+	//	secrets := HtdigestFileProvider(htpasswdFilename)
+	passwords, err := htpasswd.ParseHtpasswd(htpasswdBytes)
+	if err != nil {
+		return false, err
+	}
+	hash, ok := passwords[username]
+	if !ok {
+		return false, nil
+	}
+	// only understand bcrypt
+	if !strings.HasPrefix(hash, "$2y$") {
+		err := errors.New("Can only use bcrypt for htpasswd")
+		return false, err
+	}
+	err = bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	if err != nil {
+		return false, nil
+	}
+	return true, nil
+
+}
 
 func CheckLDAPUserPassword(u url.URL, bindDN string, bindPassword string, timeoutSecs uint) (bool, error) {
 	if u.Scheme != "ldaps" {
@@ -45,7 +70,7 @@ func CheckLDAPUserPassword(u url.URL, bindDN string, bindPassword string, timeou
 	err = conn.Bind(bindDN, bindPassword)
 	if err != nil {
 		log.Printf("Bind failure for server:%s bindDN:'%s' (%s)", server, bindDN, err.Error())
-		return false, err
+		return false, nil
 	}
 	return true, nil
 

@@ -35,6 +35,7 @@ type baseConfig struct {
 	TLS_Key_Filename  string
 	UserAuth          string
 	SSH_CA_Filename   string
+	Htpasswd_Filename string
 }
 
 type LdapConfig struct {
@@ -151,6 +152,18 @@ func checkUserPassword(username string, password string, config AppConfigFile) (
 		// the ldap exchange was successful (user might be invaid)
 		return vaild, nil
 
+	}
+	if config.Base.Htpasswd_Filename != "" {
+		log.Printf("I have htpasswed filename")
+		buffer, err := ioutil.ReadFile(config.Base.Htpasswd_Filename)
+		if err != nil {
+			return false, err
+		}
+		valid, err := authutil.CheckHtpasswdUserPassword(username, password, buffer)
+		if err != nil {
+			return false, err
+		}
+		return valid, nil
 	}
 	return false, nil
 }
