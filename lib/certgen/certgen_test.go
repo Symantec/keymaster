@@ -1,6 +1,8 @@
 package certgen
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"golang.org/x/crypto/ssh"
 	//"strings"
 	"os/user"
@@ -106,7 +108,14 @@ func TestGetUserPubKeyFromSSSD(t *testing.T) {
 		t.Fatal(err)
 	}
 	username := usr.Username
-	if username != "camilo_viecco1" || usr.Name != "camilo_viecco1" {
+	target := "9Z5PHgLIlUMUnu0MUv2p+RuJCwNXG9Lg/3tXpOau7UM="
+	h := sha256.New()
+	h.Write([]byte(username))
+	b := h.Sum(nil)
+	targetUser := base64.StdEncoding.EncodeToString(b)
+	t.Logf("'%s'", targetUser)
+	//username := usr.Username
+	if username != target || usr.Name != usr.Name {
 		t.SkipNow()
 	}
 	pk, err := GetUserPubKeyFromSSSD(username)
