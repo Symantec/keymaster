@@ -48,8 +48,9 @@ type AppConfigFile struct {
 }
 
 type RuntimeState struct {
-	Config AppConfigFile
-	Signer ssh.Signer
+	Config       AppConfigFile
+	Signer       ssh.Signer
+	HostIdentity string
 }
 
 var (
@@ -57,31 +58,8 @@ var (
 	debug          = flag.Bool("debug", false, "Enable debug messages to console")
 )
 
-func signUserPubKey(username string, userPubKey string, signer ssh.Signer) (string, error) {
-	hostIdentity, err := getHostIdentity()
-	if err != nil {
-		return "", err
-	}
-	return certgen.GenSSHCertFileString(username, userPubKey, signer, hostIdentity)
-}
-
 func getHostIdentity() (string, error) {
 	return os.Hostname()
-}
-
-func genUserCert(userName string, signer ssh.Signer) (string, error) {
-
-	userPubKey, err := certgen.GetUserPubKeyFromSSSD(userName)
-	if err != nil {
-		log.Println(err)
-		return "", err
-	}
-
-	cert, err := signUserPubKey(userName, userPubKey, signer)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return cert, err
 }
 
 func exitsAndCanRead(fileName string, description string) error {
@@ -136,6 +114,11 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		return runtimeState, err
 	}
 	err = exitsAndCanRead(runtimeState.Config.Base.TLS_Key_Filename, "http key file")
+	if err != nil {
+		return runtimeState, err
+	}
+
+	runtimeState.HostIdentity, err = getHostIdentity()
 	if err != nil {
 		return runtimeState, err
 	}
@@ -228,7 +211,7 @@ func (state RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request)
 	var cert string
 	switch r.Method {
 	case "GET":
-		cert, err = genUserCert(targetUser, state.Signer)
+		cert, err = certgen.GenSSHCertFileStringFromSSSDPublicKey(targetUser, state.Signer, state.HostIdentity)
 		if err != nil {
 			http.NotFound(w, r)
 			return
@@ -268,7 +251,7 @@ func (state RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request)
 
 		}
 
-		cert, err = signUserPubKey(targetUser, userPubKey, state.Signer)
+		cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, state.Signer, state.HostIdentity)
 		if err != nil {
 			writeFailureResponse(w, http.StatusInternalServerError, "")
 			log.Printf("signUserPubkey Err")

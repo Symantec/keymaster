@@ -7,7 +7,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"golang.org/x/crypto/ssh"
-	"os"
+	//"os"
 	"os/exec"
 	"time"
 )
@@ -22,14 +22,6 @@ func GetUserPubKeyFromSSSD(username string) (string, error) {
 		return "", err
 	}
 	return out.String(), nil
-}
-
-func signUserPubKey(username string, userPubKey string, signer ssh.Signer) (string, error) {
-	hostIdentity, err := getHostIdentity()
-	if err != nil {
-		return "", err
-	}
-	return GenSSHCertFileString(username, userPubKey, signer, hostIdentity)
 }
 
 func goCertToFileString(c ssh.Certificate, username string) (string, error) {
@@ -80,18 +72,13 @@ func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer,
 	return certString, nil
 }
 
-func getHostIdentity() (string, error) {
-	return os.Hostname()
-}
-
-func genUserCert(userName string, signer ssh.Signer) (string, error) {
+func GenSSHCertFileStringFromSSSDPublicKey(userName string, signer ssh.Signer, hostIdentity string) (string, error) {
 
 	userPubKey, err := GetUserPubKeyFromSSSD(userName)
 	if err != nil {
 		return "", err
 	}
-
-	cert, err := signUserPubKey(userName, userPubKey, signer)
+	cert, err := GenSSHCertFileString(userName, userPubKey, signer, hostIdentity)
 	if err != nil {
 		return "", err
 	}
