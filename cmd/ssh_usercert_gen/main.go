@@ -3,29 +3,27 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
-	//"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
 	"github.com/Symantec/Dominator/lib/logbuf"
+	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/crypto/ssh"
-	"gopkg.in/ldap.v2"
 	"gopkg.in/yaml.v2"
 	//"io"
 	"io/ioutil"
 	"log"
-	"net"
+	//"net"
 	"net/http"
-	"net/url"
+	//"net/url"
 	"os"
-	//"os/exec"
 	"regexp"
 	//"strconv"
 	"strings"
 	//"sync"
-	"time"
+	//"time"
 )
 
 // describes the network config and the mechanism for user auth.
@@ -145,65 +143,6 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	return runtimeState, nil
 }
 
-func checkLDAPUserPassword(u url.URL, bindDN string, bindPassword string, timeoutSecs uint) (bool, error) {
-	if u.Scheme != "ldaps" {
-		err := errors.New("Invalid ldap scheme (we only support ldaps")
-		return false, err
-	}
-	//hostnamePort := server + ":636"
-	serverPort := strings.Split(u.Host, ":")
-	port := "636"
-	if len(serverPort) == 2 {
-		port = serverPort[1]
-	}
-	server := serverPort[0]
-	hostnamePort := server + ":" + port
-	if *debug {
-		log.Println("about to connect to:" + hostnamePort)
-	}
-
-	timeout := time.Duration(time.Duration(timeoutSecs) * time.Second)
-	start := time.Now()
-	tlsConn, err := tls.DialWithDialer(&net.Dialer{Timeout: timeout}, "tcp", hostnamePort, &tls.Config{ServerName: server})
-	if err != nil {
-		errorTime := time.Since(start).Seconds() * 1000
-		log.Printf("connction failure for:%s (%s)(time(ms)=%v)", server, err.Error(), errorTime)
-		return false, err
-	}
-
-	// we dont close the tls connection directly  close defer to the new ldap connection
-	conn := ldap.NewConn(tlsConn, true)
-	defer conn.Close()
-
-	connectionTime := time.Since(start).Seconds() * 1000
-	if *debug {
-		log.Printf("connectionDelay = %v connecting to: %v:", connectionTime, hostnamePort)
-	}
-
-	conn.SetTimeout(timeout)
-	conn.Start()
-	err = conn.Bind(bindDN, bindPassword)
-	if err != nil {
-		log.Printf("Bind failure for server:%s bindDN:'%s' (%s)", server, bindDN, err.Error())
-		return false, err
-	}
-	return true, nil
-
-}
-
-func parseLDAPURL(ldapUrl string) (*url.URL, error) {
-	u, err := url.Parse(ldapUrl)
-	if err != nil {
-		return nil, err
-	}
-	if u.Scheme != "ldaps" {
-		err := errors.New("Invalid ldap scheme (we only support ldaps")
-		return nil, err
-	}
-	//extract port if any... and if NIL then set it to 636
-	return u, nil
-}
-
 func convertToBindDN(username string, bind_pattern string) string {
 	return fmt.Sprintf(bind_pattern, username)
 }
@@ -216,12 +155,12 @@ func checkUserPassword(username string, password string, config AppConfigFile) (
 	const timeoutSecs = 3
 	bindDN := convertToBindDN(username, config.Ldap.Bind_Pattern)
 	for _, ldapUrl := range strings.Split(config.Ldap.LDAP_Target_URLs, ",") {
-		u, err := parseLDAPURL(ldapUrl)
+		u, err := authutil.ParseLDAPURL(ldapUrl)
 		if err != nil {
 			log.Printf("Failed to parse %s", ldapUrl)
 			continue
 		}
-		vaild, err := checkLDAPUserPassword(*u, bindDN, password, timeoutSecs)
+		vaild, err := authutil.CheckLDAPUserPassword(*u, bindDN, password, timeoutSecs)
 		if err != nil {
 			//log.Printf("Failed to parse %s", ldapUrl)
 			continue
