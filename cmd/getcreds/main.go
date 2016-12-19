@@ -73,6 +73,11 @@ func genKeyPair(privateKeyPath string) (string, error) {
 		log.Printf("Failed to save privkey")
 		return "", err
 	}
+	err = privateKeyFile.Chmod(0600)
+	if err != nil {
+		log.Printf("Failed to change file mode")
+		return "", err
+	}
 	privateKeyPEM := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)}
 	if err := pem.Encode(privateKeyFile, privateKeyPEM); err != nil {
 		return "", err
