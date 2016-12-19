@@ -50,7 +50,7 @@ type AppConfigFile struct {
 
 type RuntimeState struct {
 	Config       AppConfigFile
-	Signer       ssh.Signer
+	Signer       *ssh.Signer
 	HostIdentity string
 }
 
@@ -104,11 +104,12 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	if err != nil {
 		return runtimeState, err
 	}
-	runtimeState.Signer, err = ssh.ParsePrivateKey(buffer)
+	signer, err := ssh.ParsePrivateKey(buffer)
 	if err != nil {
 		log.Printf("Cannot parse Priave Key file")
 		return runtimeState, err
 	}
+	runtimeState.Signer = &signer
 
 	err = exitsAndCanRead(runtimeState.Config.Base.TLS_Cert_Filename, "http cert file")
 	if err != nil {
@@ -203,6 +204,13 @@ func checkAuth(w http.ResponseWriter, r *http.Request, config AppConfigFile) (st
 const CERTGEN_PATH = "/certgen/"
 
 func (state RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request) {
+	//local sanity tests
+	if state.Signer == nil {
+		writeFailureResponse(w, http.StatusInternalServerError, "")
+		log.Printf("Signer not loaded")
+		return
+	}
+
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, err := checkAuth(w, r, state.Config)
 	if err != nil {
@@ -224,7 +232,7 @@ func (state RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request)
 	var cert string
 	switch r.Method {
 	case "GET":
-		cert, err = certgen.GenSSHCertFileStringFromSSSDPublicKey(targetUser, state.Signer, state.HostIdentity)
+		cert, err = certgen.GenSSHCertFileStringFromSSSDPublicKey(targetUser, *state.Signer, state.HostIdentity)
 		if err != nil {
 			http.NotFound(w, r)
 			return
@@ -264,7 +272,7 @@ func (state RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request)
 
 		}
 
-		cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, state.Signer, state.HostIdentity)
+		cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, *state.Signer, state.HostIdentity)
 		if err != nil {
 			writeFailureResponse(w, http.StatusInternalServerError, "")
 			log.Printf("signUserPubkey Err")
