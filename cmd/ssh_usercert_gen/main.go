@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"flag"
 	"fmt"
@@ -22,7 +23,7 @@ import (
 	"regexp"
 	//"strconv"
 	"strings"
-	//"sync"
+	"sync"
 	//"time"
 )
 
@@ -30,12 +31,13 @@ import (
 // While the contents of the certificaes are public, we want to
 // restrict generation to authenticated users
 type baseConfig struct {
-	Http_Address      string
-	TLS_Cert_Filename string
-	TLS_Key_Filename  string
-	UserAuth          string
-	SSH_CA_Filename   string
-	Htpasswd_Filename string
+	Http_Address       string
+	TLS_Cert_Filename  string
+	TLS_Key_Filename   string
+	UserAuth           string
+	SSH_CA_Filename    string
+	Htpasswd_Filename  string
+	Client_CA_Filename string
 }
 
 type LdapConfig struct {
@@ -49,9 +51,12 @@ type AppConfigFile struct {
 }
 
 type RuntimeState struct {
-	Config       AppConfigFile
-	Signer       *ssh.Signer
-	HostIdentity string
+	Config              AppConfigFile
+	SSHCARawFileContent []byte
+	Signer              *ssh.Signer
+	ClientCAPool        *x509.CertPool
+	HostIdentity        string
+	Mutex               sync.Mutex
 }
 
 var (
@@ -63,17 +68,16 @@ func getHostIdentity() (string, error) {
 	return os.Hostname()
 }
 
-func exitsAndCanRead(fileName string, description string) error {
+func exitsAndCanRead(fileName string, description string) ([]byte, error) {
 	if _, err := os.Stat(fileName); os.IsNotExist(err) {
-		err = errors.New("mising " + description + " file")
-		return err
+		return nil, err
 	}
-	_, err := ioutil.ReadFile(fileName)
+	buffer, err := ioutil.ReadFile(fileName)
 	if err != nil {
 		err = errors.New("cannot read " + description + "file")
-		return err
+		return nil, err
 	}
-	return nil
+	return buffer, err
 }
 
 func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
@@ -94,30 +98,55 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	}
 
 	//verify config
-	sshCAFilename := runtimeState.Config.Base.SSH_CA_Filename
-	err = exitsAndCanRead(sshCAFilename, "ssh CA File")
+	_, err = exitsAndCanRead(runtimeState.Config.Base.TLS_Cert_Filename, "http cert file")
 	if err != nil {
 		return runtimeState, err
 	}
-	// load private key and make signer
-	buffer, err := ioutil.ReadFile(sshCAFilename)
+	_, err = exitsAndCanRead(runtimeState.Config.Base.TLS_Key_Filename, "http key file")
 	if err != nil {
 		return runtimeState, err
 	}
-	signer, err := ssh.ParsePrivateKey(buffer)
-	if err != nil {
-		log.Printf("Cannot parse Priave Key file")
-		return runtimeState, err
-	}
-	runtimeState.Signer = &signer
 
-	err = exitsAndCanRead(runtimeState.Config.Base.TLS_Cert_Filename, "http cert file")
+	sshCAFilename := runtimeState.Config.Base.SSH_CA_Filename
+	runtimeState.SSHCARawFileContent, err = exitsAndCanRead(sshCAFilename, "ssh CA File")
 	if err != nil {
+		log.Printf("Cannot load ssh CA File")
 		return runtimeState, err
 	}
-	err = exitsAndCanRead(runtimeState.Config.Base.TLS_Key_Filename, "http key file")
-	if err != nil {
-		return runtimeState, err
+
+	if len(runtimeState.Config.Base.Client_CA_Filename) > 0 {
+		clientCAbuffer, err := exitsAndCanRead(runtimeState.Config.Base.Client_CA_Filename, "client CA file")
+		if err != nil {
+			log.Printf("Cannot load client CA File")
+			return runtimeState, err
+		}
+		runtimeState.ClientCAPool = x509.NewCertPool()
+		ok := runtimeState.ClientCAPool.AppendCertsFromPEM(clientCAbuffer)
+		if !ok {
+			err = errors.New("Cannot append any certs from Client CA file")
+			return runtimeState, err
+		}
+
+	}
+	if strings.HasPrefix(string(runtimeState.SSHCARawFileContent[:]), "-----BEGIN RSA PRIVATE KEY-----") {
+		signer, err := ssh.ParsePrivateKey(runtimeState.SSHCARawFileContent)
+		if err != nil {
+			log.Printf("Cannot parse Priave Key file")
+			return runtimeState, err
+		}
+		runtimeState.Signer = &signer
+	} else {
+		if runtimeState.ClientCAPool == nil {
+			err := errors.New("Invalid ssh CA private key file and NO clientCA")
+			return runtimeState, err
+		}
+		//check that the loaded date seems like an openpgp armored file
+		fileAsString := string(runtimeState.SSHCARawFileContent[:])
+		if !strings.HasPrefix(fileAsString, "-----BEGIN PGP MESSAGE-----") {
+			err = errors.New("Have a client CA but the CA file does NOT look like and PGP file")
+			return runtimeState, err
+		}
+
 	}
 
 	runtimeState.HostIdentity, err = getHostIdentity()
@@ -204,8 +233,19 @@ func checkAuth(w http.ResponseWriter, r *http.Request, config AppConfigFile) (st
 const CERTGEN_PATH = "/certgen/"
 
 func (state RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request) {
+	var signerIsNull bool
+	var signer ssh.Signer
+
+	// copy runtime singer if not nil
+	state.Mutex.Lock()
+	signerIsNull = (state.Signer == nil)
+	if !signerIsNull {
+		signer = *state.Signer
+	}
+	state.Mutex.Unlock()
+
 	//local sanity tests
-	if state.Signer == nil {
+	if signerIsNull {
 		writeFailureResponse(w, http.StatusInternalServerError, "")
 		log.Printf("Signer not loaded")
 		return
@@ -232,7 +272,7 @@ func (state RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request)
 	var cert string
 	switch r.Method {
 	case "GET":
-		cert, err = certgen.GenSSHCertFileStringFromSSSDPublicKey(targetUser, *state.Signer, state.HostIdentity)
+		cert, err = certgen.GenSSHCertFileStringFromSSSDPublicKey(targetUser, signer, state.HostIdentity)
 		if err != nil {
 			http.NotFound(w, r)
 			return
@@ -272,7 +312,7 @@ func (state RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request)
 
 		}
 
-		cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, *state.Signer, state.HostIdentity)
+		cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity)
 		if err != nil {
 			writeFailureResponse(w, http.StatusInternalServerError, "")
 			log.Printf("signUserPubkey Err")
@@ -312,7 +352,8 @@ func main() {
 	http.HandleFunc(CERTGEN_PATH, runtimeState.certGenHandler)
 
 	cfg := &tls.Config{
-		ClientAuth:               tls.RequestClientCert,
+		ClientCAs:                runtimeState.ClientCAPool,
+		ClientAuth:               tls.VerifyClientCertIfGiven,
 		MinVersion:               tls.VersionTLS12,
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 		PreferServerCipherSuites: true,
