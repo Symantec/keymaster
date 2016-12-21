@@ -11,6 +11,8 @@ import (
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/crypto/openpgp"
+	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v2"
 	//"io"
@@ -126,6 +128,9 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			err = errors.New("Cannot append any certs from Client CA file")
 			return runtimeState, err
 		}
+		if *debug || true {
+			log.Printf("client ca file loaded")
+		}
 
 	}
 	if strings.HasPrefix(string(runtimeState.SSHCARawFileContent[:]), "-----BEGIN RSA PRIVATE KEY-----") {
@@ -232,7 +237,7 @@ func checkAuth(w http.ResponseWriter, r *http.Request, config AppConfigFile) (st
 
 const CERTGEN_PATH = "/certgen/"
 
-func (state RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request) {
+func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request) {
 	var signerIsNull bool
 	var signer ssh.Signer
 
@@ -330,6 +335,88 @@ func (state RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request)
 	log.Printf("Generated Certifcate for %s", targetUser)
 }
 
+const SECRETINJECTOR_PATH = "/admin/inject"
+
+func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.Request) {
+	// checks this is only allowed when using TLS client certs.. all other authn
+	// mechanisms are considered invalid... for now no authz mechanisms are in place ie
+	// Any user with a valid cert can use this handler
+	if r.TLS == nil {
+		writeFailureResponse(w, http.StatusInternalServerError, "")
+		log.Printf("We require TLS\n")
+		return
+	}
+
+	if len(r.TLS.VerifiedChains) < 1 {
+		writeFailureResponse(w, http.StatusForbidden, "")
+		log.Printf("Forbidden\n")
+		return
+	}
+	clientName := r.TLS.VerifiedChains[0][0].Subject.CommonName
+	log.Printf("Got connection from %s", clientName)
+	r.ParseForm()
+	sshCAPassword, ok := r.Form["ssh_ca_password"]
+	if !ok {
+		writeFailureResponse(w, http.StatusBadRequest, "Invalid Post, missing data")
+		log.Printf("missing ssh_ca_password")
+		return
+	}
+	state.Mutex.Lock()
+	defer state.Mutex.Unlock()
+
+	// Todo.. make error blocks  as goroutines
+	if state.Signer != nil {
+		writeFailureResponse(w, http.StatusConflict, "Conflict post, signer already unlocked")
+		log.Printf("Signer not null, already unlocked")
+		return
+	}
+
+	decbuf := bytes.NewBuffer(state.SSHCARawFileContent)
+
+	armorBlock, err := armor.Decode(decbuf)
+	if err != nil {
+		log.Printf("Cannot decode armored file")
+		return
+	}
+	password := []byte(sshCAPassword[0])
+	failed := false
+	prompt := func(keys []openpgp.Key, symmetric bool) ([]byte, error) {
+		// If the given passphrase isn't correct, the function will be called again, forever.
+		// This method will fail fast.
+		// Ref: https://godoc.org/golang.org/x/crypto/openpgp#PromptFunction
+		if failed {
+			return nil, errors.New("decryption failed")
+		}
+		failed = true
+		return password, nil
+	}
+	md, err := openpgp.ReadMessage(armorBlock.Body, nil, prompt, nil)
+	if err != nil {
+		log.Printf("cannot read message")
+		return
+	}
+
+	plaintextBytes, err := ioutil.ReadAll(md.UnverifiedBody)
+	if err != nil {
+		return
+	}
+
+	signer, err := ssh.ParsePrivateKey(plaintextBytes)
+	if err != nil {
+		log.Printf("Cannot parse Priave Key file")
+		//return runtimeState, err
+		return
+	}
+	state.Signer = &signer
+	log.Printf("success?")
+	// TODO... make success a goroutine
+	w.WriteHeader(200)
+	fmt.Fprintf(w, "OK\n")
+	fmt.Fprintf(w, "%+v\n", r.TLS)
+	fmt.Fprintf(w, "%s\n", sshCAPassword)
+	//fmt.Fprintf(w, "%s\n",)
+}
+
 func main() {
 	flag.Parse()
 
@@ -349,6 +436,7 @@ func main() {
 
 	// Expose the registered metrics via HTTP.
 	http.Handle("/metrics", prometheus.Handler())
+	http.HandleFunc(SECRETINJECTOR_PATH, runtimeState.secretInjectorHandler)
 	http.HandleFunc(CERTGEN_PATH, runtimeState.certGenHandler)
 
 	cfg := &tls.Config{
