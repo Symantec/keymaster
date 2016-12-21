@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/crypto/openpgp"
+	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v2"
 	//"io"
@@ -22,7 +25,7 @@ import (
 	"regexp"
 	//"strconv"
 	"strings"
-	//"sync"
+	"sync"
 	//"time"
 )
 
@@ -30,12 +33,13 @@ import (
 // While the contents of the certificaes are public, we want to
 // restrict generation to authenticated users
 type baseConfig struct {
-	Http_Address      string
-	TLS_Cert_Filename string
-	TLS_Key_Filename  string
-	UserAuth          string
-	SSH_CA_Filename   string
-	Htpasswd_Filename string
+	Http_Address       string
+	TLS_Cert_Filename  string
+	TLS_Key_Filename   string
+	UserAuth           string
+	SSH_CA_Filename    string
+	Htpasswd_Filename  string
+	Client_CA_Filename string
 }
 
 type LdapConfig struct {
@@ -49,9 +53,12 @@ type AppConfigFile struct {
 }
 
 type RuntimeState struct {
-	Config       AppConfigFile
-	Signer       ssh.Signer
-	HostIdentity string
+	Config              AppConfigFile
+	SSHCARawFileContent []byte
+	Signer              *ssh.Signer
+	ClientCAPool        *x509.CertPool
+	HostIdentity        string
+	Mutex               sync.Mutex
 }
 
 var (
@@ -63,17 +70,16 @@ func getHostIdentity() (string, error) {
 	return os.Hostname()
 }
 
-func exitsAndCanRead(fileName string, description string) error {
+func exitsAndCanRead(fileName string, description string) ([]byte, error) {
 	if _, err := os.Stat(fileName); os.IsNotExist(err) {
-		err = errors.New("mising " + description + " file")
-		return err
+		return nil, err
 	}
-	_, err := ioutil.ReadFile(fileName)
+	buffer, err := ioutil.ReadFile(fileName)
 	if err != nil {
 		err = errors.New("cannot read " + description + "file")
-		return err
+		return nil, err
 	}
-	return nil
+	return buffer, err
 }
 
 func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
@@ -94,29 +100,58 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	}
 
 	//verify config
-	sshCAFilename := runtimeState.Config.Base.SSH_CA_Filename
-	err = exitsAndCanRead(sshCAFilename, "ssh CA File")
+	_, err = exitsAndCanRead(runtimeState.Config.Base.TLS_Cert_Filename, "http cert file")
 	if err != nil {
 		return runtimeState, err
 	}
-	// load private key and make signer
-	buffer, err := ioutil.ReadFile(sshCAFilename)
+	_, err = exitsAndCanRead(runtimeState.Config.Base.TLS_Key_Filename, "http key file")
 	if err != nil {
-		return runtimeState, err
-	}
-	runtimeState.Signer, err = ssh.ParsePrivateKey(buffer)
-	if err != nil {
-		log.Printf("Cannot parse Priave Key file")
 		return runtimeState, err
 	}
 
-	err = exitsAndCanRead(runtimeState.Config.Base.TLS_Cert_Filename, "http cert file")
+	sshCAFilename := runtimeState.Config.Base.SSH_CA_Filename
+	runtimeState.SSHCARawFileContent, err = exitsAndCanRead(sshCAFilename, "ssh CA File")
 	if err != nil {
+		log.Printf("Cannot load ssh CA File")
 		return runtimeState, err
 	}
-	err = exitsAndCanRead(runtimeState.Config.Base.TLS_Key_Filename, "http key file")
-	if err != nil {
-		return runtimeState, err
+
+	if len(runtimeState.Config.Base.Client_CA_Filename) > 0 {
+		clientCAbuffer, err := exitsAndCanRead(runtimeState.Config.Base.Client_CA_Filename, "client CA file")
+		if err != nil {
+			log.Printf("Cannot load client CA File")
+			return runtimeState, err
+		}
+		runtimeState.ClientCAPool = x509.NewCertPool()
+		ok := runtimeState.ClientCAPool.AppendCertsFromPEM(clientCAbuffer)
+		if !ok {
+			err = errors.New("Cannot append any certs from Client CA file")
+			return runtimeState, err
+		}
+		if *debug || true {
+			log.Printf("client ca file loaded")
+		}
+
+	}
+	if strings.HasPrefix(string(runtimeState.SSHCARawFileContent[:]), "-----BEGIN RSA PRIVATE KEY-----") {
+		signer, err := ssh.ParsePrivateKey(runtimeState.SSHCARawFileContent)
+		if err != nil {
+			log.Printf("Cannot parse Priave Key file")
+			return runtimeState, err
+		}
+		runtimeState.Signer = &signer
+	} else {
+		if runtimeState.ClientCAPool == nil {
+			err := errors.New("Invalid ssh CA private key file and NO clientCA")
+			return runtimeState, err
+		}
+		//check that the loaded date seems like an openpgp armored file
+		fileAsString := string(runtimeState.SSHCARawFileContent[:])
+		if !strings.HasPrefix(fileAsString, "-----BEGIN PGP MESSAGE-----") {
+			err = errors.New("Have a client CA but the CA file does NOT look like and PGP file")
+			return runtimeState, err
+		}
+
 	}
 
 	runtimeState.HostIdentity, err = getHostIdentity()
@@ -202,7 +237,25 @@ func checkAuth(w http.ResponseWriter, r *http.Request, config AppConfigFile) (st
 
 const CERTGEN_PATH = "/certgen/"
 
-func (state RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request) {
+func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request) {
+	var signerIsNull bool
+	var signer ssh.Signer
+
+	// copy runtime singer if not nil
+	state.Mutex.Lock()
+	signerIsNull = (state.Signer == nil)
+	if !signerIsNull {
+		signer = *state.Signer
+	}
+	state.Mutex.Unlock()
+
+	//local sanity tests
+	if signerIsNull {
+		writeFailureResponse(w, http.StatusInternalServerError, "")
+		log.Printf("Signer not loaded")
+		return
+	}
+
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, err := checkAuth(w, r, state.Config)
 	if err != nil {
@@ -224,7 +277,7 @@ func (state RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request)
 	var cert string
 	switch r.Method {
 	case "GET":
-		cert, err = certgen.GenSSHCertFileStringFromSSSDPublicKey(targetUser, state.Signer, state.HostIdentity)
+		cert, err = certgen.GenSSHCertFileStringFromSSSDPublicKey(targetUser, signer, state.HostIdentity)
 		if err != nil {
 			http.NotFound(w, r)
 			return
@@ -264,7 +317,7 @@ func (state RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request)
 
 		}
 
-		cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, state.Signer, state.HostIdentity)
+		cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity)
 		if err != nil {
 			writeFailureResponse(w, http.StatusInternalServerError, "")
 			log.Printf("signUserPubkey Err")
@@ -280,6 +333,85 @@ func (state RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", cert)
 	log.Printf("Generated Certifcate for %s", targetUser)
+}
+
+const SECRETINJECTOR_PATH = "/admin/inject"
+
+func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.Request) {
+	// checks this is only allowed when using TLS client certs.. all other authn
+	// mechanisms are considered invalid... for now no authz mechanisms are in place ie
+	// Any user with a valid cert can use this handler
+	if r.TLS == nil {
+		writeFailureResponse(w, http.StatusInternalServerError, "")
+		log.Printf("We require TLS\n")
+		return
+	}
+
+	if len(r.TLS.VerifiedChains) < 1 {
+		writeFailureResponse(w, http.StatusForbidden, "")
+		log.Printf("Forbidden\n")
+		return
+	}
+	clientName := r.TLS.VerifiedChains[0][0].Subject.CommonName
+	log.Printf("Got connection from %s", clientName)
+	r.ParseForm()
+	sshCAPassword, ok := r.Form["ssh_ca_password"]
+	if !ok {
+		writeFailureResponse(w, http.StatusBadRequest, "Invalid Post, missing data")
+		log.Printf("missing ssh_ca_password")
+		return
+	}
+	state.Mutex.Lock()
+	defer state.Mutex.Unlock()
+
+	// TODO.. make network error blocks to goroutines
+	if state.Signer != nil {
+		writeFailureResponse(w, http.StatusConflict, "Conflict post, signer already unlocked")
+		log.Printf("Signer not null, already unlocked")
+		return
+	}
+
+	decbuf := bytes.NewBuffer(state.SSHCARawFileContent)
+
+	armorBlock, err := armor.Decode(decbuf)
+	if err != nil {
+		log.Printf("Cannot decode armored file")
+		return
+	}
+	password := []byte(sshCAPassword[0])
+	failed := false
+	prompt := func(keys []openpgp.Key, symmetric bool) ([]byte, error) {
+		// If the given passphrase isn't correct, the function will be called again, forever.
+		// This method will fail fast.
+		// Ref: https://godoc.org/golang.org/x/crypto/openpgp#PromptFunction
+		if failed {
+			return nil, errors.New("decryption failed")
+		}
+		failed = true
+		return password, nil
+	}
+	md, err := openpgp.ReadMessage(armorBlock.Body, nil, prompt, nil)
+	if err != nil {
+		log.Printf("cannot read message")
+		return
+	}
+
+	plaintextBytes, err := ioutil.ReadAll(md.UnverifiedBody)
+	if err != nil {
+		return
+	}
+
+	signer, err := ssh.ParsePrivateKey(plaintextBytes)
+	if err != nil {
+		log.Printf("Cannot parse Priave Key file")
+		return
+	}
+	state.Signer = &signer
+
+	// TODO... make success a goroutine
+	w.WriteHeader(200)
+	fmt.Fprintf(w, "OK\n")
+	//fmt.Fprintf(w, "%+v\n", r.TLS)
 }
 
 func main() {
@@ -301,10 +433,12 @@ func main() {
 
 	// Expose the registered metrics via HTTP.
 	http.Handle("/metrics", prometheus.Handler())
+	http.HandleFunc(SECRETINJECTOR_PATH, runtimeState.secretInjectorHandler)
 	http.HandleFunc(CERTGEN_PATH, runtimeState.certGenHandler)
 
 	cfg := &tls.Config{
-		ClientAuth:               tls.RequestClientCert,
+		ClientCAs:                runtimeState.ClientCAPool,
+		ClientAuth:               tls.VerifyClientCertIfGiven,
 		MinVersion:               tls.VersionTLS12,
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 		PreferServerCipherSuites: true,
