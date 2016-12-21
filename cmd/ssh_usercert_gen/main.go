@@ -364,7 +364,7 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 	state.Mutex.Lock()
 	defer state.Mutex.Unlock()
 
-	// Todo.. make error blocks  as goroutines
+	// TODO.. make network error blocks to goroutines
 	if state.Signer != nil {
 		writeFailureResponse(w, http.StatusConflict, "Conflict post, signer already unlocked")
 		log.Printf("Signer not null, already unlocked")
@@ -404,17 +404,14 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 	signer, err := ssh.ParsePrivateKey(plaintextBytes)
 	if err != nil {
 		log.Printf("Cannot parse Priave Key file")
-		//return runtimeState, err
 		return
 	}
 	state.Signer = &signer
-	log.Printf("success?")
+
 	// TODO... make success a goroutine
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "OK\n")
-	fmt.Fprintf(w, "%+v\n", r.TLS)
-	fmt.Fprintf(w, "%s\n", sshCAPassword)
-	//fmt.Fprintf(w, "%s\n",)
+	//fmt.Fprintf(w, "%+v\n", r.TLS)
 }
 
 func main() {
