@@ -196,10 +196,9 @@ func TestSuccessFullSigning(t *testing.T) {
 func checkRequestHandlerCode(req *http.Request, handlerFunc http.HandlerFunc, expectedStatus int) (*httptest.ResponseRecorder, error) {
 	rr := httptest.NewRecorder()
 	handler := http.HandlerFunc(handlerFunc)
+
 	handler.ServeHTTP(rr, req)
-	// Check the status code is what we expect.
 	if status := rr.Code; status != expectedStatus {
-		//t.Errorf
 		errStr := fmt.Sprintf("handler returned wrong status code: got %v want %v",
 			status, expectedStatus)
 		err := errors.New(errStr)
