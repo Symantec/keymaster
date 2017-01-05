@@ -179,7 +179,7 @@ func checkUserPassword(username string, password string, config AppConfigFile) (
 			log.Printf("Failed to parse %s", ldapUrl)
 			continue
 		}
-		vaild, err := authutil.CheckLDAPUserPassword(*u, bindDN, password, timeoutSecs)
+		vaild, err := authutil.CheckLDAPUserPassword(*u, bindDN, password, timeoutSecs, nil)
 		if err != nil {
 			//log.Printf("Failed to parse %s", ldapUrl)
 			continue
