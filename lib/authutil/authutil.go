@@ -2,6 +2,7 @@ package authutil
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"github.com/foomo/htpasswd"
 	"golang.org/x/crypto/bcrypt"
@@ -36,7 +37,7 @@ func CheckHtpasswdUserPassword(username string, password string, htpasswdBytes [
 
 }
 
-func CheckLDAPUserPassword(u url.URL, bindDN string, bindPassword string, timeoutSecs uint) (bool, error) {
+func CheckLDAPUserPassword(u url.URL, bindDN string, bindPassword string, timeoutSecs uint, rootCAs *x509.CertPool) (bool, error) {
 	if u.Scheme != "ldaps" {
 		err := errors.New("Invalid ldap scheme (we only support ldaps")
 		return false, err
@@ -52,7 +53,8 @@ func CheckLDAPUserPassword(u url.URL, bindDN string, bindPassword string, timeou
 
 	timeout := time.Duration(time.Duration(timeoutSecs) * time.Second)
 	start := time.Now()
-	tlsConn, err := tls.DialWithDialer(&net.Dialer{Timeout: timeout}, "tcp", hostnamePort, &tls.Config{ServerName: server})
+	tlsConn, err := tls.DialWithDialer(&net.Dialer{Timeout: timeout}, "tcp", hostnamePort,
+		&tls.Config{ServerName: server, RootCAs: rootCAs})
 	if err != nil {
 		errorTime := time.Since(start).Seconds() * 1000
 		log.Printf("connction failure for:%s (%s)(time(ms)=%v)", server, err.Error(), errorTime)
