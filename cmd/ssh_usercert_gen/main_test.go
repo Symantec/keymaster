@@ -211,16 +211,13 @@ func TestInjectingSecret(t *testing.T) {
 	// We create a ResponseRecorder (which satisfies http.ResponseWriter) to record the response.
 	rr := httptest.NewRecorder()
 	handler := http.HandlerFunc(state.certGenHandler)
-
-	// Our handlers satisfy http.Handler, so we can call their ServeHTTP method
-	// directly and pass in our Request and ResponseRecorder.
 	handler.ServeHTTP(rr, certGenReq)
-
 	// Check the status code is what we expect.
 	if status := rr.Code; status != http.StatusInternalServerError {
 		t.Errorf("handler returned wrong status code: got %v want %v",
 			status, http.StatusInternalServerError)
 	}
+
 	// Now we make the inject Request
 	injectSecretRequest, err := http.NewRequest("POST", "/admin/inject", nil)
 	if err != nil {
@@ -229,12 +226,11 @@ func TestInjectingSecret(t *testing.T) {
 	var connectionState tls.ConnectionState
 	injectSecretRequest.TLS = &connectionState
 
-	r2 := httptest.NewRecorder()
+	rr2 := httptest.NewRecorder()
 	injectHandler := http.HandlerFunc(state.secretInjectorHandler)
-
-	injectHandler.ServeHTTP(r2, injectSecretRequest)
+	injectHandler.ServeHTTP(rr2, injectSecretRequest)
 	// Check the status code is what we expect.
-	if status := r2.Code; status != http.StatusForbidden {
+	if status := rr2.Code; status != http.StatusForbidden {
 		t.Errorf("handler returned wrong status code: got %v want %v",
 			status, http.StatusForbidden)
 	}
@@ -250,28 +246,24 @@ func TestInjectingSecret(t *testing.T) {
 	q.Add("ssh_ca_password", "password")
 	injectSecretRequest.URL.RawQuery = q.Encode()
 
-	r3 := httptest.NewRecorder()
+	rr3 := httptest.NewRecorder()
 	injectHandler2 := http.HandlerFunc(state.secretInjectorHandler)
-	injectHandler2.ServeHTTP(r3, injectSecretRequest)
+	injectHandler2.ServeHTTP(rr3, injectSecretRequest)
 	// Check the status code is what we expect.
-	if status := r3.Code; status != http.StatusOK {
+	if status := rr3.Code; status != http.StatusOK {
 		t.Errorf("handler returned wrong status code: got %v want %v",
 			status, http.StatusOK)
 	}
+
 	if state.Signer == nil {
 		t.Errorf("The signer should now be loaded")
 	}
-	// Now we try to get a valid response
-	// We create a ResponseRecorder (which satisfies http.ResponseWriter) to record the response.
-	rr3 := httptest.NewRecorder()
+
+	rr4 := httptest.NewRecorder()
 	handler3 := http.HandlerFunc(state.certGenHandler)
-
-	// Our handlers satisfy http.Handler, so we can call their ServeHTTP method
-	// directly and pass in our Request and ResponseRecorder.
-	handler3.ServeHTTP(rr3, certGenReq)
-
+	handler3.ServeHTTP(rr4, certGenReq)
 	// Check the status code is what we expect.
-	if status := rr3.Code; status != http.StatusOK {
+	if status := rr4.Code; status != http.StatusOK {
 		t.Errorf("handler returned wrong status code: got %v want %v",
 			status, http.StatusOK)
 	}
