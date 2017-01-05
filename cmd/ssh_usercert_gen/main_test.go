@@ -239,25 +239,20 @@ func TestInjectingSecret(t *testing.T) {
 			status, http.StatusForbidden)
 	}
 
-	// now lets pretend that a tls connection exists and try again
+	// now lets pretend that a tls connection with valid certs exists and try again
 	var subjectCert x509.Certificate
 	subjectCert.Subject.CommonName = "foo"
 	peerCertList := []*x509.Certificate{&subjectCert}
-	//peerCertList = append(peerCert, sub
 	connectionState.VerifiedChains = append(connectionState.VerifiedChains, peerCertList)
-	//connectionState.VerifiedChains[0][0] = &subjectCert
-	injectSecretRequest2, err := http.NewRequest("POST", "/admin/inject", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	injectSecretRequest2.TLS = &connectionState
-	q := injectSecretRequest2.URL.Query()
+	injectSecretRequest.TLS = &connectionState
+
+	q := injectSecretRequest.URL.Query()
 	q.Add("ssh_ca_password", "password")
-	injectSecretRequest2.URL.RawQuery = q.Encode()
+	injectSecretRequest.URL.RawQuery = q.Encode()
 
 	r3 := httptest.NewRecorder()
 	injectHandler2 := http.HandlerFunc(state.secretInjectorHandler)
-	injectHandler2.ServeHTTP(r3, injectSecretRequest2)
+	injectHandler2.ServeHTTP(r3, injectSecretRequest)
 	// Check the status code is what we expect.
 	if status := r3.Code; status != http.StatusOK {
 		t.Errorf("handler returned wrong status code: got %v want %v",
