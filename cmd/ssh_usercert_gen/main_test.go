@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	//"encoding/base64"
+	"errors"
 	"fmt"
 	"golang.org/x/crypto/ssh"
 	"io"
@@ -44,10 +47,102 @@ RnmMXhcdJ7cCPL6LJpN82h62XrLVwl7zEBXnVfhSsXil1yYHHI5sGXbUFRzaNXNl
 KgeanQGV/sG+nd/67uvHhZbifHVDY/ifsNBnYrlpu6q3p+zhQydfkLE=
 -----END RSA PRIVATE KEY-----`
 
+// same as above but symmtrically gpg encrypted with password
+// "password"
+const encryptedTestSignerPrivateKey = `-----BEGIN PGP MESSAGE-----
+Version: GnuPG v2.0.22 (GNU/Linux)
+
+jA0EAwMCcbfT9PQ87i/ZyeqXE353E4hV/gIydHlfgw7G7ybSniVuLGR8C9WpBx0o
+znCGTj4qL2HKgw3wHsahK3LtMioiVmRwnzcfOW+RJxpPZL04NIb+dlkIOodZ5ci2
+vqkhe23TdTHTz4XhScWe+0K+LxXeNWn5FjuApMxGnQpCbHtxnd5hTiMTTRKualZG
+CPDnqy6ngXkFe5bu5nP6jsqTiWe/qZceng6MYKGHwZRZrBT1oZoL0JYXiBFVz/31
+QiZA+24eTRiWcru/1d3HTc34NnHm9MTCH855Y9WtSsQq7y9Lu34NLqEuxdvhYtN9
+a6jn4WASuXQgiA7kiOfH3F/9wVlnmXCgi9pvrSsiIhe3ve7NwhRva5fwj4c9BbiD
+ZhwyvUC9743owKG6djk06k9cCVooIJnRwmtILKmizRqoJifepkyoJyNtKbJO3MMA
+UV2D6MTqH6p29Jdud6VzmVvC6ka3GbHmrsV/I7axqwRV9cA8HwOl+i/7ZqX+ehKG
+3DAySJwE3v5NrV2XRk5DUhFrfgHIziFJaa6JOO2M4wBVn9n+hhX0a3czGdM1dnA/
+5ncVjJ4M+n4KmEkHAxGrIfM3+egv4arClBo5Y91ltwZLdmh5iKPOUN4x9hpA/ICy
+2qSW80qVR5KNgW8vn4CW8MSjTHPMa6Upds42lKUJDYeXkEqGCpvt9izdEjTnnCrq
+mRJoGO1N9Oz4ih8JRXaAVCbNbUteZmYREfGfbd8L01Zj6JQCm40G2i/5b0C79yXA
+F1RtTaLSHg1guL243SMfTc+83FQ3epAJnJNaYLVKzCrIfd1Ez+bX9N99Zcik64Rx
+kIGLOm1ys/bYerONpMSvRDQYYp6uHKUL7Fp1WajCVGR5L0GyHvirvA73R5mMdS/Q
+8tWelKu2V6bAhSKElSHHnmToWTiJS98V/hW8RIT9kkqSdecX87UisH7WOZR/JIql
+uo1ezuSO0L6gKLKUCzIqK49ppbVXGHkLYP5/a4qBwGU8v89SihLoA4obQuN/eV0n
+VaPC3FXN2P1OM4q981tDxDcrDtZ31Z3uz+N8CZPaalQJLzCY2OKUsvembQuFD2l6
+S9f6IWGZXhYq8BRw0+VEcnAf8oG0AWlAycAAkAaLxOj53dJLP8sK9q0M+M+yimCB
+72hZg4HFgVzXsDcmYtkjlvOiOrXBUDXwzLbEDZuzCYposdWnnam2TMzj6d+psOvJ
+WYyl70ZLZUs4RHIq4MB9fZyd1Oo3S/IvVbbfyaFVmvGIaGdZJ1pYFYK2USpfhrKj
+ucfnXtWr9UHnSEiof9dLAtwYo2jLvs58+142gzJH7L3DYpI9kmQtf0i+gEyZ+fgN
+3CRFCAP8ancFcgFeCXiFYUlPZz0pnEK8jSP7OVhEEICWwHSlD8qauT35xPeL2zf3
+HWHTf9Fm+hd9AMWz6izgUbFIw4iLVmvp4FYc0C8SWUyUBasU2DKsjJH8Q1/Vy78h
+hf80/+FrB8U3ETJV/T2dGFuFwOmSeaMNGOlK2OBM+Ch4lE1xiWPcp/yXzhLU/J92
+vWYfnWNomDDFGad4eR8JPAT7sHJ20t8ihGMOKkfQDHt64F4pE0a3h35Tw9xxZpL0
+bNcwEKLlQzbXItC0sqiQrgDNZZI8ZDEmL9FK42IKhoH7cL2siTDKDU0KmxJcbSKJ
+B6TBdSkIkx6wGwrmAgtQ7D3A1PdFVDOdgQ72qWXzcDBAa5+ev9XefLdfmcbe726o
+H75JiRm3pbOn5cE5lux680VJLITirQRFwR1/8lYfTLBisX44VIdmFRcFQDXrRqBU
+WUGURkRA8g==
+=ym0B
+-----END PGP MESSAGE-----`
+
 const testUserPublicKey = `ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDI09fpMWTeYw7/EO/+FywS/sghNXdTeTWxX7K2N17owsQJX8s76LGVIdVeYrWg4QSmYlpf6EVSCpx/fbCazrsG7FJVTRhExzFbRT9asmvzS+viXSbSvnavhOz/paihyaMsVPKVv24vF6MOs8DgfwehcKCPjKoIPnlYXZaZcy05KOcZmsvYu2kNOP6sSjDFF+ru+T+DLp3DUGw+MPr45IuR7iDnhXhklqyUn0d7ou0rOHXz9GdHIzpr+DAoQGmTDkpbQEo067Rjfu406gYL8pVFD1F7asCjU39llQCcU/HGyPym5fa29Nubw0dzZZXGZUVFalxo02YMM7P9I6ZjeCsv camilo_viecco1@mon-sre-dev.ash2.symcpe.net`
 
 // This DB has user 'username' with password 'password'
 const userdbContent = `username:$2y$05$D4qQmZbWYqfgtGtez2EGdOkcNne40EdEznOqMvZegQypT8Jdz42Jy`
+
+func createBasicAuthRequstWithKeyBody(method, urlStr, username, password string) (*http.Request, error) {
+	//create attachment....
+	bodyBuf := &bytes.Buffer{}
+	bodyWriter := multipart.NewWriter(bodyBuf)
+
+	//
+	fileWriter, err := bodyWriter.CreateFormFile("pubkeyfile", "somefilename.pub")
+	if err != nil {
+		fmt.Println("error writing to buffer")
+		//t.Fatal(err)
+		return nil, err
+	}
+	fh := strings.NewReader(testUserPublicKey)
+
+	//iocopy
+	_, err = io.Copy(fileWriter, fh)
+	if err != nil {
+		//t.Fatal(err)
+		return nil, err
+	}
+
+	contentType := bodyWriter.FormDataContentType()
+	bodyWriter.Close()
+
+	// Create a request to pass to our handler. We don't have any query parameters for now, so we'll
+	// pass 'nil' as the third parameter.
+	req, err := http.NewRequest(method, urlStr, bodyBuf)
+	if err != nil {
+		//t.Fatal(err)
+		return nil, err
+	}
+	req.SetBasicAuth(username, password)
+	req.Header.Set("Content-Type", contentType)
+
+	return req, nil
+}
+
+func setupPasswdFile() (f *os.File, err error) {
+	tmpfile, err := ioutil.TempFile("", "userdb_test")
+	if err != nil {
+		return nil, err
+	}
+	//from this moment on.. we need to remove the tmpfile only on error conditions
+
+	if _, err := tmpfile.Write([]byte(userdbContent)); err != nil {
+		os.Remove(tmpfile.Name())
+		return nil, err
+	}
+	if err := tmpfile.Close(); err != nil {
+		os.Remove(tmpfile.Name())
+		return nil, err
+	}
+	return tmpfile, nil
+}
 
 func TestSuccessFullSigning(t *testing.T) {
 	var state RuntimeState
@@ -59,52 +154,20 @@ func TestSuccessFullSigning(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.Signer = &signer
-	// make tmpfile with db content
-	tmpfile, err := ioutil.TempFile("", "userdb_test")
+
+	passwdFile, err := setupPasswdFile()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	defer os.Remove(tmpfile.Name()) // clean up
+	defer os.Remove(passwdFile.Name()) // clean up
+	state.Config.Base.Htpasswd_Filename = passwdFile.Name()
 
-	if _, err := tmpfile.Write([]byte(userdbContent)); err != nil {
-		t.Fatal(err)
-	}
-	if err := tmpfile.Close(); err != nil {
-		t.Fatal(err)
-	}
-	state.Config.Base.Htpasswd_Filename = tmpfile.Name()
-
-	//create attachment....
-	bodyBuf := &bytes.Buffer{}
-	bodyWriter := multipart.NewWriter(bodyBuf)
-
-	//
-	fileWriter, err := bodyWriter.CreateFormFile("pubkeyfile", "somefilename.pub")
-	if err != nil {
-		fmt.Println("error writing to buffer")
-		t.Fatal(err)
-	}
-	fh := strings.NewReader(testUserPublicKey)
-
-	//iocopy
-	_, err = io.Copy(fileWriter, fh)
+	// Get request
+	req, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username", "username", "password")
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	//log.Printf("%v", bodyBuf)
-	contentType := bodyWriter.FormDataContentType()
-	bodyWriter.Close()
-
-	// Create a request to pass to our handler. We don't have any query parameters for now, so we'll
-	// pass 'nil' as the third parameter.
-	req, err := http.NewRequest("POST", "/certgen/username", bodyBuf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.SetBasicAuth("username", "password")
-	req.Header.Set("Content-Type", contentType)
 
 	// We create a ResponseRecorder (which satisfies http.ResponseWriter) to record the response.
 	rr := httptest.NewRecorder()
@@ -128,4 +191,77 @@ func TestSuccessFullSigning(t *testing.T) {
 		}
 
 	*/
+}
+
+func checkRequestHandlerCode(req *http.Request, handlerFunc http.HandlerFunc, expectedStatus int) (*httptest.ResponseRecorder, error) {
+	rr := httptest.NewRecorder()
+	handler := http.HandlerFunc(handlerFunc)
+
+	handler.ServeHTTP(rr, req)
+	if status := rr.Code; status != expectedStatus {
+		errStr := fmt.Sprintf("handler returned wrong status code: got %v want %v",
+			status, expectedStatus)
+		err := errors.New(errStr)
+		return nil, err
+	}
+	return rr, nil
+}
+
+func TestInjectingSecret(t *testing.T) {
+	var state RuntimeState
+	passwdFile, err := setupPasswdFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.SSHCARawFileContent = []byte(encryptedTestSignerPrivateKey)
+
+	defer os.Remove(passwdFile.Name()) // clean up
+	state.Config.Base.Htpasswd_Filename = passwdFile.Name()
+
+	// Make certgen Request
+	certGenReq, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username", "username", "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = checkRequestHandlerCode(certGenReq, state.certGenHandler, http.StatusInternalServerError)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Now we make the inject Request
+	injectSecretRequest, err := http.NewRequest("POST", "/admin/inject", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var connectionState tls.ConnectionState
+	injectSecretRequest.TLS = &connectionState
+
+	_, err = checkRequestHandlerCode(injectSecretRequest, state.secretInjectorHandler, http.StatusForbidden)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// now lets pretend that a tls connection with valid certs exists and try again
+	var subjectCert x509.Certificate
+	subjectCert.Subject.CommonName = "foo"
+	peerCertList := []*x509.Certificate{&subjectCert}
+	connectionState.VerifiedChains = append(connectionState.VerifiedChains, peerCertList)
+	injectSecretRequest.TLS = &connectionState
+
+	q := injectSecretRequest.URL.Query()
+	q.Add("ssh_ca_password", "password")
+	injectSecretRequest.URL.RawQuery = q.Encode()
+
+	_, err = checkRequestHandlerCode(injectSecretRequest, state.secretInjectorHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if state.Signer == nil {
+		t.Errorf("The signer should now be loaded")
+	}
+	_, err = checkRequestHandlerCode(certGenReq, state.certGenHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
 }
