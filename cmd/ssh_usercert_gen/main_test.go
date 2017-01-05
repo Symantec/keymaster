@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	//"encoding/base64"
+	"errors"
 	"fmt"
 	"golang.org/x/crypto/ssh"
 	"io"
@@ -192,6 +193,21 @@ func TestSuccessFullSigning(t *testing.T) {
 	*/
 }
 
+func checkRequestHandlerCode(req *http.Request, handlerFunc http.HandlerFunc, expectedStatus int) (*httptest.ResponseRecorder, error) {
+	rr := httptest.NewRecorder()
+	handler := http.HandlerFunc(handlerFunc)
+	handler.ServeHTTP(rr, req)
+	// Check the status code is what we expect.
+	if status := rr.Code; status != expectedStatus {
+		//t.Errorf
+		errStr := fmt.Sprintf("handler returned wrong status code: got %v want %v",
+			status, expectedStatus)
+		err := errors.New(errStr)
+		return nil, err
+	}
+	return rr, nil
+}
+
 func TestInjectingSecret(t *testing.T) {
 	var state RuntimeState
 	passwdFile, err := setupPasswdFile()
@@ -208,14 +224,9 @@ func TestInjectingSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// We create a ResponseRecorder (which satisfies http.ResponseWriter) to record the response.
-	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(state.certGenHandler)
-	handler.ServeHTTP(rr, certGenReq)
-	// Check the status code is what we expect.
-	if status := rr.Code; status != http.StatusInternalServerError {
-		t.Errorf("handler returned wrong status code: got %v want %v",
-			status, http.StatusInternalServerError)
+	_, err = checkRequestHandlerCode(certGenReq, state.certGenHandler, http.StatusInternalServerError)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	// Now we make the inject Request
@@ -226,13 +237,9 @@ func TestInjectingSecret(t *testing.T) {
 	var connectionState tls.ConnectionState
 	injectSecretRequest.TLS = &connectionState
 
-	rr2 := httptest.NewRecorder()
-	injectHandler := http.HandlerFunc(state.secretInjectorHandler)
-	injectHandler.ServeHTTP(rr2, injectSecretRequest)
-	// Check the status code is what we expect.
-	if status := rr2.Code; status != http.StatusForbidden {
-		t.Errorf("handler returned wrong status code: got %v want %v",
-			status, http.StatusForbidden)
+	_, err = checkRequestHandlerCode(injectSecretRequest, state.secretInjectorHandler, http.StatusForbidden)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	// now lets pretend that a tls connection with valid certs exists and try again
@@ -246,26 +253,16 @@ func TestInjectingSecret(t *testing.T) {
 	q.Add("ssh_ca_password", "password")
 	injectSecretRequest.URL.RawQuery = q.Encode()
 
-	rr3 := httptest.NewRecorder()
-	injectHandler2 := http.HandlerFunc(state.secretInjectorHandler)
-	injectHandler2.ServeHTTP(rr3, injectSecretRequest)
-	// Check the status code is what we expect.
-	if status := rr3.Code; status != http.StatusOK {
-		t.Errorf("handler returned wrong status code: got %v want %v",
-			status, http.StatusOK)
+	_, err = checkRequestHandlerCode(injectSecretRequest, state.secretInjectorHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	if state.Signer == nil {
 		t.Errorf("The signer should now be loaded")
 	}
-
-	rr4 := httptest.NewRecorder()
-	handler3 := http.HandlerFunc(state.certGenHandler)
-	handler3.ServeHTTP(rr4, certGenReq)
-	// Check the status code is what we expect.
-	if status := rr4.Code; status != http.StatusOK {
-		t.Errorf("handler returned wrong status code: got %v want %v",
-			status, http.StatusOK)
+	_, err = checkRequestHandlerCode(certGenReq, state.certGenHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
 	}
-
 }
