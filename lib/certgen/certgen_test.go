@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"golang.org/x/crypto/ssh"
 	//"strings"
+	"os"
 	"os/user"
 	"testing"
 )
@@ -87,6 +88,33 @@ bxrMjPsOnAt3Tq7G0tlACxBOBhf+dcDW7D8/8EE6klKr2OrrT2Yag6k=
 */
 const testUserPublicKey = `ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDI09fpMWTeYw7/EO/+FywS/sghNXdTeTWxX7K2N17owsQJX8s76LGVIdVeYrWg4QSmYlpf6EVSCpx/fbCazrsG7FJVTRhExzFbRT9asmvzS+viXSbSvnavhOz/paihyaMsVPKVv24vF6MOs8DgfwehcKCPjKoIPnlYXZaZcy05KOcZmsvYu2kNOP6sSjDFF+ru+T+DLp3DUGw+MPr45IuR7iDnhXhklqyUn0d7ou0rOHXz9GdHIzpr+DAoQGmTDkpbQEo067Rjfu406gYL8pVFD1F7asCjU39llQCcU/HGyPym5fa29Nubw0dzZZXGZUVFalxo02YMM7P9I6ZjeCsv camilo_viecco1@mon-sre-dev.ash2.symcpe.net`
 
+// SSSD tests do require some setup... in this case we do some checks to ensure
+// that actually trying to even do this makes sense
+func canDoSSSDTests() (string, error) {
+
+	//check for sssd binary
+	if _, err := os.Stat("/usr/bin/sss_ssh_authorizedkeys"); os.IsNotExist(err) {
+		return "", err
+	}
+
+	// check for a username in our internal test box
+	usr, err := user.Current()
+	if err != nil {
+		return "", err
+	}
+	username := usr.Username
+	target := "9Z5PHgLIlUMUnu0MUv2p+RuJCwNXG9Lg/3tXpOau7UM="
+	h := sha256.New()
+	h.Write([]byte(username))
+	b := h.Sum(nil)
+	targetUser := base64.StdEncoding.EncodeToString(b)
+	//t.Logf("targetUser ='%s'", targetUser)
+	if targetUser != target || usr.Username != usr.Name {
+		return "", nil
+	}
+	return username, nil
+}
+
 // func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer, host_identity string) (string, error) {
 func TestGenSSHCertFileStringGenerateSuccess(t *testing.T) {
 	username := "foo"
@@ -102,20 +130,25 @@ func TestGenSSHCertFileStringGenerateSuccess(t *testing.T) {
 	t.Logf("got '%s'", c)
 }
 
-func TestGetUserPubKeyFromSSSD(t *testing.T) {
-	usr, err := user.Current()
+func TestGenSSHCertFileStringGenerateFailBadPublicKey(t *testing.T) {
+	username := "foo"
+	hostIdentity := "bar"
+	goodSigner, err := ssh.ParsePrivateKey([]byte(testSignerPrivateKey))
 	if err != nil {
 		t.Fatal(err)
 	}
-	username := usr.Username
-	target := "9Z5PHgLIlUMUnu0MUv2p+RuJCwNXG9Lg/3tXpOau7UM="
-	h := sha256.New()
-	h.Write([]byte(username))
-	b := h.Sum(nil)
-	targetUser := base64.StdEncoding.EncodeToString(b)
-	t.Logf("'%s'", targetUser)
-	//username := usr.Username
-	if username != target || usr.Name != usr.Name {
+	_, err = GenSSHCertFileString(username, "ThisIsNOTAPublicKey", goodSigner, hostIdentity)
+	if err == nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGetUserPubKeyFromSSSD(t *testing.T) {
+	username, err := canDoSSSDTests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(username) < 1 {
 		t.SkipNow()
 	}
 	pk, err := GetUserPubKeyFromSSSD(username)
@@ -123,5 +156,58 @@ func TestGetUserPubKeyFromSSSD(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("got ''%s", pk)
+}
 
+func TestGetUserPubKeyFromSSSDFailUserWithNoSSSDPublicKey(t *testing.T) {
+	username, err := canDoSSSDTests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(username) < 1 {
+		t.SkipNow()
+	}
+	_, err = GetUserPubKeyFromSSSD("THISISANINVALIDUSER-FOOBARBAZ")
+	if err == nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGenSSHCertFileStringFromSSSDPublicKeySuccess(t *testing.T) {
+	username, err := canDoSSSDTests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(username) < 1 {
+		t.SkipNow()
+	}
+	hostIdentity := "bar"
+	goodSigner, err := ssh.ParsePrivateKey([]byte(testSignerPrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = GenSSHCertFileStringFromSSSDPublicKey(username, goodSigner, hostIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGenSSHCertFileStringFromSSSDPublicKeyFailUserWithNoSSSDPublicKey(t *testing.T) {
+	username, err := canDoSSSDTests()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(username) < 1 {
+		t.SkipNow()
+	}
+	hostIdentity := "bar"
+	goodSigner, err := ssh.ParsePrivateKey([]byte(testSignerPrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = GenSSHCertFileStringFromSSSDPublicKey("THISISANINVALIDUSER-FOOBARBAZ", goodSigner, hostIdentity)
+	if err == nil {
+		t.Fatal(err)
+	}
 }
