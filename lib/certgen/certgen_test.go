@@ -94,7 +94,7 @@ func canDoSSSDTests() (string, error) {
 
 	//check for sssd binary
 	if _, err := os.Stat("/usr/bin/sss_ssh_authorizedkeys"); os.IsNotExist(err) {
-		return "", err
+		return "", nil
 	}
 
 	// check for a username in our internal test box
