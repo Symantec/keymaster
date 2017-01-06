@@ -112,44 +112,9 @@ func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
 	return config, nil
 }
 
-func main() {
-	flag.Parse()
-
-	config, err := loadVerifyConfigFile(*configFilename)
-	if err != nil {
-		panic(err)
-	}
-
-	usr, err := user.Current()
-	if err != nil {
-		log.Printf("cannot get current user info")
-		log.Fatal(err)
-	}
-	userName := usr.Username
-
-	fmt.Printf("Password for %s: ", userName)
-	password, err := gopass.GetPasswd()
-	if err != nil {
-		log.Fatal(err)
-		// Handle gopass.ErrInterrupted or getch() read error
-	}
-	// Do something with pass
-
-	homeDir, err := getUserHomeDir()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	//sshPath := homeDir + "/.ssh/"
-	privateKeyPath := filepath.Join(homeDir, "/.ssh/", FILE_PREFIX)
-	pubKeyFilename, err := genKeyPair(privateKeyPath)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	var cert []byte
+func getCertFromTargetUrls(pubKeyFilename, userName string, password []byte, targetUrls []string) (cert []byte, err error) {
 	success := false
-	for _, baseUrl := range strings.Split(config.Base.Gen_Cert_URLS, ",") {
+	for _, baseUrl := range targetUrls {
 		targetUrl := baseUrl + userName
 		log.Printf("attempting to target '%s'", targetUrl)
 		// parts from  https://astaxie.gitbooks.io/build-web-application-with-golang/content/en/04.5.html
@@ -214,9 +179,58 @@ func main() {
 		// now save the file
 		success = true
 		break
+
 	}
 	if !success {
-		log.Fatal("failed to get creds")
+		log.Printf("failed to get creds")
+		//err := errors.New("Failed to get creds")
+		return nil, nil
+	}
+
+	return cert, nil
+}
+
+func main() {
+	flag.Parse()
+
+	config, err := loadVerifyConfigFile(*configFilename)
+	if err != nil {
+		panic(err)
+	}
+
+	usr, err := user.Current()
+	if err != nil {
+		log.Printf("cannot get current user info")
+		log.Fatal(err)
+	}
+	userName := usr.Username
+
+	fmt.Printf("Password for %s: ", userName)
+	password, err := gopass.GetPasswd()
+	if err != nil {
+		log.Fatal(err)
+		// Handle gopass.ErrInterrupted or getch() read error
+	}
+	// Do something with pass
+
+	homeDir, err := getUserHomeDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	//sshPath := homeDir + "/.ssh/"
+	privateKeyPath := filepath.Join(homeDir, "/.ssh/", FILE_PREFIX)
+	pubKeyFilename, err := genKeyPair(privateKeyPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	cert, err := getCertFromTargetUrls(pubKeyFilename, userName, password, strings.Split(config.Base.Gen_Cert_URLS, ","))
+	if err != nil {
+		log.Fatal(err)
+	}
+	if cert == nil {
+		err := errors.New("Could not get cert from any url")
+		log.Fatal(err)
 	}
 	log.Printf("Success")
 	// now we write the cert file...
@@ -225,9 +239,9 @@ func main() {
 	//TODO: change deletion for atomic rename
 	os.Remove(certPath)
 	err = ioutil.WriteFile(certPath, cert, 0644)
-	if !success {
-		log.Fatal("failed to get creds")
-	}
+	//if !success {
+	//	log.Fatal("failed to get creds")
+	//}
 	// post to the signers
 
 }
