@@ -41,13 +41,8 @@ var (
 	configFilename = flag.String("config", "config.yml", "The filename of the configuration")
 )
 
-func getUserHomeDir() (string, error) {
+func getUserHomeDir(usr *user.User) (string, error) {
 	// TODO: verify on Windows... see: http://stackoverflow.com/questions/7922270/obtain-users-home-directory
-	usr, err := user.Current()
-	if err != nil {
-		log.Printf("cannot get current user info")
-		return "", err
-	}
 	return usr.HomeDir, nil
 }
 
@@ -190,6 +185,23 @@ func getCertFromTargetUrls(pubKeyFilename, userName string, password []byte, tar
 	return cert, nil
 }
 
+func getUserInfoAndCreds() (usr *user.User, password []byte, err error) {
+	usr, err = user.Current()
+	if err != nil {
+		log.Printf("cannot get current user info")
+		return nil, nil, err
+	}
+	userName := usr.Username
+
+	fmt.Printf("Password for %s: ", userName)
+	password, err = gopass.GetPasswd()
+	if err != nil {
+		return nil, nil, err
+		// Handle gopass.ErrInterrupted or getch() read error
+	}
+	return usr, password, nil
+}
+
 func main() {
 	flag.Parse()
 
@@ -197,23 +209,13 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	usr, err := user.Current()
+	usr, password, err := getUserInfoAndCreds()
 	if err != nil {
-		log.Printf("cannot get current user info")
 		log.Fatal(err)
 	}
 	userName := usr.Username
 
-	fmt.Printf("Password for %s: ", userName)
-	password, err := gopass.GetPasswd()
-	if err != nil {
-		log.Fatal(err)
-		// Handle gopass.ErrInterrupted or getch() read error
-	}
-	// Do something with pass
-
-	homeDir, err := getUserHomeDir()
+	homeDir, err := getUserHomeDir(usr)
 	if err != nil {
 		log.Fatal(err)
 	}
