@@ -103,7 +103,13 @@ func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
 		err = errors.New("Cannot parse config file")
 		return config, err
 	}
+
 	// TODO: actually have to verify the contents
+	if len(config.Base.Gen_Cert_URLS) < 1 {
+		err = errors.New("Invalid Config file... no place get the certs")
+		return config, err
+	}
+
 	return config, nil
 }
 
