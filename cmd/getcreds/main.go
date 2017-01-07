@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -104,16 +105,16 @@ func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
 		return config, err
 	}
 
-	// TODO: actually have to verify the contents
 	if len(config.Base.Gen_Cert_URLS) < 1 {
 		err = errors.New("Invalid Config file... no place get the certs")
 		return config, err
 	}
+	// TODO: ensure all enpoints are https urls
 
 	return config, nil
 }
 
-func getCertFromTargetUrls(pubKeyFilename, userName string, password []byte, targetUrls []string) (cert []byte, err error) {
+func getCertFromTargetUrls(pubKeyFilename, userName string, password []byte, targetUrls []string, rootCAs *x509.CertPool) (cert []byte, err error) {
 	success := false
 	for _, baseUrl := range targetUrls {
 		targetUrl := baseUrl + userName
@@ -147,7 +148,11 @@ func getCertFromTargetUrls(pubKeyFilename, userName string, password []byte, tar
 		contentType := bodyWriter.FormDataContentType()
 		bodyWriter.Close()
 
-		client := &http.Client{Timeout: time.Duration(5) * time.Second}
+		tlsConfig := &tls.Config{RootCAs: rootCAs}
+		tr := &http.Transport{
+			TLSClientConfig: tlsConfig,
+		}
+		client := &http.Client{Transport: tr, Timeout: time.Duration(5) * time.Second}
 		req, err := http.NewRequest("POST", targetUrl, bodyBuf)
 		if err != nil {
 			log.Fatal(err)
@@ -232,7 +237,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	cert, err := getCertFromTargetUrls(pubKeyFilename, userName, password, strings.Split(config.Base.Gen_Cert_URLS, ","))
+	cert, err := getCertFromTargetUrls(pubKeyFilename, userName, password, strings.Split(config.Base.Gen_Cert_URLS, ","), nil)
 	if err != nil {
 		log.Fatal(err)
 	}
