@@ -40,6 +40,7 @@ type AppConfigFile struct {
 
 var (
 	configFilename = flag.String("config", "config.yml", "The filename of the configuration")
+	debug          = flag.Bool("debug", false, "Enable debug messages to console")
 )
 
 func getUserHomeDir(usr *user.User) (string, error) {
@@ -114,53 +115,65 @@ func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
 	return config, nil
 }
 
+func buildGetCredRequestBasicAuth(pubKeyFilename, userName string, password []byte, targetUrl string) (*http.Request, error) {
+	// parts from  https://astaxie.gitbooks.io/build-web-application-with-golang/content/en/04.5.html
+	bodyBuf := &bytes.Buffer{}
+	bodyWriter := multipart.NewWriter(bodyBuf)
+
+	fileWriter, err := bodyWriter.CreateFormFile("pubkeyfile", pubKeyFilename)
+	if err != nil {
+		return nil, err
+	}
+	// open file handle
+	fh, err := os.Open(pubKeyFilename)
+	if err != nil {
+		//Log.Printf("error opening file")
+		//return err
+		//log.Fatal(err)
+		return nil, err
+	}
+
+	//iocopy
+	_, err = io.Copy(fileWriter, fh)
+	if err != nil {
+		log.Fatal(err)
+		return nil, err
+	}
+	if *debug {
+		log.Printf("%v", bodyBuf)
+	}
+
+	contentType := bodyWriter.FormDataContentType()
+	bodyWriter.Close()
+
+	req, err := http.NewRequest("POST", targetUrl, bodyBuf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", contentType)
+
+	req.SetBasicAuth(userName, string(password[:]))
+	return req, nil
+}
+
 func getCertFromTargetUrls(pubKeyFilename, userName string, password []byte, targetUrls []string, rootCAs *x509.CertPool) (cert []byte, err error) {
 	success := false
 	for _, baseUrl := range targetUrls {
 		targetUrl := baseUrl + userName
 		log.Printf("attempting to target '%s'", targetUrl)
-		// parts from  https://astaxie.gitbooks.io/build-web-application-with-golang/content/en/04.5.html
-		bodyBuf := &bytes.Buffer{}
-		bodyWriter := multipart.NewWriter(bodyBuf)
-
-		//
-		fileWriter, err := bodyWriter.CreateFormFile("pubkeyfile", pubKeyFilename)
-		if err != nil {
-			fmt.Println("error writing to buffer")
-			log.Fatal(err)
-		}
-
-		// open file handle
-		fh, err := os.Open(pubKeyFilename)
-		if err != nil {
-			fmt.Println("error opening file")
-			//return err
-			log.Fatal(err)
-		}
-
-		//iocopy
-		_, err = io.Copy(fileWriter, fh)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		log.Printf("%v", bodyBuf)
-		contentType := bodyWriter.FormDataContentType()
-		bodyWriter.Close()
-
-		tlsConfig := &tls.Config{RootCAs: rootCAs}
+		tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
 		tr := &http.Transport{
 			TLSClientConfig: tlsConfig,
 		}
 		client := &http.Client{Transport: tr, Timeout: time.Duration(5) * time.Second}
-		req, err := http.NewRequest("POST", targetUrl, bodyBuf)
+
+		// TODO: change basic auth for some form of tokens.
+		//req, err := http.NewRequest("POST", targetUrl, bodyBuf)
+		req, err := buildGetCredRequestBasicAuth(pubKeyFilename, userName, password, targetUrl)
 		if err != nil {
 			log.Fatal(err)
 		}
-		req.Header.Set("Content-Type", contentType)
 
-		// TODO: change basic auth for some form of tokens.
-		req.SetBasicAuth(userName, string(password[:]))
 		resp, err := client.Do(req) //client.Get(targetUrl)
 		if err != nil {
 			log.Printf("got error from req")
@@ -189,8 +202,8 @@ func getCertFromTargetUrls(pubKeyFilename, userName string, password []byte, tar
 	}
 	if !success {
 		log.Printf("failed to get creds")
-		//err := errors.New("Failed to get creds")
-		return nil, nil
+		err := errors.New("Failed to get creds")
+		return nil, err
 	}
 
 	return cert, nil
