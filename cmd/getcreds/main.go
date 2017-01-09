@@ -127,11 +127,9 @@ func buildGetCredRequestBasicAuth(pubKeyFilename, userName string, password []by
 	// open file handle
 	fh, err := os.Open(pubKeyFilename)
 	if err != nil {
-		//Log.Printf("error opening file")
-		//return err
-		//log.Fatal(err)
 		return nil, err
 	}
+	defer fh.Close()
 
 	//iocopy
 	_, err = io.Copy(fileWriter, fh)
@@ -265,9 +263,5 @@ func main() {
 	//TODO: change deletion for atomic rename
 	os.Remove(certPath)
 	err = ioutil.WriteFile(certPath, cert, 0644)
-	//if !success {
-	//	log.Fatal("failed to get creds")
-	//}
-	// post to the signers
 
 }
