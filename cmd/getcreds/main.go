@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -39,15 +40,11 @@ type AppConfigFile struct {
 
 var (
 	configFilename = flag.String("config", "config.yml", "The filename of the configuration")
+	debug          = flag.Bool("debug", false, "Enable debug messages to console")
 )
 
-func getUserHomeDir() (string, error) {
+func getUserHomeDir(usr *user.User) (string, error) {
 	// TODO: verify on Windows... see: http://stackoverflow.com/questions/7922270/obtain-users-home-directory
-	usr, err := user.Current()
-	if err != nil {
-		log.Printf("cannot get current user info")
-		return "", err
-	}
 	return usr.HomeDir, nil
 }
 
@@ -108,88 +105,73 @@ func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
 		err = errors.New("Cannot parse config file")
 		return config, err
 	}
-	// TODO: actually have to verify the contents
+
+	if len(config.Base.Gen_Cert_URLS) < 1 {
+		err = errors.New("Invalid Config file... no place get the certs")
+		return config, err
+	}
+	// TODO: ensure all enpoints are https urls
+
 	return config, nil
 }
 
-func main() {
-	flag.Parse()
+func buildGetCredRequestBasicAuth(pubKeyFilename, userName string, password []byte, targetUrl string) (*http.Request, error) {
+	// parts from  https://astaxie.gitbooks.io/build-web-application-with-golang/content/en/04.5.html
+	bodyBuf := &bytes.Buffer{}
+	bodyWriter := multipart.NewWriter(bodyBuf)
 
-	config, err := loadVerifyConfigFile(*configFilename)
+	fileWriter, err := bodyWriter.CreateFormFile("pubkeyfile", pubKeyFilename)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-
-	usr, err := user.Current()
+	// open file handle
+	fh, err := os.Open(pubKeyFilename)
 	if err != nil {
-		log.Printf("cannot get current user info")
-		log.Fatal(err)
+		return nil, err
 	}
-	userName := usr.Username
+	defer fh.Close()
 
-	fmt.Printf("Password for %s: ", userName)
-	password, err := gopass.GetPasswd()
-	if err != nil {
-		log.Fatal(err)
-		// Handle gopass.ErrInterrupted or getch() read error
-	}
-	// Do something with pass
-
-	homeDir, err := getUserHomeDir()
+	//iocopy
+	_, err = io.Copy(fileWriter, fh)
 	if err != nil {
 		log.Fatal(err)
+		return nil, err
+	}
+	if *debug {
+		log.Printf("%v", bodyBuf)
 	}
 
-	//sshPath := homeDir + "/.ssh/"
-	privateKeyPath := filepath.Join(homeDir, "/.ssh/", FILE_PREFIX)
-	pubKeyFilename, err := genKeyPair(privateKeyPath)
+	contentType := bodyWriter.FormDataContentType()
+	bodyWriter.Close()
+
+	req, err := http.NewRequest("POST", targetUrl, bodyBuf)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
+	req.Header.Set("Content-Type", contentType)
 
-	var cert []byte
+	req.SetBasicAuth(userName, string(password[:]))
+	return req, nil
+}
+
+func getCertFromTargetUrls(pubKeyFilename, userName string, password []byte, targetUrls []string, rootCAs *x509.CertPool) (cert []byte, err error) {
 	success := false
-	for _, baseUrl := range strings.Split(config.Base.Gen_Cert_URLS, ",") {
+	for _, baseUrl := range targetUrls {
 		targetUrl := baseUrl + userName
 		log.Printf("attempting to target '%s'", targetUrl)
-		// parts from  https://astaxie.gitbooks.io/build-web-application-with-golang/content/en/04.5.html
-		bodyBuf := &bytes.Buffer{}
-		bodyWriter := multipart.NewWriter(bodyBuf)
-
-		//
-		fileWriter, err := bodyWriter.CreateFormFile("pubkeyfile", pubKeyFilename)
-		if err != nil {
-			fmt.Println("error writing to buffer")
-			log.Fatal(err)
+		tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
+		tr := &http.Transport{
+			TLSClientConfig: tlsConfig,
 		}
-
-		// open file handle
-		fh, err := os.Open(pubKeyFilename)
-		if err != nil {
-			fmt.Println("error opening file")
-			//return err
-			log.Fatal(err)
-		}
-
-		//iocopy
-		_, err = io.Copy(fileWriter, fh)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		log.Printf("%v", bodyBuf)
-		contentType := bodyWriter.FormDataContentType()
-		bodyWriter.Close()
-
-		client := &http.Client{Timeout: time.Duration(5) * time.Second}
-		req, err := http.NewRequest("POST", targetUrl, bodyBuf)
-		if err != nil {
-			log.Fatal(err)
-		}
-		req.Header.Set("Content-Type", contentType)
+		client := &http.Client{Transport: tr, Timeout: time.Duration(5) * time.Second}
 
 		// TODO: change basic auth for some form of tokens.
-		req.SetBasicAuth(userName, string(password[:]))
+		//req, err := http.NewRequest("POST", targetUrl, bodyBuf)
+		req, err := buildGetCredRequestBasicAuth(pubKeyFilename, userName, password, targetUrl)
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		resp, err := client.Do(req) //client.Get(targetUrl)
 		if err != nil {
 			log.Printf("got error from req")
@@ -214,9 +196,65 @@ func main() {
 		// now save the file
 		success = true
 		break
+
 	}
 	if !success {
-		log.Fatal("failed to get creds")
+		log.Printf("failed to get creds")
+		err := errors.New("Failed to get creds")
+		return nil, err
+	}
+
+	return cert, nil
+}
+
+func getUserInfoAndCreds() (usr *user.User, password []byte, err error) {
+	usr, err = user.Current()
+	if err != nil {
+		log.Printf("cannot get current user info")
+		return nil, nil, err
+	}
+	userName := usr.Username
+
+	fmt.Printf("Password for %s: ", userName)
+	password, err = gopass.GetPasswd()
+	if err != nil {
+		return nil, nil, err
+		// Handle gopass.ErrInterrupted or getch() read error
+	}
+	return usr, password, nil
+}
+
+func main() {
+	flag.Parse()
+
+	config, err := loadVerifyConfigFile(*configFilename)
+	if err != nil {
+		panic(err)
+	}
+	usr, password, err := getUserInfoAndCreds()
+	if err != nil {
+		log.Fatal(err)
+	}
+	userName := usr.Username
+
+	homeDir, err := getUserHomeDir(usr)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	//sshPath := homeDir + "/.ssh/"
+	privateKeyPath := filepath.Join(homeDir, "/.ssh/", FILE_PREFIX)
+	pubKeyFilename, err := genKeyPair(privateKeyPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	cert, err := getCertFromTargetUrls(pubKeyFilename, userName, password, strings.Split(config.Base.Gen_Cert_URLS, ","), nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if cert == nil {
+		err := errors.New("Could not get cert from any url")
+		log.Fatal(err)
 	}
 	log.Printf("Success")
 	// now we write the cert file...
@@ -225,9 +263,5 @@ func main() {
 	//TODO: change deletion for atomic rename
 	os.Remove(certPath)
 	err = ioutil.WriteFile(certPath, cert, 0644)
-	if !success {
-		log.Fatal("failed to get creds")
-	}
-	// post to the signers
 
 }
