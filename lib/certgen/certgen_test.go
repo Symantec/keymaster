@@ -297,3 +297,25 @@ func TestGenSelfSignedCACertGood(t *testing.T) {
 	}
 	//t.Logf("got '%s'", certString)
 }
+
+func TestGetPrivateKeyFromPemFail(t *testing.T) {
+	_, err := getPrivateKeyFromPem("not pem data")
+	if err == nil {
+		t.Fatal(err)
+	}
+	_, err = getPrivateKeyFromPem(testUserPEMPublicKey)
+	if err == nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGetPubKeyFromPem(t *testing.T) {
+	_, err := getPubKeyFromPem("not pem data")
+	if err == nil {
+		t.Fatal(err)
+	}
+	_, err = getPubKeyFromPem(testSignerPrivateKey)
+	if err == nil {
+		t.Fatal(err)
+	}
+}

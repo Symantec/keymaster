@@ -97,7 +97,6 @@ func GenSSHCertFileStringFromSSSDPublicKey(userName string, signer ssh.Signer, h
 }
 
 /// X509 section
-
 func getPubKeyFromPem(pubkey string) (pub interface{}, err error) {
 	block, rest := pem.Decode([]byte(pubkey))
 	if block == nil || block.Type != "PUBLIC KEY" {
@@ -152,7 +151,7 @@ func derBytesCertToCertAndPem(derBytes []byte) (*x509.Certificate, string, error
 func GenSelfSignedCACert(commonName string, organization string, caPriv interface{}) (*x509.Certificate, string, error) {
 	//// Now do the actual work...
 	notBefore := time.Now()
-	notAfter := notBefore.Add(time.Duration(numValidHours) * time.Hour)
+	notAfter := notBefore.Add(24 * 365 * 8 * time.Hour)
 
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
