@@ -5,12 +5,22 @@ package certgen
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/pem"
+	"errors"
 	"golang.org/x/crypto/ssh"
+	"math/big"
 	//"os"
 	"os/exec"
 	"time"
+
+	"fmt"
 )
+
+const numValidHours = 24
 
 // GetUserPubKeyFromSSSD user authorized keys content based on the running sssd configuration
 func GetUserPubKeyFromSSSD(username string) (string, error) {
@@ -33,7 +43,7 @@ func goCertToFileString(c ssh.Certificate, username string) (string, error) {
 
 // gen_user_cert a username and key, returns a short lived cert for that user
 func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer, host_identity string) (string, error) {
-	const numValidHours = 24
+	//const numValidHours = 24
 
 	userKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(userPubKey))
 	if err != nil {
@@ -83,4 +93,80 @@ func GenSSHCertFileStringFromSSSDPublicKey(userName string, signer ssh.Signer, h
 		return "", err
 	}
 	return cert, err
+}
+
+/// X509 section
+
+func getPubKeyFromPem(pubkey string) (pub interface{}, err error) {
+	block, rest := pem.Decode([]byte(pubkey))
+	if block == nil || block.Type != "PUBLIC KEY" {
+		err := errors.New(fmt.Sprintf("Cannot decode user public Key '%s' rest='%s'", pubkey, string(rest)))
+		if block != nil {
+			err = errors.New(fmt.Sprintf("public key bad type %s", block.Type))
+		}
+		return "", err
+	}
+	return x509.ParsePKIXPublicKey(block.Bytes)
+}
+
+// returns an x509 cert that is with the username in the common name
+func Genx509SCert(userName string, userPub interface{}, caCertString string, caPrivateKeyString string) (string, error) {
+
+	caCertBlock, _ := pem.Decode([]byte(caCertString))
+	if caCertBlock == nil || caCertBlock.Type != "CERTIFICATE" {
+		err := errors.New("Cannot decode ca cert")
+		return "", err
+	}
+	caCert, err := x509.ParseCertificate(caCertBlock.Bytes)
+	if err != nil {
+		return "", err
+	}
+
+	//TODO handle non-rsa keys
+	caPrivateKeyBlock, _ := pem.Decode([]byte(caPrivateKeyString))
+	if caPrivateKeyBlock == nil || caPrivateKeyBlock.Type != "RSA PRIVATE KEY" {
+		err := errors.New("Cannot decode ca Private Key")
+		return "", err
+	}
+	//func ParsePKCS1PrivateKey(der []byte) (*rsa.PrivateKey, error)
+	caPriv, err := x509.ParsePKCS1PrivateKey(caPrivateKeyBlock.Bytes)
+	if err != nil {
+		return "", err
+	}
+
+	//// Now do the actual work...
+	notBefore := time.Now()
+	notAfter := notBefore.Add(time.Duration(numValidHours) * time.Hour)
+
+	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
+
+	if err != nil {
+		//log.Fatalf("failed to generate serial number: %s", err)
+		return "", err
+	}
+
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			CommonName:   userName,
+			Organization: []string{"Acme Co"},
+		},
+		NotBefore: notBefore,
+		NotAfter:  notAfter,
+		KeyUsage:  x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		//ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		//BasicConstraintsValid: true,
+		IsCA: false,
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, caCert, userPub, caPriv)
+	if err != nil {
+
+		//log.Fatalf("Failed to create certificate: %s", err)
+		return "", err
+	}
+	pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes}))
+
+	return pemCert, nil
 }

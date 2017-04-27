@@ -55,6 +55,28 @@ RnmMXhcdJ7cCPL6LJpN82h62XrLVwl7zEBXnVfhSsXil1yYHHI5sGXbUFRzaNXNl
 KgeanQGV/sG+nd/67uvHhZbifHVDY/ifsNBnYrlpu6q3p+zhQydfkLE=
 -----END RSA PRIVATE KEY-----`
 
+const testSignerX509Cert = `-----BEGIN CERTIFICATE-----
+MIIDeTCCAmGgAwIBAgIJAMSRCvyhZiyzMA0GCSqGSIb3DQEBCwUAMFMxCzAJBgNV
+BAYTAlhYMRUwEwYDVQQHDAxEZWZhdWx0IENpdHkxFDASBgNVBAoMC0V4YW1wbGUu
+Y29tMRcwFQYDVQQDDA5FeGFtcGxlIElzc3VlcjAeFw0xNzA0MjYxODAyMzJaFw0y
+NzA0MjQxODAyMzJaMFMxCzAJBgNVBAYTAlhYMRUwEwYDVQQHDAxEZWZhdWx0IENp
+dHkxFDASBgNVBAoMC0V4YW1wbGUuY29tMRcwFQYDVQQDDA5FeGFtcGxlIElzc3Vl
+cjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAL9ieOuCqGGzgzCG7ZE1
+efIOv9EE3VCGIDsJ8z3WjDVbQjsU4kAyFhG86r9RxD/YX87mkih1B7P/dXuCY9qm
+YIUsDxyxu0ys7vvwkSvbGvY76BhFcYOso4mz53Uxri1abWQnDiHBxF1Yj+Iq2iOn
+cm4hg5ZnhfdlkCXSO5eBLIOFuFqdeyRVjR28pSqBQdH3tm+Kuac2lzAcDbnuASir
+7mudTQXLUcuC2WMIhr1SaZRG4wVO78AgEtF+Ju9stibyqIPfx3xiqNq2fbHtMBXv
+ZjJI49MLipA4fdaTs7AWf9D1tMx3ItqvciVcRdG+NXvfq2l2vJL0Y8RexBALlK/T
+r9sCAwEAAaNQME4wHQYDVR0OBBYEFP9MhquAFRFLT7fzbru/pHUZd7izMB8GA1Ud
+IwQYMBaAFP9MhquAFRFLT7fzbru/pHUZd7izMAwGA1UdEwQFMAMBAf8wDQYJKoZI
+hvcNAQELBQADggEBAAS+HXeUf/WG6g2AbNvd3F+8KkoWmNnRZ8OHuXYQxSQeXHon
+Bi0CAc7BZo43n9GSOy4mW0F6Z3JVkK06gH3pFRoKkqqpzk5WaCIYoofRRIOsF/l6
+tng3ucauQ3wYGftwid623D6nnbkhPj0jmTyGD6d772dueWEneR2JcN/5G7Xf8HEl
+a0fmpm1BG1ZrT2Vp4cb50VeFH+oZn9UW6j+w3Lx4D6pwJvJ11MFjkIfw7Q1hl0j9
+Unc9jsYhX7DR3SV8vcFqduUmSH8vdc/zJEk76T2D+qe1aWqtr84QpxXBTrIKvSXD
+igkmavdG2gu3SpbFzNxuVCrxQ88Kte0xYJTe7vY=
+-----END CERTIFICATE-----`
+
 /*
 const testSignerPublicKey = `ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC/Ynjrgqhhs4Mwhu2RNXnyDr/RBN1QhiA7CfM91ow1W0I7FOJAMhYRvOq/UcQ/2F/O5pIodQez/3V7gmPapmCFLA8csbtMrO778JEr2xr2O+gYRXGDrKOJs+d1Ma4tWm1kJw4hwcRdWI/iKtojp3JuIYOWZ4X3ZZAl0juXgSyDhbhanXskVY0dvKUqgUHR97ZvirmnNpcwHA257gEoq+5rnU0Fy1HLgtljCIa9UmmURuMFTu/AIBLRfibvbLYm8qiD38d8Yqjatn2x7TAV72YySOPTC4qQOH3Wk7OwFn/Q9bTMdyLar3IlXEXRvjV736tpdryS9GPEXsQQC5Sv06/b camilo_viecco1@localhost`
 
@@ -87,6 +109,17 @@ bxrMjPsOnAt3Tq7G0tlACxBOBhf+dcDW7D8/8EE6klKr2OrrT2Yag6k=
 -----END RSA PRIVATE KEY-----`
 */
 const testUserPublicKey = `ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDI09fpMWTeYw7/EO/+FywS/sghNXdTeTWxX7K2N17owsQJX8s76LGVIdVeYrWg4QSmYlpf6EVSCpx/fbCazrsG7FJVTRhExzFbRT9asmvzS+viXSbSvnavhOz/paihyaMsVPKVv24vF6MOs8DgfwehcKCPjKoIPnlYXZaZcy05KOcZmsvYu2kNOP6sSjDFF+ru+T+DLp3DUGw+MPr45IuR7iDnhXhklqyUn0d7ou0rOHXz9GdHIzpr+DAoQGmTDkpbQEo067Rjfu406gYL8pVFD1F7asCjU39llQCcU/HGyPym5fa29Nubw0dzZZXGZUVFalxo02YMM7P9I6ZjeCsv camilo_viecco1@mon-sre-dev.ash2.symcpe.net`
+
+// The next was extracted from the testUserPrivateKey above : openssl rsa -in userkey.pem -pubout
+const testUserPEMPublicKey = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyNPX6TFk3mMO/xDv/hcs
+Ev7IITV3U3k1sV+ytjde6MLECV/LO+ixlSHVXmK1oOEEpmJaX+hFUgqcf32wms67
+BuxSVU0YRMcxW0U/WrJr80vr4l0m0r52r4Ts/6WoocmjLFTylb9uLxejDrPA4H8H
+oXCgj4yqCD55WF2WmXMtOSjnGZrL2LtpDTj+rEowxRfq7vk/gy6dw1BsPjD6+OSL
+ke4g54V4ZJaslJ9He6LtKzh18/RnRyM6a/gwKEBpkw5KW0BKNOu0Y37uNOoGC/KV
+RQ9Re2rAo1N/ZZUAnFPxxsj8puX2tvTbm8NHc2WVxmVFRWpcaNNmDDOz/SOmY3gr
+LwIDAQAB
+-----END PUBLIC KEY-----`
 
 // SSSD tests do require some setup... in this case we do some checks to ensure
 // that actually trying to even do this makes sense
@@ -210,4 +243,17 @@ func TestGenSSHCertFileStringFromSSSDPublicKeyFailUserWithNoSSSDPublicKey(t *tes
 	if err == nil {
 		t.Fatal(err)
 	}
+}
+
+//Genx509SCert(userName string, userPubkey string, caCertString string, caPrivateKeyString string)
+func TestGenx509SCertGood(t *testing.T) {
+	userPub, err := getPubKeyFromPem(testUserPEMPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certString, err := Genx509SCert("username", userPub, testSignerX509Cert, testSignerPrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("got '%s'", certString)
 }
