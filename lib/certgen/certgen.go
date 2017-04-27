@@ -109,8 +109,24 @@ func getPubKeyFromPem(pubkey string) (pub interface{}, err error) {
 	return x509.ParsePKIXPublicKey(block.Bytes)
 }
 
+func getPrivateKeyFromPem(privateKey string) (pub interface{}, err error) {
+	//TODO handle ecdsa and other non-rsa keys
+	block, _ := pem.Decode([]byte(privateKey))
+	if block == nil {
+		err := errors.New("Cannot decode Private Key")
+		return "", err
+	}
+	switch block.Type {
+	case "RSA PRIVATE KEY":
+		return x509.ParsePKCS1PrivateKey(block.Bytes)
+	default:
+		err := errors.New("Cannot process that key")
+		return pub, err
+	}
+}
+
 // returns an x509 cert that is with the username in the common name
-func Genx509SCert(userName string, userPub interface{}, caCertString string, caPrivateKeyString string) (string, error) {
+func Genx509SCert(userName string, userPub interface{}, caCertString string, caPriv interface{}) (string, error) {
 
 	caCertBlock, _ := pem.Decode([]byte(caCertString))
 	if caCertBlock == nil || caCertBlock.Type != "CERTIFICATE" {
@@ -118,18 +134,6 @@ func Genx509SCert(userName string, userPub interface{}, caCertString string, caP
 		return "", err
 	}
 	caCert, err := x509.ParseCertificate(caCertBlock.Bytes)
-	if err != nil {
-		return "", err
-	}
-
-	//TODO handle non-rsa keys
-	caPrivateKeyBlock, _ := pem.Decode([]byte(caPrivateKeyString))
-	if caPrivateKeyBlock == nil || caPrivateKeyBlock.Type != "RSA PRIVATE KEY" {
-		err := errors.New("Cannot decode ca Private Key")
-		return "", err
-	}
-	//func ParsePKCS1PrivateKey(der []byte) (*rsa.PrivateKey, error)
-	caPriv, err := x509.ParsePKCS1PrivateKey(caPrivateKeyBlock.Bytes)
 	if err != nil {
 		return "", err
 	}
