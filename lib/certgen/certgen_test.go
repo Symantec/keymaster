@@ -246,12 +246,16 @@ func TestGenSSHCertFileStringFromSSSDPublicKeyFailUserWithNoSSSDPublicKey(t *tes
 }
 
 //Genx509SCert(userName string, userPubkey string, caCertString string, caPrivateKeyString string)
-func TestGenx509SCertGood(t *testing.T) {
+func TestGenx509CertGood(t *testing.T) {
 	userPub, err := getPubKeyFromPem(testUserPEMPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	certString, err := Genx509SCert("username", userPub, testSignerX509Cert, testSignerPrivateKey)
+	caPriv, err := getPrivateKeyFromPem(testSignerPrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certString, err := Genx509SCert("username", userPub, testSignerX509Cert, caPriv)
 	if err != nil {
 		t.Fatal(err)
 	}
