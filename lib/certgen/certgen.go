@@ -6,6 +6,7 @@ package certgen
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
@@ -125,29 +126,73 @@ func getPrivateKeyFromPem(privateKey string) (pub interface{}, err error) {
 	}
 }
 
-// returns an x509 cert that is with the username in the common name
-func Genx509SCert(userName string, userPub interface{}, caCertString string, caPriv interface{}) (string, error) {
-
-	caCertBlock, _ := pem.Decode([]byte(caCertString))
-	if caCertBlock == nil || caCertBlock.Type != "CERTIFICATE" {
-		err := errors.New("Cannot decode ca cert")
-		return "", err
+//copied from https://golang.org/src/crypto/tls/generate_cert.go
+func publicKey(priv interface{}) interface{} {
+	switch k := priv.(type) {
+	case *rsa.PrivateKey:
+		return &k.PublicKey
+	//case *ecdsa.PrivateKey:
+	//	return &k.PublicKey
+	default:
+		return nil
 	}
-	caCert, err := x509.ParseCertificate(caCertBlock.Bytes)
+}
+
+func derBytesCertToCertAndPem(derBytes []byte) (*x509.Certificate, string, error) {
+	cert, err := x509.ParseCertificate(derBytes)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
+	pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes}))
+	return cert, pemCert, nil
+}
 
+// return both an internal representation an the pem representation of the string
+// As long as the issuer value matches THEN the serial number can be different every time
+func GenSelfSignedCACert(commonName string, organization string, caPriv interface{}) (*x509.Certificate, string, error) {
 	//// Now do the actual work...
 	notBefore := time.Now()
 	notAfter := notBefore.Add(time.Duration(numValidHours) * time.Hour)
 
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
-
 	if err != nil {
-		//log.Fatalf("failed to generate serial number: %s", err)
-		return "", err
+		return nil, "", err
+	}
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			CommonName:   commonName,
+			Organization: []string{organization},
+		},
+		NotBefore: notBefore,
+		NotAfter:  notAfter,
+		KeyUsage:  x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageCertSign,
+		//ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		//BasicConstraintsValid: true,
+		IsCA: true,
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, publicKey(caPriv), caPriv)
+	if err != nil {
+
+		//log.Fatalf("Failed to create certificate: %s", err)
+		return nil, "", err
+	}
+	return derBytesCertToCertAndPem(derBytes)
+
+}
+
+// returns an x509 cert that is with the username in the common name
+func GenUserX509Cert(userName string, userPub interface{}, caCert *x509.Certificate, caPriv interface{}) (*x509.Certificate, string, error) {
+	//// Now do the actual work...
+	notBefore := time.Now()
+	notAfter := notBefore.Add(time.Duration(numValidHours) * time.Hour)
+
+	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
+	if err != nil {
+		return nil, "", err
 	}
 
 	template := x509.Certificate{
@@ -158,7 +203,7 @@ func Genx509SCert(userName string, userPub interface{}, caCertString string, caP
 		},
 		NotBefore: notBefore,
 		NotAfter:  notAfter,
-		KeyUsage:  x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		KeyUsage:  x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageKeyAgreement,
 		//ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		//BasicConstraintsValid: true,
 		IsCA: false,
@@ -168,9 +213,11 @@ func Genx509SCert(userName string, userPub interface{}, caCertString string, caP
 	if err != nil {
 
 		//log.Fatalf("Failed to create certificate: %s", err)
-		return "", err
+		return nil, "", err
 	}
-	pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes}))
+	return derBytesCertToCertAndPem(derBytes)
 
-	return pemCert, nil
+	//pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes}))
+
+	//return pemCert, nil
 }

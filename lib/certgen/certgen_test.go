@@ -2,7 +2,9 @@ package certgen
 
 import (
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"golang.org/x/crypto/ssh"
 	//"strings"
 	"os"
@@ -255,9 +257,43 @@ func TestGenx509CertGood(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	certString, err := Genx509SCert("username", userPub, testSignerX509Cert, caPriv)
+
+	caCertBlock, _ := pem.Decode([]byte(testSignerX509Cert))
+	if caCertBlock == nil || caCertBlock.Type != "CERTIFICATE" {
+		t.Fatal(err)
+	}
+	caCert, err := x509.ParseCertificate(caCertBlock.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	userCert, certString, err := GenUserX509Cert("username", userPub, caCert, caPriv)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("got '%s'", certString)
+	t.Logf("got %+v", userCert)
+}
+
+//GenSelfSignedCACert
+func TestGenSelfSignedCACertGood(t *testing.T) {
+	caPriv, err := getPrivateKeyFromPem(testSignerPrivateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, pemCert, err := GenSelfSignedCACert("some hostname", "some organization", caPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("got '%s'", pemCert)
+	// Now we use it to generate a user Cert
+	userPub, err := getPubKeyFromPem(testUserPEMPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = GenUserX509Cert("username", userPub, cert, caPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//t.Logf("got '%s'", certString)
 }
