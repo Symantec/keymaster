@@ -206,11 +206,12 @@ type PKInitSANAnotherName struct {
 
 // This is the m
 func changePrintableStringToGeneralString(kerberosRealm string, inString []byte) []byte {
-	/*	position := 12
-		inString[position] = 27
-		position = position + 1 + len(kerberosRealm) + 8
-		inString[position] = 27
-	*/
+	position := 16
+	inString[position] = 27
+
+	position = position + 1 + len(kerberosRealm) + 14
+	inString[position] = 27
+
 	return inString
 }
 
@@ -219,17 +220,6 @@ func genSANExtension(userName string, kerberosRealm *string) (*pkix.Extension, e
 	if kerberosRealm != nil {
 		krbRealm = *kerberosRealm
 	}
-	/*
-		krbSanExt := KRB5PrincipalName{
-			Realm:     krbRealm,
-			Principal: KerberosPrincipal{Len: 1, Principal: []string{userName}},
-		}
-		krbSanExtDer, err := asn1.Marshal(krbSanExt)
-		if err != nil {
-			return nil, "", err
-		}
-		fmt.Printf("ext: %+x", krbSanExtDer)
-	*/
 	//1.3.6.1.5.2.2
 	krbSanAnotherName := PKInitSANAnotherName{
 		Id: []int{1, 3, 6, 1, 5, 2, 2},
