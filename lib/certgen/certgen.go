@@ -9,6 +9,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
@@ -143,6 +144,7 @@ func derBytesCertToCertAndPem(derBytes []byte) (*x509.Certificate, string, error
 		return nil, "", err
 	}
 	pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes}))
+	fmt.Printf("pem:\n%s\n", pemCert)
 	return cert, pemCert, nil
 }
 
@@ -182,8 +184,87 @@ func GenSelfSignedCACert(commonName string, organization string, caPriv interfac
 
 }
 
+// From RFC 4120 section 5.2.2 (https://tools.ietf.org/html/rfc4120)
+type KerberosPrincipal struct {
+	Len       int      `asn1:"explicit,tag:0"`
+	Principal []string `asn1:"explicit,tag:1"`
+}
+
+// From RFC 4556 section 3.2.2 (https://tools.ietf.org/html/rfc4556.html)
+type KRB5PrincipalName struct {
+	Realm string `asn1:"explicit,tag:0"`
+	//`asn1:"ia5"`
+	//`asn1:"ia5"`
+	Principal KerberosPrincipal `asn1:"explicit,tag:1"`
+	//`asn1:"tag:16"`
+}
+
+type PKInitSANAnotherName struct {
+	Id    asn1.ObjectIdentifier
+	Value KRB5PrincipalName `asn1:"explicit,tag:0"`
+}
+
+// This is the m
+func changePrintableStringToGeneralString(kerberosRealm string, inString []byte) []byte {
+	/*	position := 12
+		inString[position] = 27
+		position = position + 1 + len(kerberosRealm) + 8
+		inString[position] = 27
+	*/
+	return inString
+}
+
+func genSANExtension(userName string, kerberosRealm *string) (*pkix.Extension, error) {
+	krbRealm := "EXAMPLE.COM"
+	if kerberosRealm != nil {
+		krbRealm = *kerberosRealm
+	}
+	/*
+		krbSanExt := KRB5PrincipalName{
+			Realm:     krbRealm,
+			Principal: KerberosPrincipal{Len: 1, Principal: []string{userName}},
+		}
+		krbSanExtDer, err := asn1.Marshal(krbSanExt)
+		if err != nil {
+			return nil, "", err
+		}
+		fmt.Printf("ext: %+x", krbSanExtDer)
+	*/
+	//1.3.6.1.5.2.2
+	krbSanAnotherName := PKInitSANAnotherName{
+		Id: []int{1, 3, 6, 1, 5, 2, 2},
+		Value: KRB5PrincipalName{
+			Realm:     krbRealm,
+			Principal: KerberosPrincipal{Len: 1, Principal: []string{userName}},
+		},
+	}
+	krbSanAnotherNameDer, err := asn1.Marshal(krbSanAnotherName)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("ext: %+x\n", krbSanAnotherNameDer)
+	krbSanAnotherNameDer = changePrintableStringToGeneralString(krbRealm, krbSanAnotherNameDer)
+	fmt.Printf("ext: %+x\n", krbSanAnotherNameDer)
+	//Apply fix HERE!!!!
+
+	// inspired by marshalSANs in x509.go
+	var rawValues []asn1.RawValue
+	rawValues = append(rawValues, asn1.RawValue{Tag: 0, Class: 2, IsCompound: true, Bytes: krbSanAnotherNameDer})
+
+	rawSan, err := asn1.Marshal(rawValues)
+	if err != nil {
+		return nil, err
+	}
+	sanExtension := pkix.Extension{
+		Id:    []int{2, 5, 29, 17},
+		Value: rawSan,
+	}
+
+	return &sanExtension, nil
+}
+
 // returns an x509 cert that is with the username in the common name
-func GenUserX509Cert(userName string, userPub interface{}, caCert *x509.Certificate, caPriv interface{}) (*x509.Certificate, string, error) {
+func GenUserX509Cert(userName string, userPub interface{}, caCert *x509.Certificate, caPriv interface{}, kerberosRealm *string) (*x509.Certificate, string, error) {
 	//// Now do the actual work...
 	notBefore := time.Now()
 	notAfter := notBefore.Add(time.Duration(numValidHours) * time.Hour)
@@ -194,19 +275,29 @@ func GenUserX509Cert(userName string, userPub interface{}, caCert *x509.Certific
 		return nil, "", err
 	}
 
+	sanExtension, err := genSANExtension(userName, kerberosRealm)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// need to add the extended key usage... that is special for kerberos
+	//and also the client key usage
+	kerberosClientExtKeyUsage := []int{1, 3, 6, 1, 5, 2, 3, 4}
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
 			CommonName:   userName,
 			Organization: []string{"Acme Co"},
 		},
-		NotBefore: notBefore,
-		NotAfter:  notAfter,
-		KeyUsage:  x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageKeyAgreement,
-		//ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		//BasicConstraintsValid: true,
+		NotBefore:             notBefore,
+		NotAfter:              notAfter,
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageKeyAgreement,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		UnknownExtKeyUsage:    []asn1.ObjectIdentifier{kerberosClientExtKeyUsage},
+		BasicConstraintsValid: true,
 		IsCA: false,
 	}
+	template.ExtraExtensions = []pkix.Extension{*sanExtension}
 
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, caCert, userPub, caPriv)
 	if err != nil {

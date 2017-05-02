@@ -267,12 +267,20 @@ func TestGenx509CertGood(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	userCert, certString, err := GenUserX509Cert("username", userPub, caCert, caPriv)
+	userCert, certString, err := GenUserX509Cert("username", userPub, caCert, caPriv, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("got '%s'", certString)
 	t.Logf("got %+v", userCert)
+
+	// TODO: check values
+	// 1.  commonName must match "userame"
+	// 2.  basic constraints true
+	// 3. is ca false
+	// 4. valid key usages
+	// 5. valid eku
+	// 6. kerberos realm info!
 }
 
 //GenSelfSignedCACert
@@ -291,7 +299,7 @@ func TestGenSelfSignedCACertGood(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = GenUserX509Cert("username", userPub, cert, caPriv)
+	_, _, err = GenUserX509Cert("username", userPub, cert, caPriv, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
