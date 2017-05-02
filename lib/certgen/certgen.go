@@ -110,7 +110,7 @@ func getPubKeyFromPem(pubkey string) (pub interface{}, err error) {
 	return x509.ParsePKIXPublicKey(block.Bytes)
 }
 
-func getPrivateKeyFromPem(privateKey string) (pub interface{}, err error) {
+func getPrivateKeyFromPem(privateKey string) (priv interface{}, err error) {
 	//TODO handle ecdsa and other non-rsa keys
 	block, _ := pem.Decode([]byte(privateKey))
 	if block == nil {
@@ -122,7 +122,7 @@ func getPrivateKeyFromPem(privateKey string) (pub interface{}, err error) {
 		return x509.ParsePKCS1PrivateKey(block.Bytes)
 	default:
 		err := errors.New("Cannot process that key")
-		return pub, err
+		return priv, err
 	}
 }
 
@@ -144,7 +144,7 @@ func derBytesCertToCertAndPem(derBytes []byte) (*x509.Certificate, string, error
 		return nil, "", err
 	}
 	pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes}))
-	fmt.Printf("pem:\n%s\n", pemCert)
+	//fmt.Printf("pem:\n%s\n", pemCert)
 	return cert, pemCert, nil
 }
 
@@ -232,9 +232,9 @@ func genSANExtension(userName string, kerberosRealm *string) (*pkix.Extension, e
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("ext: %+x\n", krbSanAnotherNameDer)
+	//fmt.Printf("ext: %+x\n", krbSanAnotherNameDer)
 	krbSanAnotherNameDer = changePrintableStringToGeneralString(krbRealm, krbSanAnotherNameDer)
-	fmt.Printf("ext: %+x\n", krbSanAnotherNameDer)
+	//fmt.Printf("ext: %+x\n", krbSanAnotherNameDer)
 	//Apply fix HERE!!!!
 
 	// inspired by marshalSANs in x509.go
@@ -277,7 +277,7 @@ func GenUserX509Cert(userName string, userPub interface{}, caCert *x509.Certific
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
 			CommonName:   userName,
-			Organization: []string{"Acme Co"},
+			Organization: []string{"Keymaster"},
 		},
 		NotBefore:             notBefore,
 		NotAfter:              notAfter,

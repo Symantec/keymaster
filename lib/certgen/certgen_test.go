@@ -267,12 +267,12 @@ func TestGenx509CertGood(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	userCert, certString, err := GenUserX509Cert("username", userPub, caCert, caPriv, nil)
+	_, certString, err := GenUserX509Cert("username", userPub, caCert, caPriv, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("got '%s'", certString)
-	t.Logf("got %+v", userCert)
+	//t.Logf("got %+v", userCert)
 
 	// TODO: check values
 	// 1.  commonName must match "userame"
