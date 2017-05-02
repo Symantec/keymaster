@@ -7,7 +7,6 @@ import (
 	//"encoding/base64"
 	"errors"
 	"fmt"
-	"golang.org/x/crypto/ssh"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
@@ -147,7 +146,7 @@ func setupPasswdFile() (f *os.File, err error) {
 func TestSuccessFullSigning(t *testing.T) {
 	var state RuntimeState
 	//load signer
-	signer, err := ssh.ParsePrivateKey([]byte(testSignerPrivateKey))
+	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
 	if err != nil {
 		//log.Printf("Cannot parse Priave Key file")
 		//return runtimeState, err
