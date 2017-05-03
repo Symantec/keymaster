@@ -152,7 +152,7 @@ func TestSuccessFullSigning(t *testing.T) {
 		//return runtimeState, err
 		t.Fatal(err)
 	}
-	state.Signer = &signer
+	state.Signer = signer
 
 	passwdFile, err := setupPasswdFile()
 	if err != nil {
