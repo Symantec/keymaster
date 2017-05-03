@@ -45,8 +45,6 @@ func goCertToFileString(c ssh.Certificate, username string) (string, error) {
 
 // gen_user_cert a username and key, returns a short lived cert for that user
 func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer, host_identity string) (string, error) {
-	//const numValidHours = 24
-
 	userKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(userPubKey))
 	if err != nil {
 		return "", err
@@ -170,14 +168,12 @@ func GenSelfSignedCACert(commonName string, organization string, caPriv interfac
 		NotAfter:  notAfter,
 		KeyUsage:  x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageCertSign,
 		//ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		//BasicConstraintsValid: true,
+		BasicConstraintsValid: true,
 		IsCA: true,
 	}
 
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, publicKey(caPriv), caPriv)
 	if err != nil {
-
-		//log.Fatalf("Failed to create certificate: %s", err)
 		return nil, "", err
 	}
 	return derBytesCertToCertAndPem(derBytes)
@@ -218,12 +214,7 @@ func genSANExtension(userName string, kerberosRealm *string) (*pkix.Extension, e
 		return nil, nil
 	}
 	krbRealm := *kerberosRealm
-	/*
-		krbRealm := "EXAMPLE.COM"
-		if kerberosRealm != nil {
-			krbRealm = *kerberosRealm
-		}
-	*/
+
 	//1.3.6.1.5.2.2
 	krbSanAnotherName := PKInitSANAnotherName{
 		Id: []int{1, 3, 6, 1, 5, 2, 2},
