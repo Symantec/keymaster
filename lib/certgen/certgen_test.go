@@ -247,8 +247,7 @@ func TestGenSSHCertFileStringFromSSSDPublicKeyFailUserWithNoSSSDPublicKey(t *tes
 	}
 }
 
-//Genx509SCert(userName string, userPubkey string, caCertString string, caPrivateKeyString string)
-func TestGenx509CertGood(t *testing.T) {
+func setupX509Generator(t *testing.T) (interface{}, *x509.Certificate, interface{}) {
 	userPub, err := getPubKeyFromPem(testUserPEMPublicKey)
 	if err != nil {
 		t.Fatal(err)
@@ -266,8 +265,35 @@ func TestGenx509CertGood(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return userPub, caCert, caPriv
+}
+
+//Genx509SCert(userName string, userPubkey string, caCertString string, caPrivateKeyString string)
+func TestGenx509CertGoodNoRealm(t *testing.T) {
+	userPub, caCert, caPriv := setupX509Generator(t)
 
 	_, certString, err := GenUserX509Cert("username", userPub, caCert, caPriv, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("got '%s'", certString)
+	//t.Logf("got %+v", userCert)
+
+	// TODO: check values
+	// 1.  commonName must match "userame"
+	// 2.  basic constraints true
+	// 3. is ca false
+	// 4. valid key usages
+	// 5. valid eku
+	// 6. kerberos realm info!
+}
+
+func TestGenx509CertGoodWithRealm(t *testing.T) {
+	userPub, caCert, caPriv := setupX509Generator(t)
+	/*
+	 */
+	realm := "EXAMPLE.COM"
+	_, certString, err := GenUserX509Cert("username", userPub, caCert, caPriv, &realm)
 	if err != nil {
 		t.Fatal(err)
 	}

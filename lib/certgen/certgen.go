@@ -192,11 +192,8 @@ type KerberosPrincipal struct {
 
 // From RFC 4556 section 3.2.2 (https://tools.ietf.org/html/rfc4556.html)
 type KRB5PrincipalName struct {
-	Realm string `asn1:"explicit,tag:0"`
-	//`asn1:"ia5"`
-	//`asn1:"ia5"`
+	Realm     string            `asn1:"explicit,tag:0"`
 	Principal KerberosPrincipal `asn1:"explicit,tag:1"`
-	//`asn1:"tag:16"`
 }
 
 type PKInitSANAnotherName struct {
@@ -204,7 +201,8 @@ type PKInitSANAnotherName struct {
 	Value KRB5PrincipalName `asn1:"explicit,tag:0"`
 }
 
-// This is the m
+// Since currently asn1 cannot mashal into GeneralString (https://github.com/golang/go/issues/18832)
+// We make this hack since we know the positions of the items we want to change
 func changePrintableStringToGeneralString(kerberosRealm string, inString []byte) []byte {
 	position := 16
 	inString[position] = 27
@@ -216,10 +214,16 @@ func changePrintableStringToGeneralString(kerberosRealm string, inString []byte)
 }
 
 func genSANExtension(userName string, kerberosRealm *string) (*pkix.Extension, error) {
-	krbRealm := "EXAMPLE.COM"
-	if kerberosRealm != nil {
-		krbRealm = *kerberosRealm
+	if kerberosRealm == nil {
+		return nil, nil
 	}
+	krbRealm := *kerberosRealm
+	/*
+		krbRealm := "EXAMPLE.COM"
+		if kerberosRealm != nil {
+			krbRealm = *kerberosRealm
+		}
+	*/
 	//1.3.6.1.5.2.2
 	krbSanAnotherName := PKInitSANAnotherName{
 		Id: []int{1, 3, 6, 1, 5, 2, 2},
@@ -235,7 +239,6 @@ func genSANExtension(userName string, kerberosRealm *string) (*pkix.Extension, e
 	//fmt.Printf("ext: %+x\n", krbSanAnotherNameDer)
 	krbSanAnotherNameDer = changePrintableStringToGeneralString(krbRealm, krbSanAnotherNameDer)
 	//fmt.Printf("ext: %+x\n", krbSanAnotherNameDer)
-	//Apply fix HERE!!!!
 
 	// inspired by marshalSANs in x509.go
 	var rawValues []asn1.RawValue
@@ -287,17 +290,13 @@ func GenUserX509Cert(userName string, userPub interface{}, caCert *x509.Certific
 		BasicConstraintsValid: true,
 		IsCA: false,
 	}
-	template.ExtraExtensions = []pkix.Extension{*sanExtension}
+	if sanExtension != nil {
+		template.ExtraExtensions = []pkix.Extension{*sanExtension}
+	}
 
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, caCert, userPub, caPriv)
 	if err != nil {
-
-		//log.Fatalf("Failed to create certificate: %s", err)
 		return nil, "", err
 	}
 	return derBytesCertToCertAndPem(derBytes)
-
-	//pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes}))
-
-	//return pemCert, nil
 }
