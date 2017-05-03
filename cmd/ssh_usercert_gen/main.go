@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
@@ -55,7 +57,7 @@ type AppConfigFile struct {
 type RuntimeState struct {
 	Config              AppConfigFile
 	SSHCARawFileContent []byte
-	Signer              *ssh.Signer
+	Signer              crypto.Signer
 	ClientCAPool        *x509.CertPool
 	HostIdentity        string
 	Mutex               sync.Mutex
@@ -80,6 +82,23 @@ func exitsAndCanRead(fileName string, description string) ([]byte, error) {
 		return nil, err
 	}
 	return buffer, err
+}
+
+func getSignerFromPEMBytes(privateKey []byte) (crypto.Signer, error) {
+	block, _ := pem.Decode(privateKey)
+	if block == nil {
+		err := errors.New("Cannot decode Private Key")
+		return nil, err
+	}
+	switch block.Type {
+	case "RSA PRIVATE KEY":
+		return x509.ParsePKCS1PrivateKey(block.Bytes)
+	case "EC PRIVATE KEY":
+		return x509.ParseECPrivateKey(block.Bytes)
+	default:
+		err := errors.New("Cannot process that key")
+		return nil, err
+	}
 }
 
 func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
@@ -134,12 +153,13 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 
 	}
 	if strings.HasPrefix(string(runtimeState.SSHCARawFileContent[:]), "-----BEGIN RSA PRIVATE KEY-----") {
-		signer, err := ssh.ParsePrivateKey(runtimeState.SSHCARawFileContent)
+		signer, err := getSignerFromPEMBytes(runtimeState.SSHCARawFileContent)
 		if err != nil {
 			log.Printf("Cannot parse Priave Key file")
 			return runtimeState, err
 		}
-		runtimeState.Signer = &signer
+
+		runtimeState.Signer = signer
 	} else {
 		if runtimeState.ClientCAPool == nil {
 			err := errors.New("Invalid ssh CA private key file and NO clientCA")
@@ -239,13 +259,13 @@ const CERTGEN_PATH = "/certgen/"
 
 func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request) {
 	var signerIsNull bool
-	var signer ssh.Signer
+	var keySigner crypto.Signer
 
 	// copy runtime singer if not nil
 	state.Mutex.Lock()
 	signerIsNull = (state.Signer == nil)
 	if !signerIsNull {
-		signer = *state.Signer
+		keySigner = state.Signer
 	}
 	state.Mutex.Unlock()
 
@@ -253,6 +273,13 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	if signerIsNull {
 		writeFailureResponse(w, http.StatusInternalServerError, "")
 		log.Printf("Signer not loaded")
+		return
+	}
+
+	signer, err := ssh.NewSignerFromSigner(keySigner)
+	if err != nil {
+		writeFailureResponse(w, http.StatusInternalServerError, "")
+		log.Printf("Signer failed to load")
 		return
 	}
 
@@ -401,12 +428,12 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 		return
 	}
 
-	signer, err := ssh.ParsePrivateKey(plaintextBytes)
+	signer, err := getSignerFromPEMBytes(plaintextBytes)
 	if err != nil {
 		log.Printf("Cannot parse Priave Key file")
 		return
 	}
-	state.Signer = &signer
+	state.Signer = signer
 
 	// TODO... make success a goroutine
 	w.WriteHeader(200)
