@@ -1,6 +1,7 @@
 package certgen
 
 import (
+	"crypto"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
@@ -247,7 +248,7 @@ func TestGenSSHCertFileStringFromSSSDPublicKeyFailUserWithNoSSSDPublicKey(t *tes
 	}
 }
 
-func setupX509Generator(t *testing.T) (interface{}, *x509.Certificate, interface{}) {
+func setupX509Generator(t *testing.T) (interface{}, *x509.Certificate, crypto.Signer) {
 	userPub, err := getPubKeyFromPem(testUserPEMPublicKey)
 	if err != nil {
 		t.Fatal(err)

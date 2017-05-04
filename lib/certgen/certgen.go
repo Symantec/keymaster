@@ -5,6 +5,7 @@ package certgen
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -108,12 +109,12 @@ func getPubKeyFromPem(pubkey string) (pub interface{}, err error) {
 	return x509.ParsePKIXPublicKey(block.Bytes)
 }
 
-func getPrivateKeyFromPem(privateKey string) (priv interface{}, err error) {
+func getPrivateKeyFromPem(privateKey string) (priv crypto.Signer, err error) {
 	//TODO handle ecdsa and other non-rsa keys
 	block, _ := pem.Decode([]byte(privateKey))
 	if block == nil {
 		err := errors.New("Cannot decode Private Key")
-		return "", err
+		return nil, err
 	}
 	switch block.Type {
 	case "RSA PRIVATE KEY":
@@ -148,7 +149,7 @@ func derBytesCertToCertAndPem(derBytes []byte) (*x509.Certificate, string, error
 
 // return both an internal representation an the pem representation of the string
 // As long as the issuer value matches THEN the serial number can be different every time
-func GenSelfSignedCACert(commonName string, organization string, caPriv interface{}) (*x509.Certificate, string, error) {
+func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.Signer) (*x509.Certificate, string, error) {
 	//// Now do the actual work...
 	notBefore := time.Now()
 	notAfter := notBefore.Add(24 * 365 * 8 * time.Hour)
@@ -247,8 +248,9 @@ func genSANExtension(userName string, kerberosRealm *string) (*pkix.Extension, e
 	return &sanExtension, nil
 }
 
-// returns an x509 cert that is with the username in the common name
-func GenUserX509Cert(userName string, userPub interface{}, caCert *x509.Certificate, caPriv interface{}, kerberosRealm *string) (*x509.Certificate, string, error) {
+// returns an x509 cert that has the username in the common name, optionally if a kerberos Realm is present
+// it will also add a kerberos SAN exention for pkinit
+func GenUserX509Cert(userName string, userPub interface{}, caCert *x509.Certificate, caPriv crypto.Signer, kerberosRealm *string) (*x509.Certificate, string, error) {
 	//// Now do the actual work...
 	notBefore := time.Now()
 	notAfter := notBefore.Add(time.Duration(numValidHours) * time.Hour)
