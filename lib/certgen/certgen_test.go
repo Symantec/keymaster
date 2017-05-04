@@ -253,7 +253,8 @@ func setupX509Generator(t *testing.T) (interface{}, *x509.Certificate, crypto.Si
 	if err != nil {
 		t.Fatal(err)
 	}
-	caPriv, err := getPrivateKeyFromPem(testSignerPrivateKey)
+	//caPriv, err := getPrivateKeyFromPem(testSignerPrivateKey)
+	caPriv, err := GetSignerFromPEMBytes([]byte(testSignerPrivateKey))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,14 +270,24 @@ func setupX509Generator(t *testing.T) (interface{}, *x509.Certificate, crypto.Si
 	return userPub, caCert, caPriv
 }
 
+func derBytesCertToCertAndPem(derBytes []byte) (*x509.Certificate, string, error) {
+	cert, err := x509.ParseCertificate(derBytes)
+	if err != nil {
+		return nil, "", err
+	}
+	pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes}))
+	return cert, pemCert, nil
+}
+
 //Genx509SCert(userName string, userPubkey string, caCertString string, caPrivateKeyString string)
 func TestGenx509CertGoodNoRealm(t *testing.T) {
 	userPub, caCert, caPriv := setupX509Generator(t)
 
-	_, certString, err := GenUserX509Cert("username", userPub, caCert, caPriv, nil)
+	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	certString := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derCert}))
 	t.Logf("got '%s'", certString)
 	//t.Logf("got %+v", userCert)
 
@@ -294,10 +305,11 @@ func TestGenx509CertGoodWithRealm(t *testing.T) {
 	/*
 	 */
 	realm := "EXAMPLE.COM"
-	_, certString, err := GenUserX509Cert("username", userPub, caCert, caPriv, &realm)
+	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, &realm)
 	if err != nil {
 		t.Fatal(err)
 	}
+	certString := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derCert}))
 	t.Logf("got '%s'", certString)
 	//t.Logf("got %+v", userCert)
 
@@ -312,33 +324,40 @@ func TestGenx509CertGoodWithRealm(t *testing.T) {
 
 //GenSelfSignedCACert
 func TestGenSelfSignedCACertGood(t *testing.T) {
-	caPriv, err := getPrivateKeyFromPem(testSignerPrivateKey)
+	caPriv, err := GetSignerFromPEMBytes([]byte(testSignerPrivateKey))
 	if err != nil {
 		t.Fatal(err)
 	}
-	cert, pemCert, err := GenSelfSignedCACert("some hostname", "some organization", caPriv)
+	derCACert, err := GenSelfSignedCACert("some hostname", "some organization", caPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cert, pemCert, err := derBytesCertToCertAndPem(derCACert)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("got '%s'", pemCert)
+
 	// Now we use it to generate a user Cert
 	userPub, err := getPubKeyFromPem(testUserPEMPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, err = GenUserX509Cert("username", userPub, cert, caPriv, nil)
+	_, err = GenUserX509Cert("username", userPub, cert, caPriv, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	//t.Logf("got '%s'", certString)
+
 }
 
-func TestGetPrivateKeyFromPemFail(t *testing.T) {
-	_, err := getPrivateKeyFromPem("not pem data")
+func TestGetSignerFromPEMBytesFail(t *testing.T) {
+	_, err := GetSignerFromPEMBytes([]byte("not pem data"))
 	if err == nil {
 		t.Fatal(err)
 	}
-	_, err = getPrivateKeyFromPem(testUserPEMPublicKey)
+	_, err = GetSignerFromPEMBytes([]byte(testUserPEMPublicKey))
 	if err == nil {
 		t.Fatal(err)
 	}

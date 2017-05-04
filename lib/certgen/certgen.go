@@ -104,14 +104,13 @@ func getPubKeyFromPem(pubkey string) (pub interface{}, err error) {
 		if block != nil {
 			err = errors.New(fmt.Sprintf("public key bad type %s", block.Type))
 		}
-		return "", err
+		return nil, err
 	}
 	return x509.ParsePKIXPublicKey(block.Bytes)
 }
 
-func getPrivateKeyFromPem(privateKey string) (priv crypto.Signer, err error) {
-	//TODO handle ecdsa and other non-rsa keys
-	block, _ := pem.Decode([]byte(privateKey))
+func GetSignerFromPEMBytes(privateKey []byte) (crypto.Signer, error) {
+	block, _ := pem.Decode(privateKey)
 	if block == nil {
 		err := errors.New("Cannot decode Private Key")
 		return nil, err
@@ -119,9 +118,11 @@ func getPrivateKeyFromPem(privateKey string) (priv crypto.Signer, err error) {
 	switch block.Type {
 	case "RSA PRIVATE KEY":
 		return x509.ParsePKCS1PrivateKey(block.Bytes)
+	case "EC PRIVATE KEY":
+		return x509.ParseECPrivateKey(block.Bytes)
 	default:
 		err := errors.New("Cannot process that key")
-		return priv, err
+		return nil, err
 	}
 }
 
@@ -137,19 +138,20 @@ func publicKey(priv interface{}) interface{} {
 	}
 }
 
+/*
 func derBytesCertToCertAndPem(derBytes []byte) (*x509.Certificate, string, error) {
 	cert, err := x509.ParseCertificate(derBytes)
 	if err != nil {
 		return nil, "", err
 	}
 	pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes}))
-	//fmt.Printf("pem:\n%s\n", pemCert)
 	return cert, pemCert, nil
 }
+*/
 
 // return both an internal representation an the pem representation of the string
 // As long as the issuer value matches THEN the serial number can be different every time
-func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.Signer) (*x509.Certificate, string, error) {
+func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.Signer) ([]byte, error) {
 	//// Now do the actual work...
 	notBefore := time.Now()
 	notAfter := notBefore.Add(24 * 365 * 8 * time.Hour)
@@ -157,7 +159,7 @@ func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.S
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
@@ -173,12 +175,7 @@ func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.S
 		IsCA: true,
 	}
 
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, publicKey(caPriv), caPriv)
-	if err != nil {
-		return nil, "", err
-	}
-	return derBytesCertToCertAndPem(derBytes)
-
+	return x509.CreateCertificate(rand.Reader, &template, &template, publicKey(caPriv), caPriv)
 }
 
 // From RFC 4120 section 5.2.2 (https://tools.ietf.org/html/rfc4120)
@@ -250,7 +247,7 @@ func genSANExtension(userName string, kerberosRealm *string) (*pkix.Extension, e
 
 // returns an x509 cert that has the username in the common name, optionally if a kerberos Realm is present
 // it will also add a kerberos SAN exention for pkinit
-func GenUserX509Cert(userName string, userPub interface{}, caCert *x509.Certificate, caPriv crypto.Signer, kerberosRealm *string) (*x509.Certificate, string, error) {
+func GenUserX509Cert(userName string, userPub interface{}, caCert *x509.Certificate, caPriv crypto.Signer, kerberosRealm *string) ([]byte, error) {
 	//// Now do the actual work...
 	notBefore := time.Now()
 	notAfter := notBefore.Add(time.Duration(numValidHours) * time.Hour)
@@ -258,12 +255,12 @@ func GenUserX509Cert(userName string, userPub interface{}, caCert *x509.Certific
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	sanExtension, err := genSANExtension(userName, kerberosRealm)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	// need to add the extended key usage... that is special for kerberos
@@ -287,9 +284,5 @@ func GenUserX509Cert(userName string, userPub interface{}, caCert *x509.Certific
 		template.ExtraExtensions = []pkix.Extension{*sanExtension}
 	}
 
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, caCert, userPub, caPriv)
-	if err != nil {
-		return nil, "", err
-	}
-	return derBytesCertToCertAndPem(derBytes)
+	return x509.CreateCertificate(rand.Reader, &template, caCert, userPub, caPriv)
 }
