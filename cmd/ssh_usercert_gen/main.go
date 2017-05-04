@@ -449,13 +449,13 @@ func (state *RuntimeState) postAuthX509CertHandler(w http.ResponseWriter, r *htt
 				return
 			}
 		*/
-		block, rest := pem.Decode(buf.Bytes())
+		block, _ := pem.Decode(buf.Bytes())
 		if block == nil || block.Type != "PUBLIC KEY" {
 			writeFailureResponse(w, http.StatusBadRequest, "Invalid File, Unable to decode pem")
 			log.Printf("invalid file, unable to decode pem")
 			return
 		}
-		pubKey, err := x509.ParsePKIXPublicKey(block.Bytes)
+		_, err = x509.ParsePKIXPublicKey(block.Bytes)
 		if err != nil {
 			writeFailureResponse(w, http.StatusBadRequest, "Cannot parse public key")
 			log.Printf("Cannot parse public key")
@@ -580,12 +580,13 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 	if state.KerberosRealm != nil {
 		organizationName = *state.KerberosRealm
 	}
-	_, pemCert, err := certgen.GenSelfSignedCACert(state.HostIdentity, organizationName, keySigner)
+	derCert, err := certgen.GenSelfSignedCACert(state.HostIdentity, organizationName, keySigner)
 	if err != nil {
 		writeFailureResponse(w, http.StatusInternalServerError, "")
 		log.Printf("GenSelfSignedCACert  Err")
 		return
 	}
+	pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derCert}))
 
 	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
 	w.WriteHeader(200)
