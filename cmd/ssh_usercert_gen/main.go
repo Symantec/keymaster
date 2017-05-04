@@ -42,6 +42,8 @@ type baseConfig struct {
 	SSH_CA_Filename    string
 	Htpasswd_Filename  string
 	Client_CA_Filename string
+	Host_Identity      string
+	Kerberos_Realm     string
 }
 
 type LdapConfig struct {
@@ -60,6 +62,7 @@ type RuntimeState struct {
 	Signer              crypto.Signer
 	ClientCAPool        *x509.CertPool
 	HostIdentity        string
+	KerberosRealm       *string
 	Mutex               sync.Mutex
 }
 
@@ -174,11 +177,17 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 
 	}
 
-	runtimeState.HostIdentity, err = getHostIdentity()
-	if err != nil {
-		return runtimeState, err
+	if len(runtimeState.Config.Base.Host_Identity) > 0 {
+		runtimeState.HostIdentity = runtimeState.Config.Base.Host_Identity
+	} else {
+		runtimeState.HostIdentity, err = getHostIdentity()
+		if err != nil {
+			return runtimeState, err
+		}
 	}
-
+	if len(runtimeState.Config.Base.Kerberos_Realm) > 0 {
+		runtimeState.KerberosRealm = &runtimeState.Config.Base.Kerberos_Realm
+	}
 	return runtimeState, nil
 }
 
@@ -439,6 +448,44 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "OK\n")
 	//fmt.Fprintf(w, "%+v\n", r.TLS)
+}
+
+const PUBLIC_PATH = "/public/"
+
+func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Request) {
+	var signerIsNull bool
+	var keySigner crypto.Signer
+
+	// copy runtime singer if not nil
+	state.Mutex.Lock()
+	signerIsNull = (state.Signer == nil)
+	if !signerIsNull {
+		keySigner = state.Signer
+	}
+	state.Mutex.Unlock()
+
+	//local sanity tests
+	if signerIsNull {
+		writeFailureResponse(w, http.StatusInternalServerError, "")
+		log.Printf("Signer not loaded")
+		return
+	}
+
+	//cert := "foo"
+
+	//subpath := r.URL.Path[len(CERTGEN_PATH):]
+
+	_, pemCert, err := certgen.GenSelfSignedCACert("some hostname", "some organization", keySigner)
+	if err != nil {
+		writeFailureResponse(w, http.StatusInternalServerError, "")
+		log.Printf("GenSelfSignedCACert  Err")
+		return
+	}
+
+	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
+	w.WriteHeader(200)
+	fmt.Fprintf(w, "%s", pemCert)
+	//log.Printf("Generated Certifcate for %s", targetUser)
 }
 
 func main() {
