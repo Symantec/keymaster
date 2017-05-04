@@ -474,8 +474,11 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 	//cert := "foo"
 
 	//subpath := r.URL.Path[len(CERTGEN_PATH):]
-
-	_, pemCert, err := certgen.GenSelfSignedCACert("some hostname", "some organization", keySigner)
+	organizationName := state.HostIdentity
+	if state.KerberosRealm != nil {
+		organizationName = *state.KerberosRealm
+	}
+	_, pemCert, err := certgen.GenSelfSignedCACert(state.HostIdentity, organizationName, keySigner)
 	if err != nil {
 		writeFailureResponse(w, http.StatusInternalServerError, "")
 		log.Printf("GenSelfSignedCACert  Err")
@@ -509,6 +512,7 @@ func main() {
 	http.Handle("/metrics", prometheus.Handler())
 	http.HandleFunc(SECRETINJECTOR_PATH, runtimeState.secretInjectorHandler)
 	http.HandleFunc(CERTGEN_PATH, runtimeState.certGenHandler)
+	http.HandleFunc(PUBLIC_PATH, runtimeState.publicPathHandler)
 
 	cfg := &tls.Config{
 		ClientCAs:                runtimeState.ClientCAPool,
