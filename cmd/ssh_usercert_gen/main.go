@@ -93,24 +93,7 @@ func getSignerFromPEMBytes(privateKey []byte) (crypto.Signer, error) {
 }
 
 // Assumes the runtime state signer has been loaded!
-func generateCADer(state *RuntimeState) ([]byte, error) {
-	var signerIsNull bool
-	var keySigner crypto.Signer
-
-	// copy runtime singer if not nil
-	state.Mutex.Lock()
-	signerIsNull = (state.Signer == nil)
-	if !signerIsNull {
-		keySigner = state.Signer
-	}
-	state.Mutex.Unlock()
-
-	//local sanity tests
-	if signerIsNull {
-		err := errors.New("Cannot proceed with a null signer")
-		return nil, err
-
-	}
+func generateCADer(state *RuntimeState, keySigner crypto.Signer) ([]byte, error) {
 	organizationName := state.HostIdentity
 	if state.KerberosRealm != nil {
 		organizationName = *state.KerberosRealm
@@ -188,7 +171,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			return runtimeState, err
 		}
 		runtimeState.Signer = signer
-		runtimeState.caCertDer, err = generateCADer(&runtimeState)
+		runtimeState.caCertDer, err = generateCADer(&runtimeState, signer)
 
 		if err != nil {
 			log.Printf("Cannot generate CA Der")
@@ -560,6 +543,13 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 		return
 	}
 	state.Signer = signer
+
+	log.Printf("About to generate cader %s", clientName)
+	state.caCertDer, err = generateCADer(state, signer)
+	if err != nil {
+		log.Printf("Cannot generate CA Der")
+		return
+	}
 
 	// TODO... make success a goroutine
 	w.WriteHeader(200)
