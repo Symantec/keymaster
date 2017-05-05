@@ -89,20 +89,7 @@ func exitsAndCanRead(fileName string, description string) ([]byte, error) {
 }
 
 func getSignerFromPEMBytes(privateKey []byte) (crypto.Signer, error) {
-	block, _ := pem.Decode(privateKey)
-	if block == nil {
-		err := errors.New("Cannot decode Private Key")
-		return nil, err
-	}
-	switch block.Type {
-	case "RSA PRIVATE KEY":
-		return x509.ParsePKCS1PrivateKey(block.Bytes)
-	case "EC PRIVATE KEY":
-		return x509.ParseECPrivateKey(block.Bytes)
-	default:
-		err := errors.New("Cannot process that key")
-		return nil, err
-	}
+	return certgen.GetSignerFromPEMBytes(privateKey)
 }
 
 // Assumes the runtime state signer has been loaded!
@@ -377,9 +364,13 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	case "x509":
 		state.postAuthX509CertHandler(w, r, targetUser, keySigner)
 		return
+	default:
+		writeFailureResponse(w, http.StatusBadRequest, "Unrecognized cert type")
+		return
 	}
-	//No valid case
-	writeFailureResponse(w, http.StatusBadRequest, "Unrecognized cert type")
+	//SHOULD have never reached this!
+	writeFailureResponse(w, http.StatusInternalServerError, "")
+	log.Printf("Escape from default paths")
 	return
 
 }
@@ -457,28 +448,7 @@ func (state *RuntimeState) postAuthX509CertHandler(w http.ResponseWriter, r *htt
 		defer file.Close()
 		buf := new(bytes.Buffer)
 		buf.ReadFrom(file)
-		/*
-			userPubKey := buf.String()
-			validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? ?.{0,512}\n?$", userPubKey)
-			if err != nil {
-				log.Println(err)
-				writeFailureResponse(w, http.StatusInternalServerError, "")
-				return
-			}
-			if !validKey {
-				writeFailureResponse(w, http.StatusBadRequest, "Invalid File, bad re")
-				log.Printf("invalid file, bad re")
-				return
 
-			}
-
-			cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity)
-			if err != nil {
-				writeFailureResponse(w, http.StatusInternalServerError, "")
-				log.Printf("signUserPubkey Err")
-				return
-			}
-		*/
 		block, _ := pem.Decode(buf.Bytes())
 		if block == nil || block.Type != "PUBLIC KEY" {
 			writeFailureResponse(w, http.StatusBadRequest, "Invalid File, Unable to decode pem")
@@ -504,7 +474,6 @@ func (state *RuntimeState) postAuthX509CertHandler(w http.ResponseWriter, r *htt
 			writeFailureResponse(w, http.StatusInternalServerError, "")
 			log.Printf("Cannot Generate x509cert")
 			return
-			//t.Fatal(err)
 		}
 		cert = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derCert}))
 
@@ -602,17 +571,11 @@ const PUBLIC_PATH = "/public/"
 
 func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Request) {
 	var signerIsNull bool
-	//var keySigner crypto.Signer
 
-	// copy runtime singer if not nil
+	// check if initialized(singer  not nil)
 	state.Mutex.Lock()
 	signerIsNull = (state.Signer == nil)
-	//if !signerIsNull {
-	//	keySigner = state.Signer
-	//}
 	state.Mutex.Unlock()
-
-	//local sanity tests
 	if signerIsNull {
 		writeFailureResponse(w, http.StatusInternalServerError, "")
 		log.Printf("Signer not loaded")
@@ -624,7 +587,6 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", pemCert)
-	//log.Printf("Generated Certifcate for %s", targetUser)
 }
 
 func main() {
