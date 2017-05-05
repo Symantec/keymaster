@@ -363,7 +363,6 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		writeFailureResponse(w, http.StatusMethodNotAllowed, "")
 		return
 	}
-	log.Printf("Form foo:%+v\n", r.Form)
 
 	certType := "ssh"
 	if val, ok := r.Form["type"]; ok {
