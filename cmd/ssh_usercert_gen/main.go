@@ -35,15 +35,15 @@ import (
 // While the contents of the certificaes are public, we want to
 // restrict generation to authenticated users
 type baseConfig struct {
-	Http_Address       string
-	TLS_Cert_Filename  string
-	TLS_Key_Filename   string
-	UserAuth           string
-	SSH_CA_Filename    string
-	Htpasswd_Filename  string
-	Client_CA_Filename string
-	Host_Identity      string
-	Kerberos_Realm     string
+	HttpAddress      string `yaml:"http_address"`
+	TLSCertFilename  string `yaml:"tls_cert_filename"`
+	TLSKeyFilename   string `yaml:"tls_key_filename"`
+	UserAuth         string
+	SSHCAFilename    string `yaml:"ssh_ca_filename"`
+	HtpasswdFilename string `yaml:"htpasswd_filename"`
+	ClientCAFilename string `yaml:"client_ca_filename"`
+	HostIdentity     string `yaml:"host_identity"`
+	KerberosRealm    string `yaml:"kerberos_realm"`
 }
 
 type LdapConfig struct {
@@ -119,36 +119,36 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	}
 
 	//verify config
-	if len(runtimeState.Config.Base.Host_Identity) > 0 {
-		runtimeState.HostIdentity = runtimeState.Config.Base.Host_Identity
+	if len(runtimeState.Config.Base.HostIdentity) > 0 {
+		runtimeState.HostIdentity = runtimeState.Config.Base.HostIdentity
 	} else {
 		runtimeState.HostIdentity, err = getHostIdentity()
 		if err != nil {
 			return runtimeState, err
 		}
 	}
-	if len(runtimeState.Config.Base.Kerberos_Realm) > 0 {
-		runtimeState.KerberosRealm = &runtimeState.Config.Base.Kerberos_Realm
+	if len(runtimeState.Config.Base.KerberosRealm) > 0 {
+		runtimeState.KerberosRealm = &runtimeState.Config.Base.KerberosRealm
 	}
 
-	_, err = exitsAndCanRead(runtimeState.Config.Base.TLS_Cert_Filename, "http cert file")
+	_, err = exitsAndCanRead(runtimeState.Config.Base.TLSCertFilename, "http cert file")
 	if err != nil {
 		return runtimeState, err
 	}
-	_, err = exitsAndCanRead(runtimeState.Config.Base.TLS_Key_Filename, "http key file")
+	_, err = exitsAndCanRead(runtimeState.Config.Base.TLSKeyFilename, "http key file")
 	if err != nil {
 		return runtimeState, err
 	}
 
-	sshCAFilename := runtimeState.Config.Base.SSH_CA_Filename
+	sshCAFilename := runtimeState.Config.Base.SSHCAFilename
 	runtimeState.SSHCARawFileContent, err = exitsAndCanRead(sshCAFilename, "ssh CA File")
 	if err != nil {
 		log.Printf("Cannot load ssh CA File")
 		return runtimeState, err
 	}
 
-	if len(runtimeState.Config.Base.Client_CA_Filename) > 0 {
-		clientCAbuffer, err := exitsAndCanRead(runtimeState.Config.Base.Client_CA_Filename, "client CA file")
+	if len(runtimeState.Config.Base.ClientCAFilename) > 0 {
+		clientCAbuffer, err := exitsAndCanRead(runtimeState.Config.Base.ClientCAFilename, "client CA file")
 		if err != nil {
 			log.Printf("Cannot load client CA File")
 			return runtimeState, err
@@ -221,9 +221,9 @@ func checkUserPassword(username string, password string, config AppConfigFile) (
 		return vaild, nil
 
 	}
-	if config.Base.Htpasswd_Filename != "" {
+	if config.Base.HtpasswdFilename != "" {
 		log.Printf("I have htpasswed filename")
-		buffer, err := ioutil.ReadFile(config.Base.Htpasswd_Filename)
+		buffer, err := ioutil.ReadFile(config.Base.HtpasswdFilename)
 		if err != nil {
 			return false, err
 		}
@@ -468,7 +468,7 @@ func (state *RuntimeState) postAuthX509CertHandler(w http.ResponseWriter, r *htt
 	w.Header().Set("Content-Disposition", `attachment; filename="userCert.pem"`)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", cert)
-	log.Printf("Generated SSH Certifcate for %s", targetUser)
+	log.Printf("Generated x509 Certifcate for %s", targetUser)
 }
 
 const SECRETINJECTOR_PATH = "/admin/inject"
@@ -614,14 +614,14 @@ func main() {
 		},
 	}
 	srv := &http.Server{
-		Addr:         runtimeState.Config.Base.Http_Address,
+		Addr:         runtimeState.Config.Base.HttpAddress,
 		TLSConfig:    cfg,
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 	}
 
 	err = srv.ListenAndServeTLS(
-		runtimeState.Config.Base.TLS_Cert_Filename,
-		runtimeState.Config.Base.TLS_Key_Filename)
+		runtimeState.Config.Base.TLSCertFilename,
+		runtimeState.Config.Base.TLSKeyFilename)
 	if err != nil {
 		panic(err)
 	}

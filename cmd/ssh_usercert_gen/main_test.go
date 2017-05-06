@@ -83,12 +83,23 @@ WUGURkRA8g==
 =ym0B
 -----END PGP MESSAGE-----`
 
-const testUserPublicKey = `ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDI09fpMWTeYw7/EO/+FywS/sghNXdTeTWxX7K2N17owsQJX8s76LGVIdVeYrWg4QSmYlpf6EVSCpx/fbCazrsG7FJVTRhExzFbRT9asmvzS+viXSbSvnavhOz/paihyaMsVPKVv24vF6MOs8DgfwehcKCPjKoIPnlYXZaZcy05KOcZmsvYu2kNOP6sSjDFF+ru+T+DLp3DUGw+MPr45IuR7iDnhXhklqyUn0d7ou0rOHXz9GdHIzpr+DAoQGmTDkpbQEo067Rjfu406gYL8pVFD1F7asCjU39llQCcU/HGyPym5fa29Nubw0dzZZXGZUVFalxo02YMM7P9I6ZjeCsv camilo_viecco1@mon-sre-dev.ash2.symcpe.net`
+const testUserSSHPublicKey = `ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDI09fpMWTeYw7/EO/+FywS/sghNXdTeTWxX7K2N17owsQJX8s76LGVIdVeYrWg4QSmYlpf6EVSCpx/fbCazrsG7FJVTRhExzFbRT9asmvzS+viXSbSvnavhOz/paihyaMsVPKVv24vF6MOs8DgfwehcKCPjKoIPnlYXZaZcy05KOcZmsvYu2kNOP6sSjDFF+ru+T+DLp3DUGw+MPr45IuR7iDnhXhklqyUn0d7ou0rOHXz9GdHIzpr+DAoQGmTDkpbQEo067Rjfu406gYL8pVFD1F7asCjU39llQCcU/HGyPym5fa29Nubw0dzZZXGZUVFalxo02YMM7P9I6ZjeCsv camilo_viecco1@mon-sre-dev.ash2.symcpe.net`
+
+// The next was extracted from the testUserPrivateKey above : openssl rsa -in userkey.pem -pubout
+const testUserPEMPublicKey = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyNPX6TFk3mMO/xDv/hcs
+Ev7IITV3U3k1sV+ytjde6MLECV/LO+ixlSHVXmK1oOEEpmJaX+hFUgqcf32wms67
+BuxSVU0YRMcxW0U/WrJr80vr4l0m0r52r4Ts/6WoocmjLFTylb9uLxejDrPA4H8H
+oXCgj4yqCD55WF2WmXMtOSjnGZrL2LtpDTj+rEowxRfq7vk/gy6dw1BsPjD6+OSL
+ke4g54V4ZJaslJ9He6LtKzh18/RnRyM6a/gwKEBpkw5KW0BKNOu0Y37uNOoGC/KV
+RQ9Re2rAo1N/ZZUAnFPxxsj8puX2tvTbm8NHc2WVxmVFRWpcaNNmDDOz/SOmY3gr
+LwIDAQAB
+-----END PUBLIC KEY-----`
 
 // This DB has user 'username' with password 'password'
 const userdbContent = `username:$2y$05$D4qQmZbWYqfgtGtez2EGdOkcNne40EdEznOqMvZegQypT8Jdz42Jy`
 
-func createBasicAuthRequstWithKeyBody(method, urlStr, username, password string) (*http.Request, error) {
+func createBasicAuthRequstWithKeyBody(method, urlStr, username, password, filedata string) (*http.Request, error) {
 	//create attachment....
 	bodyBuf := &bytes.Buffer{}
 	bodyWriter := multipart.NewWriter(bodyBuf)
@@ -100,7 +111,7 @@ func createBasicAuthRequstWithKeyBody(method, urlStr, username, password string)
 		//t.Fatal(err)
 		return nil, err
 	}
-	fh := strings.NewReader(testUserPublicKey)
+	fh := strings.NewReader(filedata)
 
 	//iocopy
 	_, err = io.Copy(fileWriter, fh)
@@ -143,7 +154,7 @@ func setupPasswdFile() (f *os.File, err error) {
 	return tmpfile, nil
 }
 
-func TestSuccessFullSigning(t *testing.T) {
+func TestSuccessFullSigningSSH(t *testing.T) {
 	var state RuntimeState
 	//load signer
 	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
@@ -160,10 +171,10 @@ func TestSuccessFullSigning(t *testing.T) {
 	}
 
 	defer os.Remove(passwdFile.Name()) // clean up
-	state.Config.Base.Htpasswd_Filename = passwdFile.Name()
+	state.Config.Base.HtpasswdFilename = passwdFile.Name()
 
 	// Get request
-	req, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username", "username", "password")
+	req, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username", "username", "password", testUserSSHPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,6 +203,55 @@ func TestSuccessFullSigning(t *testing.T) {
 	*/
 }
 
+func TestSuccessFullSigningX509(t *testing.T) {
+	var state RuntimeState
+	//load signer
+	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
+	if err != nil {
+		//log.Printf("Cannot parse Priave Key file")
+		//return runtimeState, err
+		t.Fatal(err)
+	}
+	state.Signer = signer
+
+	state.caCertDer, err = generateCADer(&state, signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	passwdFile, err := setupPasswdFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer os.Remove(passwdFile.Name()) // clean up
+	state.Config.Base.HtpasswdFilename = passwdFile.Name()
+
+	// Get request
+	req, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username?type=x509", "username", "password", testUserPEMPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// We create a ResponseRecorder (which satisfies http.ResponseWriter) to record the response.
+	rr := httptest.NewRecorder()
+	handler := http.HandlerFunc(state.certGenHandler)
+
+	// Our handlers satisfy http.Handler, so we can call their ServeHTTP method
+	// directly and pass in our Request and ResponseRecorder.
+	handler.ServeHTTP(rr, req)
+
+	// Check the status code is what we expect.
+	if status := rr.Code; status != http.StatusOK {
+		t.Errorf("handler returned wrong status code: got %v want %v",
+			status, http.StatusOK)
+	}
+	/*
+		// Check the response body is what we expect.
+
+	*/
+}
+
 func checkRequestHandlerCode(req *http.Request, handlerFunc http.HandlerFunc, expectedStatus int) (*httptest.ResponseRecorder, error) {
 	rr := httptest.NewRecorder()
 	handler := http.HandlerFunc(handlerFunc)
@@ -215,10 +275,10 @@ func TestInjectingSecret(t *testing.T) {
 	state.SSHCARawFileContent = []byte(encryptedTestSignerPrivateKey)
 
 	defer os.Remove(passwdFile.Name()) // clean up
-	state.Config.Base.Htpasswd_Filename = passwdFile.Name()
+	state.Config.Base.HtpasswdFilename = passwdFile.Name()
 
 	// Make certgen Request
-	certGenReq, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username", "username", "password")
+	certGenReq, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username", "username", "password", testUserSSHPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
