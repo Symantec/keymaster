@@ -227,16 +227,18 @@ func genSANExtension(userName string, kerberosRealm *string) (*pkix.Extension, e
 	}
 	//fmt.Printf("ext: %+x\n", krbSanAnotherNameDer)
 	krbSanAnotherNameDer = changePrintableStringToGeneralString(krbRealm, krbSanAnotherNameDer)
+	krbSanAnotherNameDer[0] = 0xA0
 	//fmt.Printf("ext: %+x\n", krbSanAnotherNameDer)
 
 	// inspired by marshalSANs in x509.go
 	var rawValues []asn1.RawValue
-	rawValues = append(rawValues, asn1.RawValue{Tag: 0, Class: 2, IsCompound: true, Bytes: krbSanAnotherNameDer})
+	rawValues = append(rawValues, asn1.RawValue{FullBytes: krbSanAnotherNameDer})
 
 	rawSan, err := asn1.Marshal(rawValues)
 	if err != nil {
 		return nil, err
 	}
+
 	sanExtension := pkix.Extension{
 		Id:    []int{2, 5, 29, 17},
 		Value: rawSan,

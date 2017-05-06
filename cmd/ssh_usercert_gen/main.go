@@ -35,13 +35,15 @@ import (
 // While the contents of the certificaes are public, we want to
 // restrict generation to authenticated users
 type baseConfig struct {
-	Http_Address       string
-	TLS_Cert_Filename  string
-	TLS_Key_Filename   string
-	UserAuth           string
-	SSH_CA_Filename    string
-	Htpasswd_Filename  string
-	Client_CA_Filename string
+	HttpAddress      string `yaml:"http_address"`
+	TLSCertFilename  string `yaml:"tls_cert_filename"`
+	TLSKeyFilename   string `yaml:"tls_key_filename"`
+	UserAuth         string
+	SSHCAFilename    string `yaml:"ssh_ca_filename"`
+	HtpasswdFilename string `yaml:"htpasswd_filename"`
+	ClientCAFilename string `yaml:"client_ca_filename"`
+	HostIdentity     string `yaml:"host_identity"`
+	KerberosRealm    string `yaml:"kerberos_realm"`
 }
 
 type LdapConfig struct {
@@ -60,6 +62,8 @@ type RuntimeState struct {
 	Signer              crypto.Signer
 	ClientCAPool        *x509.CertPool
 	HostIdentity        string
+	KerberosRealm       *string
+	caCertDer           []byte
 	Mutex               sync.Mutex
 }
 
@@ -85,20 +89,16 @@ func exitsAndCanRead(fileName string, description string) ([]byte, error) {
 }
 
 func getSignerFromPEMBytes(privateKey []byte) (crypto.Signer, error) {
-	block, _ := pem.Decode(privateKey)
-	if block == nil {
-		err := errors.New("Cannot decode Private Key")
-		return nil, err
+	return certgen.GetSignerFromPEMBytes(privateKey)
+}
+
+// Assumes the runtime state signer has been loaded!
+func generateCADer(state *RuntimeState, keySigner crypto.Signer) ([]byte, error) {
+	organizationName := state.HostIdentity
+	if state.KerberosRealm != nil {
+		organizationName = *state.KerberosRealm
 	}
-	switch block.Type {
-	case "RSA PRIVATE KEY":
-		return x509.ParsePKCS1PrivateKey(block.Bytes)
-	case "EC PRIVATE KEY":
-		return x509.ParseECPrivateKey(block.Bytes)
-	default:
-		err := errors.New("Cannot process that key")
-		return nil, err
-	}
+	return certgen.GenSelfSignedCACert(state.HostIdentity, organizationName, keySigner)
 }
 
 func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
@@ -119,24 +119,36 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	}
 
 	//verify config
-	_, err = exitsAndCanRead(runtimeState.Config.Base.TLS_Cert_Filename, "http cert file")
+	if len(runtimeState.Config.Base.HostIdentity) > 0 {
+		runtimeState.HostIdentity = runtimeState.Config.Base.HostIdentity
+	} else {
+		runtimeState.HostIdentity, err = getHostIdentity()
+		if err != nil {
+			return runtimeState, err
+		}
+	}
+	if len(runtimeState.Config.Base.KerberosRealm) > 0 {
+		runtimeState.KerberosRealm = &runtimeState.Config.Base.KerberosRealm
+	}
+
+	_, err = exitsAndCanRead(runtimeState.Config.Base.TLSCertFilename, "http cert file")
 	if err != nil {
 		return runtimeState, err
 	}
-	_, err = exitsAndCanRead(runtimeState.Config.Base.TLS_Key_Filename, "http key file")
+	_, err = exitsAndCanRead(runtimeState.Config.Base.TLSKeyFilename, "http key file")
 	if err != nil {
 		return runtimeState, err
 	}
 
-	sshCAFilename := runtimeState.Config.Base.SSH_CA_Filename
+	sshCAFilename := runtimeState.Config.Base.SSHCAFilename
 	runtimeState.SSHCARawFileContent, err = exitsAndCanRead(sshCAFilename, "ssh CA File")
 	if err != nil {
 		log.Printf("Cannot load ssh CA File")
 		return runtimeState, err
 	}
 
-	if len(runtimeState.Config.Base.Client_CA_Filename) > 0 {
-		clientCAbuffer, err := exitsAndCanRead(runtimeState.Config.Base.Client_CA_Filename, "client CA file")
+	if len(runtimeState.Config.Base.ClientCAFilename) > 0 {
+		clientCAbuffer, err := exitsAndCanRead(runtimeState.Config.Base.ClientCAFilename, "client CA file")
 		if err != nil {
 			log.Printf("Cannot load client CA File")
 			return runtimeState, err
@@ -158,8 +170,14 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			log.Printf("Cannot parse Priave Key file")
 			return runtimeState, err
 		}
-
 		runtimeState.Signer = signer
+		runtimeState.caCertDer, err = generateCADer(&runtimeState, signer)
+
+		if err != nil {
+			log.Printf("Cannot generate CA Der")
+			return runtimeState, err
+		}
+
 	} else {
 		if runtimeState.ClientCAPool == nil {
 			err := errors.New("Invalid ssh CA private key file and NO clientCA")
@@ -172,11 +190,6 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			return runtimeState, err
 		}
 
-	}
-
-	runtimeState.HostIdentity, err = getHostIdentity()
-	if err != nil {
-		return runtimeState, err
 	}
 
 	return runtimeState, nil
@@ -208,9 +221,9 @@ func checkUserPassword(username string, password string, config AppConfigFile) (
 		return vaild, nil
 
 	}
-	if config.Base.Htpasswd_Filename != "" {
+	if config.Base.HtpasswdFilename != "" {
 		log.Printf("I have htpasswed filename")
-		buffer, err := ioutil.ReadFile(config.Base.Htpasswd_Filename)
+		buffer, err := ioutil.ReadFile(config.Base.HtpasswdFilename)
 		if err != nil {
 			return false, err
 		}
@@ -275,14 +288,8 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		log.Printf("Signer not loaded")
 		return
 	}
-
-	signer, err := ssh.NewSignerFromSigner(keySigner)
-	if err != nil {
-		writeFailureResponse(w, http.StatusInternalServerError, "")
-		log.Printf("Signer failed to load")
-		return
-	}
-
+	/*
+	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, err := checkAuth(w, r, state.Config)
 	if err != nil {
@@ -301,12 +308,15 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		log.Printf("auth succedded for %s", authUser)
 	}
 
-	var cert string
 	switch r.Method {
 	case "GET":
-		cert, err = certgen.GenSSHCertFileStringFromSSSDPublicKey(targetUser, signer, state.HostIdentity)
+		if *debug {
+			log.Printf("Got client GET connection")
+		}
+		err = r.ParseForm()
 		if err != nil {
-			http.NotFound(w, r)
+			log.Println(err)
+			writeFailureResponse(w, http.StatusBadRequest, "Error parsing form")
 			return
 		}
 	case "POST":
@@ -319,7 +329,52 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 			writeFailureResponse(w, http.StatusBadRequest, "Error parsing form")
 			return
 		}
+	default:
+		writeFailureResponse(w, http.StatusMethodNotAllowed, "")
+		return
+	}
 
+	certType := "ssh"
+	if val, ok := r.Form["type"]; ok {
+		certType = val[0]
+	}
+	log.Printf("cert type =%s", certType)
+
+	switch certType {
+	case "ssh":
+		state.postAuthSSHCertHandler(w, r, targetUser, keySigner)
+		return
+	case "x509":
+		state.postAuthX509CertHandler(w, r, targetUser, keySigner)
+		return
+	default:
+		writeFailureResponse(w, http.StatusBadRequest, "Unrecognized cert type")
+		return
+	}
+	//SHOULD have never reached this!
+	writeFailureResponse(w, http.StatusInternalServerError, "")
+	log.Printf("Escape from default paths")
+	return
+
+}
+
+func (state *RuntimeState) postAuthSSHCertHandler(w http.ResponseWriter, r *http.Request, targetUser string, keySigner crypto.Signer) {
+	signer, err := ssh.NewSignerFromSigner(keySigner)
+	if err != nil {
+		writeFailureResponse(w, http.StatusInternalServerError, "")
+		log.Printf("Signer failed to load")
+		return
+	}
+
+	var cert string
+	switch r.Method {
+	case "GET":
+		cert, err = certgen.GenSSHCertFileStringFromSSSDPublicKey(targetUser, signer, state.HostIdentity)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+	case "POST":
 		file, _, err := r.FormFile("pubkeyfile")
 		if err != nil {
 			log.Println(err)
@@ -359,7 +414,61 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", cert)
-	log.Printf("Generated Certifcate for %s", targetUser)
+	log.Printf("Generated SSH Certifcate for %s", targetUser)
+
+}
+
+func (state *RuntimeState) postAuthX509CertHandler(w http.ResponseWriter, r *http.Request, targetUser string, keySigner crypto.Signer) {
+	var cert string
+	switch r.Method {
+	case "POST":
+		file, _, err := r.FormFile("pubkeyfile")
+		if err != nil {
+			log.Println(err)
+			writeFailureResponse(w, http.StatusBadRequest, "Missing public key file")
+			return
+		}
+		defer file.Close()
+		buf := new(bytes.Buffer)
+		buf.ReadFrom(file)
+
+		block, _ := pem.Decode(buf.Bytes())
+		if block == nil || block.Type != "PUBLIC KEY" {
+			writeFailureResponse(w, http.StatusBadRequest, "Invalid File, Unable to decode pem")
+			log.Printf("invalid file, unable to decode pem")
+			return
+		}
+		userPub, err := x509.ParsePKIXPublicKey(block.Bytes)
+		if err != nil {
+			writeFailureResponse(w, http.StatusBadRequest, "Cannot parse public key")
+			log.Printf("Cannot parse public key")
+			return
+		}
+		//tate.caCertDer
+		caCert, err := x509.ParseCertificate(state.caCertDer)
+		if err != nil {
+			//writeFailureResponse(w, http.StatusBadRequest, "Cannot parse public key")
+			writeFailureResponse(w, http.StatusInternalServerError, "")
+			log.Printf("Cannot parse CA Der data")
+			return
+		}
+		derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert, keySigner, state.KerberosRealm)
+		if err != nil {
+			writeFailureResponse(w, http.StatusInternalServerError, "")
+			log.Printf("Cannot Generate x509cert")
+			return
+		}
+		cert = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derCert}))
+
+	default:
+		writeFailureResponse(w, http.StatusMethodNotAllowed, "")
+		return
+
+	}
+	w.Header().Set("Content-Disposition", `attachment; filename="userCert.pem"`)
+	w.WriteHeader(200)
+	fmt.Fprintf(w, "%s", cert)
+	log.Printf("Generated x509 Certifcate for %s", targetUser)
 }
 
 const SECRETINJECTOR_PATH = "/admin/inject"
@@ -435,10 +544,39 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 	}
 	state.Signer = signer
 
+	log.Printf("About to generate cader %s", clientName)
+	state.caCertDer, err = generateCADer(state, signer)
+	if err != nil {
+		log.Printf("Cannot generate CA Der")
+		return
+	}
+
 	// TODO... make success a goroutine
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "OK\n")
 	//fmt.Fprintf(w, "%+v\n", r.TLS)
+}
+
+const PUBLIC_PATH = "/public/"
+
+func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Request) {
+	var signerIsNull bool
+
+	// check if initialized(singer  not nil)
+	state.Mutex.Lock()
+	signerIsNull = (state.Signer == nil)
+	state.Mutex.Unlock()
+	if signerIsNull {
+		writeFailureResponse(w, http.StatusInternalServerError, "")
+		log.Printf("Signer not loaded")
+		return
+	}
+
+	pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: state.caCertDer}))
+
+	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
+	w.WriteHeader(200)
+	fmt.Fprintf(w, "%s", pemCert)
 }
 
 func main() {
@@ -462,6 +600,7 @@ func main() {
 	http.Handle("/metrics", prometheus.Handler())
 	http.HandleFunc(SECRETINJECTOR_PATH, runtimeState.secretInjectorHandler)
 	http.HandleFunc(CERTGEN_PATH, runtimeState.certGenHandler)
+	http.HandleFunc(PUBLIC_PATH, runtimeState.publicPathHandler)
 
 	cfg := &tls.Config{
 		ClientCAs:                runtimeState.ClientCAPool,
@@ -475,14 +614,14 @@ func main() {
 		},
 	}
 	srv := &http.Server{
-		Addr:         runtimeState.Config.Base.Http_Address,
+		Addr:         runtimeState.Config.Base.HttpAddress,
 		TLSConfig:    cfg,
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 	}
 
 	err = srv.ListenAndServeTLS(
-		runtimeState.Config.Base.TLS_Cert_Filename,
-		runtimeState.Config.Base.TLS_Key_Filename)
+		runtimeState.Config.Base.TLSCertFilename,
+		runtimeState.Config.Base.TLSKeyFilename)
 	if err != nil {
 		panic(err)
 	}
