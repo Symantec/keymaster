@@ -170,13 +170,15 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			log.Printf("Cannot parse Priave Key file")
 			return runtimeState, err
 		}
-		runtimeState.Signer = signer
 		runtimeState.caCertDer, err = generateCADer(&runtimeState, signer)
-
 		if err != nil {
 			log.Printf("Cannot generate CA Der")
 			return runtimeState, err
 		}
+
+		// Assignmet of signer MUST be the last operation after
+		// all error checks
+		runtimeState.Signer = signer
 
 	} else {
 		if runtimeState.ClientCAPool == nil {
@@ -542,7 +544,6 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 		log.Printf("Cannot parse Priave Key file")
 		return
 	}
-	state.Signer = signer
 
 	log.Printf("About to generate cader %s", clientName)
 	state.caCertDer, err = generateCADer(state, signer)
@@ -550,6 +551,10 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 		log.Printf("Cannot generate CA Der")
 		return
 	}
+
+	// Assignmet of signer MUST be the last operation after
+	// all error checks
+	state.Signer = signer
 
 	// TODO... make success a goroutine
 	w.WriteHeader(200)
