@@ -264,25 +264,61 @@ func writeFailureResponse(w http.ResponseWriter, code int, message string) {
 }
 
 // Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
-func checkAuth(w http.ResponseWriter, r *http.Request, config AppConfigFile) (string, error) {
-	//For now just check http basic
-	user, pass, ok := r.BasicAuth()
+func checkAuth(w http.ResponseWriter, r *http.Request, state *RuntimeState) (string, error) {
+	// We first check for cookies
+	var authCookie *http.Cookie
+	for _, cookie := range r.Cookies() {
+		if cookie.Name != authCookieName {
+			continue
+		}
+		authCookie = cookie
+	}
+	if authCookie == nil {
+		//For now try also http basic (to be deprecated)
+		user, pass, ok := r.BasicAuth()
+		if !ok {
+			writeFailureResponse(w, http.StatusUnauthorized, "")
+			err := errors.New("check_Auth, Invalid or no auth header")
+			return "", err
+		}
+		state.Mutex.Lock()
+		config := state.Config
+		state.Mutex.Unlock()
+		valid, err := checkUserPassword(user, pass, config)
+		if err != nil {
+			writeFailureResponse(w, http.StatusInternalServerError, "")
+			return "", err
+		}
+		if !valid {
+			writeFailureResponse(w, http.StatusUnauthorized, "")
+			err := errors.New("Invalid Credentials")
+			return "", err
+		}
+		return user, nil
+	}
+
+	//Critical section
+	state.Mutex.Lock()
+	info, ok := state.authCookie[authCookie.Value]
+	state.Mutex.Unlock()
+
 	if !ok {
+		//redirect to login page?
+		//better would be to return the content of the redirect form with a 401 code?
+		//http.Redirect(w, r, "/public/loginForm", 302)
 		writeFailureResponse(w, http.StatusUnauthorized, "")
-		err := errors.New("check_Auth, Invalid or no auth header")
+		err := errors.New("Invalid Cookie")
 		return "", err
 	}
-	valid, err := checkUserPassword(user, pass, config)
-	if err != nil {
-		writeFailureResponse(w, http.StatusInternalServerError, "")
-		return "", err
-	}
-	if !valid {
+	//check for expiration...
+	if info.ExpiresAt.Before(time.Now()) {
 		writeFailureResponse(w, http.StatusUnauthorized, "")
-		err := errors.New("Invalid Credentials")
+		err := errors.New("Expired Cookie")
 		return "", err
+
 	}
-	return user, nil
+
+	return info.Username, nil
 
 }
 
@@ -309,7 +345,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, err := checkAuth(w, r, state.Config)
+	authUser, err := checkAuth(w, r, state)
 	if err != nil {
 		log.Printf("%v", err)
 
