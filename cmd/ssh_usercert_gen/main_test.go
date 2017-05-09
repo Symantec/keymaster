@@ -12,7 +12,9 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -98,6 +100,24 @@ LwIDAQAB
 
 // This DB has user 'username' with password 'password'
 const userdbContent = `username:$2y$05$D4qQmZbWYqfgtGtez2EGdOkcNne40EdEznOqMvZegQypT8Jdz42Jy`
+
+type loginTestVector struct {
+	Username *string
+	Password *string
+}
+
+var validUsernameConst = "username"
+var validPasswordConst = "password"
+var emptyStringConst = ""
+
+var loginFailValues = []loginTestVector{
+	loginTestVector{Username: &validUsernameConst, Password: &validUsernameConst}, //bad password
+	loginTestVector{Username: &validPasswordConst, Password: &validPasswordConst}, //bad username
+	loginTestVector{Username: &validUsernameConst, Password: &emptyStringConst},
+	loginTestVector{Username: &emptyStringConst, Password: &validPasswordConst},
+	loginTestVector{Username: nil, Password: &validPasswordConst},
+	loginTestVector{Username: &validUsernameConst, Password: nil},
+}
 
 func createBasicAuthRequstWithKeyBody(method, urlStr, username, password, filedata string) (*http.Request, error) {
 	//create attachment....
@@ -323,4 +343,133 @@ func TestInjectingSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestPublicHandleLoginForm(t *testing.T) {
+	var state RuntimeState
+	//load signer
+	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
+	if err != nil {
+		//log.Printf("Cannot parse Priave Key file")
+		//return runtimeState, err
+		t.Fatal(err)
+	}
+	state.Signer = signer
+	urlList := []string{"/public/loginForm", "/public/x509ca"}
+	for _, url := range urlList {
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			t.Fatal(err)
+			//return nil, err
+		}
+		_, err = checkRequestHandlerCode(req, state.publicPathHandler, http.StatusOK)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	req, err := http.NewRequest("GET", "/public/foo", nil)
+	_, err = checkRequestHandlerCode(req, state.publicPathHandler, http.StatusNotFound)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoginAPIBasicAuth(t *testing.T) {
+	var state RuntimeState
+	//load signer
+	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Signer = signer
+	state.authCookie = make(map[string]userInfo)
+
+	passwdFile, err := setupPasswdFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+	state.Config.Base.HtpasswdFilename = passwdFile.Name()
+
+	req, err := http.NewRequest("GET", "/api/v0/login", nil)
+	if err != nil {
+		t.Fatal(err)
+		//return nil, err
+	}
+	req.SetBasicAuth(validUsernameConst, validPasswordConst)
+	_, err = checkRequestHandlerCode(req, state.loginHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//TODO: check for existence of login cookie!
+
+	//now we check for failed auth
+	for _, testVector := range loginFailValues {
+		//there are no nil values in basic auth
+		if testVector.Password == nil {
+			continue
+		}
+		if testVector.Username == nil {
+			continue
+		}
+		req.SetBasicAuth(*testVector.Username, *testVector.Password)
+		_, err = checkRequestHandlerCode(req, state.loginHandler, http.StatusUnauthorized)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestLoginAPIFormAuth(t *testing.T) {
+	var state RuntimeState
+	//load signer
+	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Signer = signer
+	state.authCookie = make(map[string]userInfo)
+
+	passwdFile, err := setupPasswdFile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+	state.Config.Base.HtpasswdFilename = passwdFile.Name()
+
+	form := url.Values{}
+	form.Add("username", validUsernameConst)
+	form.Add("password", validPasswordConst)
+
+	//req, err := http.NewRequest("POST", "/api/v0/login", strings.NewReader(form.Encode()))
+	req, err := http.NewRequest("POST", "/api/v0/login", bytes.NewBufferString(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	//req.Header.Add("Content-Type", "multipart/form-data")
+	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	_, err = checkRequestHandlerCode(req, state.loginHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//TODO: check for existence of login cookie!
+	/*
+		//now we check for failed auth
+		for _, testVector := range loginFailValues {
+			//there are no nil values in basic auth
+			if testVector.Password == nil {
+				continue
+			}
+			if testVector.Username == nil {
+				continue
+			}
+			req.SetBasicAuth(*testVector.Username, *testVector.Password)
+			_, err = checkRequestHandlerCode(req, state.loginHandler, http.StatusUnauthorized)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+	*/
 }
