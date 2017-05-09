@@ -324,6 +324,31 @@ func TestFailSingingExpiredCookie(t *testing.T) {
 	// TODO check that body is actually empty
 }
 
+func TestFailSingingUnexpectedCookie(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+
+	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cookieVal := "supersecret"
+	state.authCookie[cookieVal] = userInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	authCookie := http.Cookie{Name: authCookieName, Value: "nonmatchingvalue"}
+	cookieReq.AddCookie(&authCookie)
+
+	// Now expire the cookie and retry
+	_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusUnauthorized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// TODO check that body is actually empty
+}
+
 func checkRequestHandlerCode(req *http.Request, handlerFunc http.HandlerFunc, expectedStatus int) (*httptest.ResponseRecorder, error) {
 	rr := httptest.NewRecorder()
 	handler := http.HandlerFunc(handlerFunc)
