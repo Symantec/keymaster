@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // copied from lib/certgen/cergen_test.go
@@ -119,7 +120,7 @@ var loginFailValues = []loginTestVector{
 	loginTestVector{Username: &validUsernameConst, Password: nil},
 }
 
-func createBasicAuthRequstWithKeyBody(method, urlStr, username, password, filedata string) (*http.Request, error) {
+func createKeyBodyRequest(method, urlStr, filedata string) (*http.Request, error) {
 	//create attachment....
 	bodyBuf := &bytes.Buffer{}
 	bodyWriter := multipart.NewWriter(bodyBuf)
@@ -150,9 +151,18 @@ func createBasicAuthRequstWithKeyBody(method, urlStr, username, password, fileda
 		//t.Fatal(err)
 		return nil, err
 	}
-	req.SetBasicAuth(username, password)
 	req.Header.Set("Content-Type", contentType)
 
+	return req, nil
+}
+
+func createBasicAuthRequstWithKeyBody(method, urlStr, username, password, filedata string) (*http.Request, error) {
+
+	req, err := createKeyBodyRequest(method, urlStr, filedata)
+	if err != nil {
+		return nil, err
+	}
+	req.SetBasicAuth(username, password)
 	return req, nil
 }
 
@@ -174,43 +184,49 @@ func setupPasswdFile() (f *os.File, err error) {
 	return tmpfile, nil
 }
 
-func TestSuccessFullSigningSSH(t *testing.T) {
+//
+func setupValidRuntimeStateSigner() (*RuntimeState, *os.File, error) {
 	var state RuntimeState
 	//load signer
 	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
 	if err != nil {
 		//log.Printf("Cannot parse Priave Key file")
-		//return runtimeState, err
-		t.Fatal(err)
+		return nil, nil, err
 	}
 	state.Signer = signer
 
+	//for x509
+	state.caCertDer, err = generateCADer(&state, signer)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	passwdFile, err := setupPasswdFile()
+	if err != nil {
+		return nil, nil, err
+	}
+	state.Config.Base.HtpasswdFilename = passwdFile.Name()
+
+	state.authCookie = make(map[string]userInfo)
+
+	return &state, passwdFile, nil
+}
+
+func TestSuccessFullSigningSSH(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner()
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	defer os.Remove(passwdFile.Name()) // clean up
-	state.Config.Base.HtpasswdFilename = passwdFile.Name()
 
 	// Get request
 	req, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username", "username", "password", testUserSSHPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// We create a ResponseRecorder (which satisfies http.ResponseWriter) to record the response.
-	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(state.certGenHandler)
-
-	// Our handlers satisfy http.Handler, so we can call their ServeHTTP method
-	// directly and pass in our Request and ResponseRecorder.
-	handler.ServeHTTP(rr, req)
-
-	// Check the status code is what we expect.
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("handler returned wrong status code: got %v want %v",
-			status, http.StatusOK)
+	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
 	}
 	/*
 		// Check the response body is what we expect.
@@ -221,55 +237,91 @@ func TestSuccessFullSigningSSH(t *testing.T) {
 		}
 
 	*/
+
+	// now we check using login auth + cookies
+	// For now just inject cookie into space
+
+	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username", testUserSSHPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cookieVal := "supersecret"
+	state.authCookie[cookieVal] = userInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+	cookieReq.AddCookie(&authCookie)
+
+	_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// TODO check for the contents of the successful response...
 }
 
 func TestSuccessFullSigningX509(t *testing.T) {
-	var state RuntimeState
-	//load signer
-	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
-	if err != nil {
-		//log.Printf("Cannot parse Priave Key file")
-		//return runtimeState, err
-		t.Fatal(err)
-	}
-	state.Signer = signer
-
-	state.caCertDer, err = generateCADer(&state, signer)
+	state, passwdFile, err := setupValidRuntimeStateSigner()
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	passwdFile, err := setupPasswdFile()
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	defer os.Remove(passwdFile.Name()) // clean up
-	state.Config.Base.HtpasswdFilename = passwdFile.Name()
 
 	// Get request
 	req, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username?type=x509", "username", "password", testUserPEMPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// We create a ResponseRecorder (which satisfies http.ResponseWriter) to record the response.
-	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(state.certGenHandler)
-
-	// Our handlers satisfy http.Handler, so we can call their ServeHTTP method
-	// directly and pass in our Request and ResponseRecorder.
-	handler.ServeHTTP(rr, req)
-
-	// Check the status code is what we expect.
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("handler returned wrong status code: got %v want %v",
-			status, http.StatusOK)
+	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
 	}
-	/*
-		// Check the response body is what we expect.
+	// TODO: Check the response body is what we expect.
 
-	*/
+	//And also test with cookies
+	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cookieVal := "supersecret"
+	state.authCookie[cookieVal] = userInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+	cookieReq.AddCookie(&authCookie)
+
+	_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFailSingingExpiredCookie(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+
+	//Fist we ensure OK is working
+	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cookieVal := "supersecret"
+	state.authCookie[cookieVal] = userInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+	cookieReq.AddCookie(&authCookie)
+
+	_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Now expire the cookie and retry
+	state.authCookie[cookieVal] = userInfo{Username: "username", ExpiresAt: time.Now().Add(-120 * time.Second)}
+	_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusUnauthorized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// TODO check that body is actually empty
 }
 
 func checkRequestHandlerCode(req *http.Request, handlerFunc http.HandlerFunc, expectedStatus int) (*httptest.ResponseRecorder, error) {
