@@ -374,6 +374,33 @@ func TestPublicHandleLoginForm(t *testing.T) {
 	}
 }
 
+// returns true if it has a valid cookie that is found on the runtimestate...
+// probably can be replaced by something calling checkAuth once that understands the login
+// form.
+func checkValidLoginResponse(resp *http.Response, state *RuntimeState, username string) bool {
+	//get cookies
+	var authCookie *http.Cookie
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name != authCookieName {
+			continue
+		}
+		authCookie = cookie
+	}
+	if authCookie == nil {
+		return false
+	}
+	info, ok := state.authCookie[authCookie.Value]
+	if !ok {
+		return false
+	}
+	if info.Username != username {
+		return false
+	}
+	// TODO: add check for expiration.
+	return true
+
+}
+
 func TestLoginAPIBasicAuth(t *testing.T) {
 	var state RuntimeState
 	//load signer
@@ -397,11 +424,14 @@ func TestLoginAPIBasicAuth(t *testing.T) {
 		//return nil, err
 	}
 	req.SetBasicAuth(validUsernameConst, validPasswordConst)
-	_, err = checkRequestHandlerCode(req, state.loginHandler, http.StatusOK)
+	rr, err := checkRequestHandlerCode(req, state.loginHandler, http.StatusOK)
 	if err != nil {
 		t.Fatal(err)
 	}
 	//TODO: check for existence of login cookie!
+	if !checkValidLoginResponse(rr.Result(), &state, validUsernameConst) {
+		t.Fatal(err)
+	}
 
 	//now we check for failed auth
 	for _, testVector := range loginFailValues {
@@ -441,35 +471,45 @@ func TestLoginAPIFormAuth(t *testing.T) {
 	form.Add("username", validUsernameConst)
 	form.Add("password", validPasswordConst)
 
-	//req, err := http.NewRequest("POST", "/api/v0/login", strings.NewReader(form.Encode()))
-	req, err := http.NewRequest("POST", "/api/v0/login", bytes.NewBufferString(form.Encode()))
+	req, err := http.NewRequest("POST", LOGIN_PATH, strings.NewReader(form.Encode()))
 	if err != nil {
 		t.Fatal(err)
 	}
+	// TODO: add thest with multipart/form-data support and test
 	//req.Header.Add("Content-Type", "multipart/form-data")
 	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
-	_, err = checkRequestHandlerCode(req, state.loginHandler, http.StatusOK)
+	rr, err := checkRequestHandlerCode(req, state.loginHandler, http.StatusOK)
 	if err != nil {
 		t.Fatal(err)
 	}
 	//TODO: check for existence of login cookie!
-	/*
-		//now we check for failed auth
-		for _, testVector := range loginFailValues {
-			//there are no nil values in basic auth
-			if testVector.Password == nil {
-				continue
-			}
-			if testVector.Username == nil {
-				continue
-			}
-			req.SetBasicAuth(*testVector.Username, *testVector.Password)
-			_, err = checkRequestHandlerCode(req, state.loginHandler, http.StatusUnauthorized)
-			if err != nil {
-				t.Fatal(err)
-			}
+	if !checkValidLoginResponse(rr.Result(), &state, validUsernameConst) {
+		t.Fatal(err)
+	}
+
+	//now we check for failed auth
+	for _, testVector := range loginFailValues {
+		form := url.Values{}
+		if testVector.Password != nil {
+			form.Add("password", *testVector.Password)
 		}
-	*/
+		if testVector.Username != nil {
+			form.Add("username", *testVector.Username)
+		}
+		req, err := http.NewRequest("POST", LOGIN_PATH, strings.NewReader(form.Encode()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
+		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		t.Logf("form='%s'", form.Encode())
+		//req.SetBasicAuth(*testVector.Username, *testVector.Password)
+		_, err = checkRequestHandlerCode(req, state.loginHandler, http.StatusUnauthorized)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
 }
