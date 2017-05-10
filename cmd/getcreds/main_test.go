@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"github.com/Symantec/keymaster/lib/certgen"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -96,7 +97,7 @@ dcxWzhBDbzeIV9SvcTwLx/ghQg==
 -----END PRIVATE KEY-----`
 
 const simpleValidConfigFile = `base:
-    gen_cert_urls: "https://localhost:33443/certgen/"
+    gen_cert_urls: "https://localhost:33443/"
 `
 
 const invalidConfigFileNoGenUrls = `base:
@@ -150,7 +151,15 @@ func TestGenKeyPairSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	//TODO: verify genKeyPair File content
+	fileBytes, err := ioutil.ReadFile(tmpfile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = certgen.GetSignerFromPEMBytes(fileBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//TODO: verify written signer matches our signer.
 }
 
 func TestGenKeyPairFailNoPerms(t *testing.T) {
@@ -249,67 +258,30 @@ func TestLoadVerifyConfigFileFailNoSuchFile(t *testing.T) {
 
 }
 
-func TestBuildGetCredRequestBasicAuthSuccess(t *testing.T) {
-	tmpfile, err := createTempFileWithStringContent("test_BuildGetCredRequestBasicAuthSuccess_", testUserPublicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(tmpfile.Name()) // clean up
-	targetURLString := "localhost/getcreds"
-	req, err := buildGetCredRequestBasicAuth(tmpfile.Name(), "username", []byte("password"), targetURLString)
-	if err != nil {
-		t.Fatal(err)
-	}
-	//TODO: Actually verify request contents
-	if req.Method != "POST" {
-		t.Fatal("Invalid req method")
-	}
-}
-
-func TestBuildGetCredRequestBasicAuthFailInvalidPubKeyFile(t *testing.T) {
-	targetURLString := "localhost/getcreds"
-	_, err := buildGetCredRequestBasicAuth("inexistentFilename", "username", []byte("password"), targetURLString)
-	if err == nil {
-		t.Fatal("Made valid request with non-existent pubkey file")
-	}
-}
-
 func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
 	certPool := x509.NewCertPool()
 	ok := certPool.AppendCertsFromPEM([]byte(rootCAPem))
 	if !ok {
 		t.Fatal("cannot add certs to certpool")
 	}
-	tmpfile, err := createTempFileWithStringContent("test_GetCertFromTargetUrlsSuccessOneURL_", testUserPublicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(tmpfile.Name()) // clean up
-
 	privateKey, err := rsa.GenerateKey(rand.Reader, RSA_KEY_SIZE)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = getCertFromTargetUrls(privateKey, tmpfile.Name(), "username", []byte("password"), []string{localHttpsTarget}, certPool) //(cert []byte, err error)
+	_, _, err = getCertFromTargetUrls(privateKey, "username", []byte("password"), []string{localHttpsTarget}, certPool) //(cert []byte, err error)
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
-	tmpfile, err := createTempFileWithStringContent("test_GetCertFromTargetUrlsSuccessOneURL_", testUserPublicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(tmpfile.Name()) // clean up
-
 	privateKey, err := rsa.GenerateKey(rand.Reader, RSA_KEY_SIZE)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = getCertFromTargetUrls(privateKey, tmpfile.Name(), "username", []byte("password"), []string{localHttpsTarget}, nil)
+	_, _, err = getCertFromTargetUrls(privateKey, "username", []byte("password"), []string{localHttpsTarget}, nil)
 	if err == nil {
 		t.Fatal("Should have failed to connect untrusted CA")
 	}
