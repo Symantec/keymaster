@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -119,6 +121,8 @@ func getTLSconfig() (*tls.Config, error) {
 const localHttpsTarget = "https://localhost:22443/"
 
 func handler(w http.ResponseWriter, r *http.Request) {
+	authCookie := http.Cookie{Name: "somename", Value: "somevalue"}
+	http.SetCookie(w, &authCookie)
 	fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
 }
 
@@ -142,7 +146,7 @@ func TestGenKeyPairSuccess(t *testing.T) {
 
 	defer os.Remove(tmpfile.Name()) // clean up
 
-	_, err = genKeyPair(tmpfile.Name())
+	_, _, err = genKeyPair(tmpfile.Name())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +154,7 @@ func TestGenKeyPairSuccess(t *testing.T) {
 }
 
 func TestGenKeyPairFailNoPerms(t *testing.T) {
-	_, err := genKeyPair("/proc/something")
+	_, _, err := genKeyPair("/proc/something")
 	if err == nil {
 		t.Logf("Should have failed")
 		t.Fatal(err)
@@ -282,7 +286,12 @@ func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
 	}
 	defer os.Remove(tmpfile.Name()) // clean up
 
-	_, err = getCertFromTargetUrls(tmpfile.Name(), "username", []byte("password"), []string{localHttpsTarget}, certPool) //(cert []byte, err error)
+	privateKey, err := rsa.GenerateKey(rand.Reader, RSA_KEY_SIZE)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = getCertFromTargetUrls(privateKey, tmpfile.Name(), "username", []byte("password"), []string{localHttpsTarget}, certPool) //(cert []byte, err error)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +304,12 @@ func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
 	}
 	defer os.Remove(tmpfile.Name()) // clean up
 
-	_, err = getCertFromTargetUrls(tmpfile.Name(), "username", []byte("password"), []string{localHttpsTarget}, nil)
+	privateKey, err := rsa.GenerateKey(rand.Reader, RSA_KEY_SIZE)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = getCertFromTargetUrls(privateKey, tmpfile.Name(), "username", []byte("password"), []string{localHttpsTarget}, nil)
 	if err == nil {
 		t.Fatal("Should have failed to connect untrusted CA")
 	}
