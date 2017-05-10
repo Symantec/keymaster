@@ -289,41 +289,7 @@ func getCertFromTargetUrls(signer crypto.Signer, pubKeyFilename, userName string
 		targetUrl := baseUrl + userName
 		log.Printf("attempting to target '%s'", targetUrl)
 		/*
-			tr := &http.Transport{
-				TLSClientConfig: tlsConfig,
-			}
-
-				client := &http.Client{Transport: tr, Timeout: time.Duration(5) * time.Second}
-
-					// TODO: change basic auth for some form of tokens.
-					//req, err := http.NewRequest("POST", targetUrl, bodyBuf)
-					req, err := buildGetCredRequestBasicAuth(pubKeyFilename, userName, password, targetUrl)
-					if err != nil {
-						log.Fatal(err)
-					}
-
-					resp, err := client.Do(req) //client.Get(targetUrl)
-					if err != nil {
-						log.Printf("got error from req")
-						log.Println(err)
-						//TODO: differentialte between 400 and 500 errors
-						//is OK to fail.. try next
-						continue
-					}
-					defer resp.Body.Close()
-					if resp.StatusCode != 200 {
-						log.Printf("got error from call %s", resp.Status)
-						continue
-					}
-					body, err := ioutil.ReadAll(resp.Body)
-					if err != nil {
-						log.Printf("failed to parse body")
-						log.Println(err)
-						continue
-					}
-					log.Printf("%s", body)
-					cert = body
-		*/
+		 */
 		sshCert, _, err := getCertsFromServer(signer, userName, password, baseUrl, tlsConfig)
 		if err != nil {
 			log.Println(err)
