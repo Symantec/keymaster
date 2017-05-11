@@ -19,6 +19,7 @@ import (
 	"log"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -172,7 +173,17 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 	tr := &http.Transport{
 		TLSClientConfig: tlsConfig,
 	}
+	if envProxy := os.Getenv("HTTP_PROXY"); len(envProxy) > 1 {
+		proxyUrl, err := url.Parse(envProxy)
+		if err != nil {
+			log.Printf("cannot parse proxy")
+		} else {
+			tr.Proxy = http.ProxyURL(proxyUrl)
+		}
+
+	}
 	client := &http.Client{Transport: tr, Timeout: time.Duration(5) * time.Second}
+
 	loginUrl := baseUrl + "/api/v0/login"
 	req, err := http.NewRequest("POST", loginUrl, nil)
 	if err != nil {
