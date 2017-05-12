@@ -27,9 +27,9 @@ import (
 	"time"
 )
 
-const DEFAULT_KEYS_LOCATION = "/.ssh/"
-const RSA_KEY_SIZE = 2048
-const FILE_PREFIX = "keymaster"
+const DefaultKeysLocation = "/.ssh/"
+const RSAKeySize = 2048
+const FilePrefix = "keymaster"
 
 type baseConfig struct {
 	Gen_Cert_URLS string
@@ -53,12 +53,12 @@ func getUserHomeDir(usr *user.User) (string, error) {
 // generateKeyPair uses internal golang functions to be portable
 // mostly comes from: http://stackoverflow.com/questions/21151714/go-generate-an-ssh-public-key
 func genKeyPair(privateKeyPath string) (crypto.Signer, string, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, RSA_KEY_SIZE)
+	privateKey, err := rsa.GenerateKey(rand.Reader, RSAKeySize)
 	if err != nil {
 		return nil, "", err
 	}
 
-	//privateKeyPath := BasePath + prefix
+	// privateKeyPath := BasePath + prefix
 	pubKeyPath := privateKeyPath + ".pub"
 
 	err = ioutil.WriteFile(
@@ -85,7 +85,6 @@ func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
 	}
 	source, err := ioutil.ReadFile(configFilename)
 	if err != nil {
-		//panic(err)
 		err = errors.New("cannot read config file")
 		return config, err
 	}
@@ -114,27 +113,21 @@ func createKeyBodyRequest(method, urlStr, filedata string) (*http.Request, error
 	fileWriter, err := bodyWriter.CreateFormFile("pubkeyfile", "somefilename.pub")
 	if err != nil {
 		fmt.Println("error writing to buffer")
-		//t.Fatal(err)
 		return nil, err
 	}
-	//when using a file this used to be: fh, err := os.Open(pubKeyFilename)
+	// When using a file this used to be: fh, err := os.Open(pubKeyFilename)
 	fh := strings.NewReader(filedata)
 
-	//iocopy
 	_, err = io.Copy(fileWriter, fh)
 	if err != nil {
-		//t.Fatal(err)
 		return nil, err
 	}
 
 	contentType := bodyWriter.FormDataContentType()
 	bodyWriter.Close()
 
-	// Create a request to pass to our handler. We don't have any query parameters for now, so we'll
-	// pass 'nil' as the third parameter.
 	req, err := http.NewRequest(method, urlStr, bodyBuf)
 	if err != nil {
-		//t.Fatal(err)
 		return nil, err
 	}
 	req.Header.Set("Content-Type", contentType)
@@ -148,13 +141,13 @@ func doCertRequest(client *http.Client, authCookies []*http.Cookie, url, filedat
 	if err != nil {
 		return nil, err
 	}
-	//add the login cookies
+	// Add the login cookies
 	for _, cookie := range authCookies {
 		req.AddCookie(cookie)
 	}
-	resp, err := client.Do(req) //client.Get(targetUrl)
+	resp, err := client.Do(req) // Client.Get(targetUrl)
 	if err != nil {
-		log.Printf("Failure to do x509 req")
+		log.Printf("Failure to do x509 req %s", err)
 		return nil, err
 	}
 
@@ -170,24 +163,25 @@ func doCertRequest(client *http.Client, authCookies []*http.Cookie, url, filedat
 func getCertsFromServer(signer crypto.Signer, userName string, password []byte, baseUrl string, tlsConfig *tls.Config) (sshCert []byte, x509Cert []byte, err error) {
 	//First Do Login
 
-	tr := &http.Transport{
+	clientTransport := &http.Transport{
 		TLSClientConfig: tlsConfig,
 	}
 	if envProxy := os.Getenv("HTTP_PROXY"); len(envProxy) > 1 {
 		proxyUrl, err := url.Parse(envProxy)
 		if err != nil {
 			log.Printf("cannot parse proxy")
+			return nil, nil, err
 		} else {
-			tr.Proxy = http.ProxyURL(proxyUrl)
+			clientTransport.Proxy = http.ProxyURL(proxyUrl)
 		}
 
 	}
-	client := &http.Client{Transport: tr, Timeout: time.Duration(5) * time.Second}
+	// TODO: change timeout const for a flag
+	client := &http.Client{Transport: clientTransport, Timeout: 5 * time.Second}
 
 	loginUrl := baseUrl + "/api/v0/login"
 	req, err := http.NewRequest("POST", loginUrl, nil)
 	if err != nil {
-		// Maybe fatal instead?
 		return nil, nil, err
 	}
 	req.SetBasicAuth(userName, string(password[:]))
@@ -195,8 +189,8 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 	if err != nil {
 		log.Printf("got error from req")
 		log.Println(err)
-		//TODO: differentialte between 400 and 500 errors
-		//is OK to fail.. try next
+		// TODO: differentiate between 400 and 500 errors
+		// is OK to fail.. try next
 		return nil, nil, err
 	}
 	defer loginResp.Body.Close()
@@ -236,7 +230,6 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 	if err != nil {
 		return nil, nil, err
 	}
-	//sshReq, err := createKeyBodyRequest("POST", baseUrl+"/certgen/username?type=ssh", sshAuthFile)
 
 	return sshCert, x509Cert, nil
 }
@@ -246,17 +239,12 @@ func getCertFromTargetUrls(signer crypto.Signer, userName string, password []byt
 	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
 
 	for _, baseUrl := range targetUrls {
-		//targetUrl := baseUrl + userName
 		log.Printf("attempting to target '%s' for '%s'\n", baseUrl, userName)
-		/*
-		 */
 		sshCert, x509Cert, err = getCertsFromServer(signer, userName, password, baseUrl, tlsConfig)
 		if err != nil {
 			log.Println(err)
 			continue
 		}
-		//cert = sshCert
-		// now save the file
 		success = true
 		break
 
@@ -307,7 +295,7 @@ func main() {
 
 	//sshPath := homeDir + "/.ssh/"
 	commonCertPath := "/.ssh/"
-	privateKeyPath := filepath.Join(homeDir, commonCertPath, FILE_PREFIX)
+	privateKeyPath := filepath.Join(homeDir, commonCertPath, FilePrefix)
 	signer, _, err := genKeyPair(privateKeyPath)
 	if err != nil {
 		log.Fatal(err)

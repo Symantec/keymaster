@@ -264,7 +264,7 @@ func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
 	if !ok {
 		t.Fatal("cannot add certs to certpool")
 	}
-	privateKey, err := rsa.GenerateKey(rand.Reader, RSA_KEY_SIZE)
+	privateKey, err := rsa.GenerateKey(rand.Reader, RSAKeySize)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +276,7 @@ func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
 }
 
 func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, RSA_KEY_SIZE)
+	privateKey, err := rsa.GenerateKey(rand.Reader, RSAKeySize)
 	if err != nil {
 		t.Fatal(err)
 	}
