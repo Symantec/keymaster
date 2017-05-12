@@ -287,6 +287,34 @@ func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
 	}
 }
 
+func TestGetParseURLEnvVariable(t *testing.T) {
+	testName := "TEST_ENV_KEYMASTER_11111"
+	os.Setenv(testName, "http://localhost:12345")
+	val, err := getParseURLEnvVariable(testName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val == nil {
+		t.Fatal("Should have found value")
+	}
+
+	//Not a URL
+	/*
+		os.Setenv(testName, "")
+		if err == nil {
+			t.Fatal("should have failed to parse")
+		}
+	*/
+
+	//Unexistent
+	val, err = getParseURLEnvVariable("Foobar")
+	if val != nil {
+		t.Fatal("SHOULD not have found anything ")
+	}
+	//
+
+}
+
 // ------------WARN-------- Next name copied from https://github.com/howeyc/gopass/blob/master/pass_test.go for using
 //  gopass checks
 func TestPipe(t *testing.T) {

@@ -160,22 +160,36 @@ func doCertRequest(client *http.Client, authCookies []*http.Cookie, url, filedat
 
 }
 
+func getParseURLEnvVariable(name string) (*url.URL, error) {
+	envVariable := os.Getenv(name)
+	if len(envVariable) < 1 {
+		return nil, nil
+	}
+	envUrl, err := url.Parse(envVariable)
+	if err != nil {
+		return nil, err
+	}
+
+	return envUrl, nil
+}
+
 func getCertsFromServer(signer crypto.Signer, userName string, password []byte, baseUrl string, tlsConfig *tls.Config) (sshCert []byte, x509Cert []byte, err error) {
 	//First Do Login
 
 	clientTransport := &http.Transport{
 		TLSClientConfig: tlsConfig,
 	}
-	if envProxy := os.Getenv("HTTP_PROXY"); len(envProxy) > 1 {
-		proxyUrl, err := url.Parse(envProxy)
-		if err != nil {
-			log.Printf("cannot parse proxy")
-			return nil, nil, err
-		} else {
-			clientTransport.Proxy = http.ProxyURL(proxyUrl)
-		}
 
+	// proxy env variables in descending order of preference, lower case 'http_proxy' dominates
+	// just like curl
+	proxyEnvVariables := []string{"HTTP_PROXY", "http_proxy"}
+	for _, proxyVar := range proxyEnvVariables {
+		httpProxy, err := getParseURLEnvVariable(proxyVar)
+		if err == nil && httpProxy != nil {
+			clientTransport.Proxy = http.ProxyURL(httpProxy)
+		}
 	}
+
 	// TODO: change timeout const for a flag
 	client := &http.Client{Transport: clientTransport, Timeout: 5 * time.Second}
 
