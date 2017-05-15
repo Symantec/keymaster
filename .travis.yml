@@ -2,7 +2,7 @@ language: go
 
 os:
     - linux
-      #    - osx
+    - osx
 
 before_install:
     - REPO_NAME=$(basename $PWD)
