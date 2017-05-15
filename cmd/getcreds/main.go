@@ -180,9 +180,9 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 		TLSClientConfig: tlsConfig,
 	}
 
-	// proxy env variables in descending order of preference, lower case 'http_proxy' dominates
+	// proxy env variables in ascending order of preference, lower case 'http_proxy' dominates
 	// just like curl
-	proxyEnvVariables := []string{"HTTP_PROXY", "http_proxy"}
+	proxyEnvVariables := []string{"HTTP_PROXY", "HTTPS_PROXY", "http_proxy"}
 	for _, proxyVar := range proxyEnvVariables {
 		httpProxy, err := getParseURLEnvVariable(proxyVar)
 		if err == nil && httpProxy != nil {
