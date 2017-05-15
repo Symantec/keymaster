@@ -11,8 +11,8 @@ VERSION=0.1.0
 all:
 	go test -v ./...
 	mkdir -p bin/
-	go build  -o bin/getcreds cmd/getcreds/main.go
-	go build  -o bin/keymaster cmd/ssh_usercert_gen/main.go
+	go build  -o bin/getcreds  -ldflags "-X main.Version=${VERSION}" cmd/getcreds/main.go
+	go build  -o bin/keymaster -ldflags "-X main.Version=${VERSION}" cmd/ssh_usercert_gen/main.go
 
 get-deps:
 	go get -t ./...
