@@ -1,9 +1,12 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"github.com/Symantec/keymaster/lib/certgen"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -94,7 +97,7 @@ dcxWzhBDbzeIV9SvcTwLx/ghQg==
 -----END PRIVATE KEY-----`
 
 const simpleValidConfigFile = `base:
-    gen_cert_urls: "https://localhost:33443/certgen/"
+    gen_cert_urls: "https://localhost:33443/"
 `
 
 const invalidConfigFileNoGenUrls = `base:
@@ -119,6 +122,8 @@ func getTLSconfig() (*tls.Config, error) {
 const localHttpsTarget = "https://localhost:22443/"
 
 func handler(w http.ResponseWriter, r *http.Request) {
+	authCookie := http.Cookie{Name: "somename", Value: "somevalue"}
+	http.SetCookie(w, &authCookie)
 	fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
 }
 
@@ -142,15 +147,23 @@ func TestGenKeyPairSuccess(t *testing.T) {
 
 	defer os.Remove(tmpfile.Name()) // clean up
 
-	_, err = genKeyPair(tmpfile.Name())
+	_, _, err = genKeyPair(tmpfile.Name())
 	if err != nil {
 		t.Fatal(err)
 	}
-	//TODO: verify genKeyPair File content
+	fileBytes, err := ioutil.ReadFile(tmpfile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = certgen.GetSignerFromPEMBytes(fileBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//TODO: verify written signer matches our signer.
 }
 
 func TestGenKeyPairFailNoPerms(t *testing.T) {
-	_, err := genKeyPair("/proc/something")
+	_, _, err := genKeyPair("/proc/something")
 	if err == nil {
 		t.Logf("Should have failed")
 		t.Fatal(err)
@@ -245,60 +258,61 @@ func TestLoadVerifyConfigFileFailNoSuchFile(t *testing.T) {
 
 }
 
-func TestBuildGetCredRequestBasicAuthSuccess(t *testing.T) {
-	tmpfile, err := createTempFileWithStringContent("test_BuildGetCredRequestBasicAuthSuccess_", testUserPublicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(tmpfile.Name()) // clean up
-	targetURLString := "localhost/getcreds"
-	req, err := buildGetCredRequestBasicAuth(tmpfile.Name(), "username", []byte("password"), targetURLString)
-	if err != nil {
-		t.Fatal(err)
-	}
-	//TODO: Actually verify request contents
-	if req.Method != "POST" {
-		t.Fatal("Invalid req method")
-	}
-}
-
-func TestBuildGetCredRequestBasicAuthFailInvalidPubKeyFile(t *testing.T) {
-	targetURLString := "localhost/getcreds"
-	_, err := buildGetCredRequestBasicAuth("inexistentFilename", "username", []byte("password"), targetURLString)
-	if err == nil {
-		t.Fatal("Made valid request with non-existent pubkey file")
-	}
-}
-
 func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
 	certPool := x509.NewCertPool()
 	ok := certPool.AppendCertsFromPEM([]byte(rootCAPem))
 	if !ok {
 		t.Fatal("cannot add certs to certpool")
 	}
-	tmpfile, err := createTempFileWithStringContent("test_GetCertFromTargetUrlsSuccessOneURL_", testUserPublicKey)
+	privateKey, err := rsa.GenerateKey(rand.Reader, RSAKeySize)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name()) // clean up
 
-	_, err = getCertFromTargetUrls(tmpfile.Name(), "username", []byte("password"), []string{localHttpsTarget}, certPool) //(cert []byte, err error)
+	_, _, err = getCertFromTargetUrls(privateKey, "username", []byte("password"), []string{localHttpsTarget}, certPool) //(cert []byte, err error)
 	if err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
-	tmpfile, err := createTempFileWithStringContent("test_GetCertFromTargetUrlsSuccessOneURL_", testUserPublicKey)
+	privateKey, err := rsa.GenerateKey(rand.Reader, RSAKeySize)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(tmpfile.Name()) // clean up
 
-	_, err = getCertFromTargetUrls(tmpfile.Name(), "username", []byte("password"), []string{localHttpsTarget}, nil)
+	_, _, err = getCertFromTargetUrls(privateKey, "username", []byte("password"), []string{localHttpsTarget}, nil)
 	if err == nil {
 		t.Fatal("Should have failed to connect untrusted CA")
 	}
+}
+
+func TestGetParseURLEnvVariable(t *testing.T) {
+	testName := "TEST_ENV_KEYMASTER_11111"
+	os.Setenv(testName, "http://localhost:12345")
+	val, err := getParseURLEnvVariable(testName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val == nil {
+		t.Fatal("Should have found value")
+	}
+
+	//Not a URL
+	/*
+		os.Setenv(testName, "")
+		if err == nil {
+			t.Fatal("should have failed to parse")
+		}
+	*/
+
+	//Unexistent
+	val, err = getParseURLEnvVariable("Foobar")
+	if val != nil {
+		t.Fatal("SHOULD not have found anything ")
+	}
+	//
+
 }
 
 // ------------WARN-------- Next name copied from https://github.com/howeyc/gopass/blob/master/pass_test.go for using

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -18,6 +19,7 @@ import (
 	"log"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -25,9 +27,9 @@ import (
 	"time"
 )
 
-const DEFAULT_KEYS_LOCATION = "/.ssh/"
-const RSA_KEY_SIZE = 2048
-const FILE_PREFIX = "fubar"
+const DefaultKeysLocation = "/.ssh/"
+const RSAKeySize = 2048
+const FilePrefix = "keymaster"
 
 type baseConfig struct {
 	Gen_Cert_URLS string
@@ -48,46 +50,33 @@ func getUserHomeDir(usr *user.User) (string, error) {
 	return usr.HomeDir, nil
 }
 
-// generateKeyPair uses internal golan functions to be portable
+// generateKeyPair uses internal golang functions to be portable
 // mostly comes from: http://stackoverflow.com/questions/21151714/go-generate-an-ssh-public-key
-func genKeyPair(privateKeyPath string) (string, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, RSA_KEY_SIZE)
+func genKeyPair(privateKeyPath string) (crypto.Signer, string, error) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, RSAKeySize)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 
-	//privateKeyPath := BasePath + prefix
+	// privateKeyPath := BasePath + prefix
 	pubKeyPath := privateKeyPath + ".pub"
 
-	// TODO: instead of deleteing here... create and then do atomic swap
-	os.Remove(privateKeyPath)
-	os.Remove(pubKeyPath)
-
-	// generate and write private key as PEM
-	privateKeyFile, err := os.Create(privateKeyPath)
-	defer privateKeyFile.Close()
+	err = ioutil.WriteFile(
+		privateKeyPath,
+		pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)}),
+		0600)
 	if err != nil {
 		log.Printf("Failed to save privkey")
-		return "", err
-	}
-	err = privateKeyFile.Chmod(0600)
-	if err != nil {
-		log.Printf("Failed to change file mode")
-		return "", err
-	}
-	privateKeyPEM := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)}
-	if err := pem.Encode(privateKeyFile, privateKeyPEM); err != nil {
-		return "", err
+		return nil, "", err
 	}
 
 	// generate and write public key
 	pub, err := ssh.NewPublicKey(&privateKey.PublicKey)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
-	return pubKeyPath, ioutil.WriteFile(pubKeyPath, ssh.MarshalAuthorizedKey(pub), 0644)
+	return privateKey, pubKeyPath, ioutil.WriteFile(pubKeyPath, ssh.MarshalAuthorizedKey(pub), 0644)
 }
-
 func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
 	var config AppConfigFile
 	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
@@ -96,7 +85,6 @@ func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
 	}
 	source, err := ioutil.ReadFile(configFilename)
 	if err != nil {
-		//panic(err)
 		err = errors.New("cannot read config file")
 		return config, err
 	}
@@ -115,85 +103,162 @@ func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
 	return config, nil
 }
 
-func buildGetCredRequestBasicAuth(pubKeyFilename, userName string, password []byte, targetUrl string) (*http.Request, error) {
-	// parts from  https://astaxie.gitbooks.io/build-web-application-with-golang/content/en/04.5.html
+// This is now copy-paste from the server test side... probably make public and reuse.
+func createKeyBodyRequest(method, urlStr, filedata string) (*http.Request, error) {
+	//create attachment....
 	bodyBuf := &bytes.Buffer{}
 	bodyWriter := multipart.NewWriter(bodyBuf)
 
-	fileWriter, err := bodyWriter.CreateFormFile("pubkeyfile", pubKeyFilename)
+	//
+	fileWriter, err := bodyWriter.CreateFormFile("pubkeyfile", "somefilename.pub")
 	if err != nil {
+		fmt.Println("error writing to buffer")
 		return nil, err
 	}
-	// open file handle
-	fh, err := os.Open(pubKeyFilename)
-	if err != nil {
-		return nil, err
-	}
-	defer fh.Close()
+	// When using a file this used to be: fh, err := os.Open(pubKeyFilename)
+	fh := strings.NewReader(filedata)
 
-	//iocopy
 	_, err = io.Copy(fileWriter, fh)
 	if err != nil {
-		log.Fatal(err)
 		return nil, err
-	}
-	if *debug {
-		log.Printf("%v", bodyBuf)
 	}
 
 	contentType := bodyWriter.FormDataContentType()
 	bodyWriter.Close()
 
-	req, err := http.NewRequest("POST", targetUrl, bodyBuf)
+	req, err := http.NewRequest(method, urlStr, bodyBuf)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", contentType)
 
-	req.SetBasicAuth(userName, string(password[:]))
 	return req, nil
 }
 
-func getCertFromTargetUrls(pubKeyFilename, userName string, password []byte, targetUrls []string, rootCAs *x509.CertPool) (cert []byte, err error) {
+func doCertRequest(client *http.Client, authCookies []*http.Cookie, url, filedata string) ([]byte, error) {
+
+	req, err := createKeyBodyRequest("POST", url, filedata)
+	if err != nil {
+		return nil, err
+	}
+	// Add the login cookies
+	for _, cookie := range authCookies {
+		req.AddCookie(cookie)
+	}
+	resp, err := client.Do(req) // Client.Get(targetUrl)
+	if err != nil {
+		log.Printf("Failure to do x509 req %s", err)
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		log.Printf("got error from call %s, url='%s'\n", resp.Status, url)
+		return nil, err
+	}
+	return ioutil.ReadAll(resp.Body)
+
+}
+
+func getParseURLEnvVariable(name string) (*url.URL, error) {
+	envVariable := os.Getenv(name)
+	if len(envVariable) < 1 {
+		return nil, nil
+	}
+	envUrl, err := url.Parse(envVariable)
+	if err != nil {
+		return nil, err
+	}
+
+	return envUrl, nil
+}
+
+func getCertsFromServer(signer crypto.Signer, userName string, password []byte, baseUrl string, tlsConfig *tls.Config) (sshCert []byte, x509Cert []byte, err error) {
+	//First Do Login
+
+	clientTransport := &http.Transport{
+		TLSClientConfig: tlsConfig,
+	}
+
+	// proxy env variables in ascending order of preference, lower case 'http_proxy' dominates
+	// just like curl
+	proxyEnvVariables := []string{"HTTP_PROXY", "HTTPS_PROXY", "http_proxy"}
+	for _, proxyVar := range proxyEnvVariables {
+		httpProxy, err := getParseURLEnvVariable(proxyVar)
+		if err == nil && httpProxy != nil {
+			clientTransport.Proxy = http.ProxyURL(httpProxy)
+		}
+	}
+
+	// TODO: change timeout const for a flag
+	client := &http.Client{Transport: clientTransport, Timeout: 5 * time.Second}
+
+	loginUrl := baseUrl + "/api/v0/login"
+	req, err := http.NewRequest("POST", loginUrl, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	req.SetBasicAuth(userName, string(password[:]))
+	loginResp, err := client.Do(req) //client.Get(targetUrl)
+	if err != nil {
+		log.Printf("got error from req")
+		log.Println(err)
+		// TODO: differentiate between 400 and 500 errors
+		// is OK to fail.. try next
+		return nil, nil, err
+	}
+	defer loginResp.Body.Close()
+	if loginResp.StatusCode != 200 {
+		log.Printf("got error from login call %s", loginResp.Status)
+		return nil, nil, err
+	}
+	//Enusre we have at least one cookie
+	if len(loginResp.Cookies()) < 1 {
+		err = errors.New("No cookies from login")
+		return nil, nil, err
+	}
+	loginResp.Body.Close() //so that we can reuse the channel
+
+	//now get x509 cert
+	pubKey := signer.Public()
+	derKey, err := x509.MarshalPKIXPublicKey(pubKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	pemKey := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: derKey}))
+
+	// TODO: urlencode the userName
+	x509Cert, err = doCertRequest(client, loginResp.Cookies(), baseUrl+"/certgen/"+userName+"?type=x509", pemKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	//// Now we do sshCert!
+	// generate and write public key
+	sshPub, err := ssh.NewPublicKey(pubKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	sshAuthFile := string(ssh.MarshalAuthorizedKey(sshPub))
+	sshCert, err = doCertRequest(client, loginResp.Cookies(), baseUrl+"/certgen/"+userName+"?type=ssh", sshAuthFile)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return sshCert, x509Cert, nil
+}
+
+func getCertFromTargetUrls(signer crypto.Signer, userName string, password []byte, targetUrls []string, rootCAs *x509.CertPool) (sshCert []byte, x509Cert []byte, err error) {
 	success := false
+	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
+
 	for _, baseUrl := range targetUrls {
-		targetUrl := baseUrl + userName
-		log.Printf("attempting to target '%s'", targetUrl)
-		tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
-		tr := &http.Transport{
-			TLSClientConfig: tlsConfig,
-		}
-		client := &http.Client{Transport: tr, Timeout: time.Duration(5) * time.Second}
-
-		// TODO: change basic auth for some form of tokens.
-		//req, err := http.NewRequest("POST", targetUrl, bodyBuf)
-		req, err := buildGetCredRequestBasicAuth(pubKeyFilename, userName, password, targetUrl)
+		log.Printf("attempting to target '%s' for '%s'\n", baseUrl, userName)
+		sshCert, x509Cert, err = getCertsFromServer(signer, userName, password, baseUrl, tlsConfig)
 		if err != nil {
-			log.Fatal(err)
-		}
-
-		resp, err := client.Do(req) //client.Get(targetUrl)
-		if err != nil {
-			log.Printf("got error from req")
-			log.Println(err)
-			//TODO: differentialte between 400 and 500 errors
-			//is OK to fail.. try next
-			continue
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != 200 {
-			log.Printf("got error from call %s", resp.Status)
-			continue
-		}
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			log.Printf("failed to parse body")
 			log.Println(err)
 			continue
 		}
-		log.Printf("%s", body)
-		cert = body
-		// now save the file
 		success = true
 		break
 
@@ -201,10 +266,10 @@ func getCertFromTargetUrls(pubKeyFilename, userName string, password []byte, tar
 	if !success {
 		log.Printf("failed to get creds")
 		err := errors.New("Failed to get creds")
-		return nil, err
+		return nil, nil, err
 	}
 
-	return cert, nil
+	return sshCert, x509Cert, nil
 }
 
 func getUserInfoAndCreds() (usr *user.User, password []byte, err error) {
@@ -243,25 +308,37 @@ func main() {
 	}
 
 	//sshPath := homeDir + "/.ssh/"
-	privateKeyPath := filepath.Join(homeDir, "/.ssh/", FILE_PREFIX)
-	pubKeyFilename, err := genKeyPair(privateKeyPath)
+	commonCertPath := "/.ssh/"
+	privateKeyPath := filepath.Join(homeDir, commonCertPath, FilePrefix)
+	signer, _, err := genKeyPair(privateKeyPath)
 	if err != nil {
 		log.Fatal(err)
 	}
-	cert, err := getCertFromTargetUrls(pubKeyFilename, userName, password, strings.Split(config.Base.Gen_Cert_URLS, ","), nil)
+	sshCert, x509Cert, err := getCertFromTargetUrls(signer, userName, password, strings.Split(config.Base.Gen_Cert_URLS, ","), nil)
 	if err != nil {
 		log.Fatal(err)
 	}
-	if cert == nil {
+	if sshCert == nil || x509Cert == nil {
 		err := errors.New("Could not get cert from any url")
 		log.Fatal(err)
 	}
-	log.Printf("Success")
-	// now we write the cert file...
+	if *debug {
+		log.Printf("Got Certs from server")
+		// now we write the cert file...
+	}
+	sshCertPath := privateKeyPath + "-cert.pub"
+	err = ioutil.WriteFile(sshCertPath, sshCert, 0644)
+	if err != nil {
+		err := errors.New("Could not write ssh cert")
+		log.Fatal(err)
+	}
+	x509CertPath := privateKeyPath + "-x509Cert.pem"
+	err = ioutil.WriteFile(x509CertPath, x509Cert, 0644)
+	if err != nil {
+		err := errors.New("Could not write ssh cert")
+		log.Fatal(err)
+	}
 
-	certPath := privateKeyPath + "-cert.pub"
-	//TODO: change deletion for atomic rename
-	os.Remove(certPath)
-	err = ioutil.WriteFile(certPath, cert, 0644)
+	log.Printf("Success")
 
 }
