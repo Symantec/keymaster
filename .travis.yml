@@ -2,7 +2,7 @@ language: go
 
 os:
     - linux
-    - osx
+      #    - osx
 
 before_install:
     - REPO_NAME=$(basename $PWD)
@@ -12,3 +12,5 @@ before_install:
     - rsync -az ${TRAVIS_BUILD_DIR}/ ${SYMANTEC_PROJECT_DIR}/
     - export TRAVIS_BUILD_DIR=${SYMANTEC_PROJECT_DIR}
     - cd ${SYMANTEC_PROJECT_DIR}
+
+install: make get-deps
