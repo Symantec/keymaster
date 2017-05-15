@@ -10,6 +10,8 @@ Source0:        keymaster-%{version}.tar.gz
 
 #BuildRequires: golang
 #Requires:
+Requires(pre): /usr/sbin/useradd, /usr/bin/getent
+Requires(postun): /usr/sbin/userdel
 
 #no debug package as this is go
 %define debug_package %{nil}
@@ -30,11 +32,20 @@ make
 #%make_install
 %{__install} -Dp -m0755 bin/keymaster %{buildroot}%{_sbindir}/keymaster
 %{__install} -Dp -m0755 bin/getcreds %{buildroot}%{_bindir}/getcreds
+install -d %{buildroot}/usr/lib/systemd/system
+install -p -m 0644 misc/startup/keymaster.service %{buildroot}/usr/lib/systemd/system/keymaster.service
+
+%pre
+/usr/bin/getent passwd keymaster || useradd -d /var/lib/keymaster -s /bin/false -U -r  keymaster
+
+%postun
+/usr/sbin/userdel keymaster
 
 %files
 #%doc
 %{_sbindir}/keymaster
 %{_bindir}/getcreds
+/usr/lib/systemd/system/keymaster.service
 
 
 %changelog

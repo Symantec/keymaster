@@ -21,16 +21,16 @@ clean:
 	rm -f bin/*
 	rm -f keymaster-*.tar.gz
 
-tar:
+${BINARY}-${VERSION}.tar.gz:
 	mkdir ${BINARY}-${VERSION}
 	rsync -av --exclude="config.yml" --exclude="*.pem" --exclude="*.out" lib/ ${BINARY}-${VERSION}/lib/
 	rsync -av --exclude="config.yml" --exclude="*.pem" --exclude="*.out" --exclude="*.key" cmd/ ${BINARY}-${VERSION}/cmd/
-	#mkdir -p ${BINARY}-${VERSION}/ldap_checker/
-	#mkdir -p ${BINARY}-${VERSION}/sync_checker/
-	#mkdir -p ${BINARY}-${VERSION}/common/
-	#cp ldap_checker/*.go ${BINARY}-${VERSION}/ldap_checker/
-	#cp sync_checker/*.go ${BINARY}-${VERSION}/sync_checker/
-	#cp common/*.go ${BINARY}-${VERSION}/common/
+	rsync -av  misc/ ${BINARY}-${VERSION}/misc/
 	cp LICENSE Makefile keymaster.spec README.md ${BINARY}-${VERSION}/
 	tar -cvzf ${BINARY}-${VERSION}.tar.gz ${BINARY}-${VERSION}/
 	rm -rf ${BINARY}-${VERSION}/
+
+tar:	${BINARY}-${VERSION}.tar.gz
+
+rpm:	${BINARY}-${VERSION}.tar.gz
+	rpmbuild -ta ${BINARY}-${VERSION}.tar.gz
