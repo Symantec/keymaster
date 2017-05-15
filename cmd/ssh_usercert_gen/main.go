@@ -109,6 +109,26 @@ func generateCADer(state *RuntimeState, keySigner crypto.Signer) ([]byte, error)
 	return certgen.GenSelfSignedCACert(state.HostIdentity, organizationName, keySigner)
 }
 
+func (state *RuntimeState) performStateCleanup() {
+	secsBetweenCleanup := 30
+	for {
+		state.Mutex.Lock()
+		initAuthSize := len(state.authCookie)
+		for key, userInfo := range state.authCookie {
+			if userInfo.ExpiresAt.Before(time.Now()) {
+				delete(state.authCookie, key)
+			}
+		}
+		finalAuthSize := len(state.authCookie)
+		state.Mutex.Unlock()
+		if *debug {
+			log.Printf("Auth Cookie sizes: before:(%d) after (%d)\n", initAuthSize, finalAuthSize)
+		}
+		time.Sleep(time.Duration(secsBetweenCleanup) * time.Second)
+	}
+
+}
+
 func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	var runtimeState RuntimeState
 	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
@@ -204,6 +224,8 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		}
 
 	}
+	// and we start the cleanup
+	go runtimeState.performStateCleanup()
 
 	return runtimeState, nil
 }
