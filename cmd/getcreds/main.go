@@ -39,6 +39,7 @@ type AppConfigFile struct {
 }
 
 var (
+	Version        = "No version provided"
 	configFilename = flag.String("config", "config.yml", "The filename of the configuration")
 	debug          = flag.Bool("debug", false, "Enable debug messages to console")
 )
@@ -224,7 +225,13 @@ func getUserInfoAndCreds() (usr *user.User, password []byte, err error) {
 	return usr, password, nil
 }
 
+func Usage() {
+	fmt.Fprintf(os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
+	flag.PrintDefaults()
+}
+
 func main() {
+	flag.Usage = Usage
 	flag.Parse()
 
 	config, err := loadVerifyConfigFile(*configFilename)
