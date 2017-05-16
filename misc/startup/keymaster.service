@@ -1,0 +1,13 @@
+[Unit]
+Description=Keymaster cert generation service
+After=network.target
+
+[Service]
+ExecStart=/usr/sbin/keymaster -config /etc/keymaster/server_config.yml
+Restart=always
+RestartSec=20
+User=keymaster
+Group=keymaster
+
+[Install]
+WantedBy=multi-user.target
