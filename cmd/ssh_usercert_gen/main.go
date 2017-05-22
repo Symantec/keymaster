@@ -92,8 +92,8 @@ var (
 	Version          = "No version provided"
 	configFilename   = flag.String("config", "config.yml", "The filename of the configuration")
 	debug            = flag.Bool("debug", false, "Enable debug messages to console")
-	u2fAppID         = "https://keymaster.example.com"
-	u2fTrustedFacets = []string{"https://keymaster.example.com"}
+	u2fAppID         = "https://www.example.com:33443"
+	u2fTrustedFacets = []string{}
 )
 
 func getHostIdentity() (string, error) {
@@ -175,6 +175,10 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			return runtimeState, err
 		}
 	}
+	// TODO:HACK ALERT
+	u2fAppID = "https://" + runtimeState.HostIdentity + ":33443"
+	u2fTrustedFacets = append(u2fTrustedFacets, u2fAppID)
+
 	if len(runtimeState.Config.Base.KerberosRealm) > 0 {
 		runtimeState.KerberosRealm = &runtimeState.Config.Base.KerberosRealm
 	}
@@ -896,7 +900,7 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 
 	log.Printf("registerRequest: %+v", req)
 	state.userProfile[authUser] = profile
-	go json.NewEncoder(w).Encode(req)
+	json.NewEncoder(w).Encode(req)
 }
 
 /*
@@ -933,7 +937,8 @@ const indexHTML = `<!DOCTYPE html>
     <script src="//code.jquery.com/jquery-1.11.2.min.js"></script>
     <!-- The original u2f-api.js code can be found here:
     https://github.com/google/u2f-ref-code/blob/master/u2f-gae-demo/war/js/u2f-api.js -->
-    <script type="text/javascript" src="static/u2f-api.js"></script>
+    <!-- script type="text/javascript" src="static/u2f-api.js"></script -->
+    <script type="text/javascript" src="https://demo.yubico.com/js/u2f-api.js"></script>
   </head>
   <body>
     <h1>FIDO U2F Go Library Demo</h1>
