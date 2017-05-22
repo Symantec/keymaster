@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"flag"
@@ -15,6 +16,7 @@ import (
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/tstranex/u2f"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/ssh"
@@ -58,9 +60,19 @@ type AppConfigFile struct {
 	Ldap LdapConfig
 }
 
-type userInfo struct {
+type authInfo struct {
 	ExpiresAt time.Time
 	Username  string
+}
+
+type u2fAuthData struct {
+	Counter      uint32
+	Registration *u2f.Registration
+}
+
+type userProfile struct {
+	U2fAuthData           []u2fAuthData
+	RegistrationChallenge *u2f.Challenge
 }
 
 type RuntimeState struct {
@@ -71,14 +83,17 @@ type RuntimeState struct {
 	HostIdentity        string
 	KerberosRealm       *string
 	caCertDer           []byte
-	authCookie          map[string]userInfo
+	authCookie          map[string]authInfo
 	Mutex               sync.Mutex
+	userProfile         map[string]userProfile
 }
 
 var (
-	Version        = "No version provided"
-	configFilename = flag.String("config", "config.yml", "The filename of the configuration")
-	debug          = flag.Bool("debug", false, "Enable debug messages to console")
+	Version          = "No version provided"
+	configFilename   = flag.String("config", "config.yml", "The filename of the configuration")
+	debug            = flag.Bool("debug", false, "Enable debug messages to console")
+	u2fAppID         = "https://keymaster.example.com"
+	u2fTrustedFacets = []string{"https://keymaster.example.com"}
 )
 
 func getHostIdentity() (string, error) {
@@ -115,8 +130,8 @@ func (state *RuntimeState) performStateCleanup() {
 	for {
 		state.Mutex.Lock()
 		initAuthSize := len(state.authCookie)
-		for key, userInfo := range state.authCookie {
-			if userInfo.ExpiresAt.Before(time.Now()) {
+		for key, authInfo := range state.authCookie {
+			if authInfo.ExpiresAt.Before(time.Now()) {
 				delete(state.authCookie, key)
 			}
 		}
@@ -148,7 +163,8 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	}
 
 	//share config
-	runtimeState.authCookie = make(map[string]userInfo)
+	runtimeState.authCookie = make(map[string]authInfo)
+	runtimeState.userProfile = make(map[string]userProfile)
 
 	//verify config
 	if len(runtimeState.Config.Base.HostIdentity) > 0 {
@@ -796,7 +812,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) * time.Second)
-	savedUserInfo := userInfo{Username: username, ExpiresAt: expiration}
+	savedUserInfo := authInfo{Username: username, ExpiresAt: expiration}
 	state.Mutex.Lock()
 	state.authCookie[cookieVal] = savedUserInfo
 	state.Mutex.Unlock()
@@ -813,6 +829,181 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	fmt.Fprintf(w, "Success!")
 	return
 
+}
+
+/*
+
+type u2fAuthData struct {
+            Counter      uint32
+	            Registration *u2f.Registration
+		}
+
+		type userProfile struct {
+		            U2fAuthData           []u2fAuthData
+			            RegistrationChallenge u2f.Challenge
+				}
+*/
+
+func getRegistrationArray(U2fAuthData []u2fAuthData) (regArray []u2f.Registration) {
+	for _, data := range U2fAuthData {
+		regArray = append(regArray, *data.Registration)
+	}
+	return regArray
+}
+
+const u2fRegustisterRequestPath = "/u2f/RegisterRequest"
+
+func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Request) {
+	// User must be logged in
+	var signerIsNull bool
+
+	// copy runtime singer if not nil
+	state.Mutex.Lock()
+	signerIsNull = (state.Signer == nil)
+	state.Mutex.Unlock()
+
+	//local sanity tests
+	if signerIsNull {
+		writeFailureResponse(w, http.StatusInternalServerError, "")
+		log.Printf("Signer not loaded")
+		return
+	}
+	/*
+	 */
+	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
+	authUser, err := checkAuth(w, r, state)
+	if err != nil {
+		log.Printf("%v", err)
+
+		return
+	}
+
+	// This is an UGLY big lock... we should at least create a separate lock for
+	// the userProfile struct
+	state.Mutex.Lock()
+	defer state.Mutex.Unlock()
+	profile, _ := state.userProfile[authUser]
+
+	c, err := u2f.NewChallenge(u2fAppID, u2fTrustedFacets)
+	if err != nil {
+		log.Printf("u2f.NewChallenge error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	profile.RegistrationChallenge = c
+	registrations := getRegistrationArray(profile.U2fAuthData)
+	req := u2f.NewWebRegisterRequest(c, registrations)
+
+	log.Printf("registerRequest: %+v", req)
+	state.userProfile[authUser] = profile
+	go json.NewEncoder(w).Encode(req)
+}
+
+/*
+func registerResponse(w http.ResponseWriter, r *http.Request) {
+	var regResp u2f.RegisterResponse
+	if err := json.NewDecoder(r.Body).Decode(&regResp); err != nil {
+		http.Error(w, "invalid response: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if challenge == nil {
+		http.Error(w, "challenge not found", http.StatusBadRequest)
+		return
+	}
+
+	reg, err := u2f.Register(regResp, *challenge, nil)
+	if err != nil {
+		log.Printf("u2f.Register error: %v", err)
+		http.Error(w, "error verifying response", http.StatusInternalServerError)
+		return
+	}
+
+	registrations = append(registrations, *reg)
+	counter = 0
+
+	log.Printf("Registration success: %+v", reg)
+	w.Write([]byte("success"))
+}
+*/
+
+const indexHTML = `<!DOCTYPE html>
+<html>
+  <head>
+    <script src="//code.jquery.com/jquery-1.11.2.min.js"></script>
+    <!-- The original u2f-api.js code can be found here:
+    https://github.com/google/u2f-ref-code/blob/master/u2f-gae-demo/war/js/u2f-api.js -->
+    <script type="text/javascript" src="static/u2f-api.js"></script>
+  </head>
+  <body>
+    <h1>FIDO U2F Go Library Demo</h1>
+    <ul>
+      <li><a href="javascript:register();">Register token</a></li>
+      <li><a href="javascript:sign();">Authenticate</a></li>
+    </ul>
+    <p>Open Chrome Developer Tools to see debug console logs.</p>
+    <script>
+  function serverError(data) {
+    console.log(data);
+    alert('Server error code ' + data.status + ': ' + data.responseText);
+  }
+  function checkError(resp) {
+    if (!('errorCode' in resp)) {
+      return false;
+    }
+    if (resp.errorCode === u2f.ErrorCodes['OK']) {
+      return false;
+    }
+    var msg = 'U2F error code ' + resp.errorCode;
+    for (name in u2f.ErrorCodes) {
+      if (u2f.ErrorCodes[name] === resp.errorCode) {
+        msg += ' (' + name + ')';
+      }
+    }
+    if (resp.errorMessage) {
+      msg += ': ' + resp.errorMessage;
+    }
+    console.log(msg);
+    alert(msg);
+    return true;
+  }
+  function u2fRegistered(resp) {
+    console.log(resp);
+    if (checkError(resp)) {
+      return;
+    }
+    $.post('/registerResponse', JSON.stringify(resp)).success(function() {
+      alert('Success');
+    }).fail(serverError);
+  }
+  function register() {
+    $.getJSON('/u2f/RegisterRequest').success(function(req) {
+      console.log(req);
+      u2f.register(req.appId, req.registerRequests, req.registeredKeys, u2fRegistered, 30);
+    }).fail(serverError);
+  }
+  function u2fSigned(resp) {
+    console.log(resp);
+    if (checkError(resp)) {
+      return;
+    }
+    $.post('/signResponse', JSON.stringify(resp)).success(function() {
+      alert('Success');
+    }).fail(serverError);
+  }
+  function sign() {
+    $.getJSON('/signRequest').success(function(req) {
+      console.log(req);
+      u2f.sign(req.appId, req.challenge, req.registeredKeys, u2fSigned, 30);
+    }).fail(serverError);
+  }
+    </script>
+  </body>
+</html>
+`
+
+func indexHandler(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte(indexHTML))
 }
 
 func Usage() {
@@ -844,6 +1035,10 @@ func main() {
 	http.HandleFunc(CERTGEN_PATH, runtimeState.certGenHandler)
 	http.HandleFunc(PUBLIC_PATH, runtimeState.publicPathHandler)
 	http.HandleFunc(LOGIN_PATH, runtimeState.loginHandler)
+
+	http.HandleFunc("/profile/", indexHandler)
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static_files"))))
+	http.HandleFunc(u2fRegustisterRequestPath, runtimeState.u2fRegisterRequest)
 
 	cfg := &tls.Config{
 		ClientCAs:                runtimeState.ClientCAPool,
