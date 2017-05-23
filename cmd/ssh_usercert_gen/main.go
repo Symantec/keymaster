@@ -28,6 +28,7 @@ import (
 	"net/http"
 	//"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	//"strconv"
 	"strings"
@@ -48,6 +49,7 @@ type baseConfig struct {
 	ClientCAFilename string `yaml:"client_ca_filename"`
 	HostIdentity     string `yaml:"host_identity"`
 	KerberosRealm    string `yaml:"kerberos_realm"`
+	DataDirectory    string `yaml:"data_directory"`
 }
 
 type LdapConfig struct {
@@ -87,6 +89,8 @@ type RuntimeState struct {
 	Mutex               sync.Mutex
 	userProfile         map[string]userProfile
 }
+
+const userProfileFilename = "userProfiles.json"
 
 var (
 	Version          = "No version provided"
@@ -245,6 +249,13 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		}
 
 	}
+	///
+	err = runtimeState.LoadUserProfiles()
+	if err != nil {
+		log.Printf("Cannot load user Profile %s", err)
+	}
+	log.Printf("%+v", runtimeState.userProfile)
+
 	// and we start the cleanup
 	go runtimeState.performStateCleanup()
 
@@ -363,6 +374,30 @@ func checkAuth(w http.ResponseWriter, r *http.Request, state *RuntimeState) (str
 
 	return info.Username, nil
 
+}
+
+func (state *RuntimeState) SaveUserProfiles() error {
+	jsonBytes, err := json.MarshalIndent(state.userProfile, "", "\t")
+	if err != nil {
+		log.Printf("jsonMarshal error: %v", err)
+		return err
+	}
+	if *debug {
+		log.Printf("user Profiles: '\n%s\n'", string(jsonBytes))
+	}
+	userProfilePath := filepath.Join(state.Config.Base.DataDirectory, userProfileFilename)
+	return ioutil.WriteFile(userProfilePath, jsonBytes, 0640)
+}
+
+func (state *RuntimeState) LoadUserProfiles() error {
+	userProfilePath := filepath.Join(state.Config.Base.DataDirectory, userProfileFilename)
+
+	fileBytes, err := exitsAndCanRead(userProfilePath, "user Profile file")
+	if err != nil {
+		log.Printf("problem with user Profile data")
+		return err
+	}
+	return json.Unmarshal(fileBytes, &state.userProfile)
 }
 
 const CERTGEN_PATH = "/certgen/"
@@ -964,6 +999,10 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 
 	profile.RegistrationChallenge = nil
 	state.userProfile[authUser] = profile
+
+	// TODO: make goroutine!
+	state.SaveUserProfiles()
+
 	w.Write([]byte("success"))
 }
 
