@@ -973,8 +973,8 @@ const indexHTML = `<!DOCTYPE html>
     <script src="//code.jquery.com/jquery-1.11.2.min.js"></script>
     <!-- The original u2f-api.js code can be found here:
     https://github.com/google/u2f-ref-code/blob/master/u2f-gae-demo/war/js/u2f-api.js -->
-    <!-- script type="text/javascript" src="static/u2f-api.js"></script -->
-    <script type="text/javascript" src="https://demo.yubico.com/js/u2f-api.js"></script>
+    <script type="text/javascript" src="/static/u2f-api.js"></script>
+    <!-- script type="text/javascript" src="https://demo.yubico.com/js/u2f-api.js"></script-->
   </head>
   <body>
     <h1>FIDO U2F Go Library Demo</h1>
