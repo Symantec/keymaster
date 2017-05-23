@@ -903,33 +903,69 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 	json.NewEncoder(w).Encode(req)
 }
 
-/*
-func registerResponse(w http.ResponseWriter, r *http.Request) {
+const u2fRegisterRequesponsePath = "/u2f/RegisterResponse"
+
+func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Request) {
+	// User must be logged in
+	var signerIsNull bool
+
+	// copy runtime singer if not nil
+	state.Mutex.Lock()
+	signerIsNull = (state.Signer == nil)
+	state.Mutex.Unlock()
+
+	//local sanity tests
+	if signerIsNull {
+		writeFailureResponse(w, http.StatusInternalServerError, "")
+		log.Printf("Signer not loaded")
+		return
+	}
+	/*
+	 */
+	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
+	authUser, err := checkAuth(w, r, state)
+	if err != nil {
+		log.Printf("%v", err)
+
+		return
+	}
+
 	var regResp u2f.RegisterResponse
 	if err := json.NewDecoder(r.Body).Decode(&regResp); err != nil {
 		http.Error(w, "invalid response: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	if challenge == nil {
+	state.Mutex.Lock()
+	defer state.Mutex.Unlock()
+	profile, _ := state.userProfile[authUser]
+
+	if profile.RegistrationChallenge == nil {
 		http.Error(w, "challenge not found", http.StatusBadRequest)
 		return
 	}
 
-	reg, err := u2f.Register(regResp, *challenge, nil)
+	// TODO: use yubikey or get the feitan cert :(
+	u2fConfig := u2f.Config{SkipAttestationVerify: true}
+
+	reg, err := u2f.Register(regResp, *profile.RegistrationChallenge, &u2fConfig)
 	if err != nil {
 		log.Printf("u2f.Register error: %v", err)
 		http.Error(w, "error verifying response", http.StatusInternalServerError)
 		return
 	}
 
-	registrations = append(registrations, *reg)
-	counter = 0
+	newReg := u2fAuthData{Counter: 0, Registration: reg}
+	profile.U2fAuthData = append(profile.U2fAuthData, newReg)
+	//registrations = append(registrations, *reg)
+	//counter = 0
 
 	log.Printf("Registration success: %+v", reg)
+
+	profile.RegistrationChallenge = nil
+	state.userProfile[authUser] = profile
 	w.Write([]byte("success"))
 }
-*/
 
 const indexHTML = `<!DOCTYPE html>
 <html>
@@ -977,7 +1013,7 @@ const indexHTML = `<!DOCTYPE html>
     if (checkError(resp)) {
       return;
     }
-    $.post('/registerResponse', JSON.stringify(resp)).success(function() {
+    $.post('/u2f/RegisterResponse', JSON.stringify(resp)).success(function() {
       alert('Success');
     }).fail(serverError);
   }
@@ -1044,6 +1080,7 @@ func main() {
 	http.HandleFunc("/profile/", indexHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static_files"))))
 	http.HandleFunc(u2fRegustisterRequestPath, runtimeState.u2fRegisterRequest)
+	http.HandleFunc(u2fRegisterRequesponsePath, runtimeState.u2fRegisterResponse)
 
 	cfg := &tls.Config{
 		ClientCAs:                runtimeState.ClientCAPool,
