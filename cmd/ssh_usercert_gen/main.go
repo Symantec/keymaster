@@ -92,7 +92,7 @@ type RuntimeState struct {
 	userProfile         map[string]userProfile
 }
 
-const userProfileFilename = "userProfiles.json"
+const userProfileFilename = "userProfiles.gob"
 
 var (
 	Version          = "No version provided"
@@ -379,14 +379,6 @@ func checkAuth(w http.ResponseWriter, r *http.Request, state *RuntimeState) (str
 }
 
 func (state *RuntimeState) SaveUserProfiles() error {
-	jsonBytes, err := json.MarshalIndent(state.userProfile, "", "\t")
-	if err != nil {
-		log.Printf("jsonMarshal error: %v", err)
-		return err
-	}
-	if *debug {
-		log.Printf("user Profiles: '\n%s\n'", string(jsonBytes))
-	}
 	var gobBuffer bytes.Buffer
 	encoder := gob.NewEncoder(&gobBuffer)
 	encoder.Encode(state.userProfile)
@@ -405,7 +397,6 @@ func (state *RuntimeState) LoadUserProfiles() error {
 	gobReader := bytes.NewReader(fileBytes)
 	decoder := gob.NewDecoder(gobReader)
 	return decoder.Decode(&state.userProfile)
-	//return json.Unmarshal(fileBytes, &state.userProfile)
 }
 
 const CERTGEN_PATH = "/certgen/"
