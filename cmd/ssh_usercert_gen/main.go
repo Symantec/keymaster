@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/gob"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -75,6 +76,7 @@ type u2fAuthData struct {
 type userProfile struct {
 	U2fAuthData           []u2fAuthData
 	RegistrationChallenge *u2f.Challenge
+	u2fAuthChallenge      *u2f.Challenge
 }
 
 type RuntimeState struct {
@@ -385,8 +387,11 @@ func (state *RuntimeState) SaveUserProfiles() error {
 	if *debug {
 		log.Printf("user Profiles: '\n%s\n'", string(jsonBytes))
 	}
+	var gobBuffer bytes.Buffer
+	encoder := gob.NewEncoder(&gobBuffer)
+	encoder.Encode(state.userProfile)
 	userProfilePath := filepath.Join(state.Config.Base.DataDirectory, userProfileFilename)
-	return ioutil.WriteFile(userProfilePath, jsonBytes, 0640)
+	return ioutil.WriteFile(userProfilePath, gobBuffer.Bytes(), 0640)
 }
 
 func (state *RuntimeState) LoadUserProfiles() error {
@@ -397,7 +402,10 @@ func (state *RuntimeState) LoadUserProfiles() error {
 		log.Printf("problem with user Profile data")
 		return err
 	}
-	return json.Unmarshal(fileBytes, &state.userProfile)
+	gobReader := bytes.NewReader(fileBytes)
+	decoder := gob.NewDecoder(gobReader)
+	return decoder.Decode(&state.userProfile)
+	//return json.Unmarshal(fileBytes, &state.userProfile)
 }
 
 const CERTGEN_PATH = "/certgen/"
@@ -870,18 +878,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 
 }
 
-/*
-
-type u2fAuthData struct {
-            Counter      uint32
-	            Registration *u2f.Registration
-		}
-
-		type userProfile struct {
-		            U2fAuthData           []u2fAuthData
-			            RegistrationChallenge u2f.Challenge
-				}
-*/
+////////////////////////////
 
 func getRegistrationArray(U2fAuthData []u2fAuthData) (regArray []u2f.Registration) {
 	for _, data := range U2fAuthData {
@@ -1006,6 +1003,148 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 	w.Write([]byte("success"))
 }
 
+const u2fSignRequestPath = "/u2f/SignRequest"
+
+func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request) {
+	/// Check if unlocked
+
+	// User must be logged in
+	var signerIsNull bool
+
+	// copy runtime singer if not nil
+	state.Mutex.Lock()
+	signerIsNull = (state.Signer == nil)
+	state.Mutex.Unlock()
+
+	//local sanity tests
+	if signerIsNull {
+		writeFailureResponse(w, http.StatusInternalServerError, "")
+		log.Printf("Signer not loaded")
+		return
+	}
+	/*
+	 */
+	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
+	authUser, err := checkAuth(w, r, state)
+	if err != nil {
+		log.Printf("%v", err)
+
+		return
+	}
+
+	//////////
+	state.Mutex.Lock()
+	defer state.Mutex.Unlock()
+	profile, ok := state.userProfile[authUser]
+
+	/////////
+	if !ok {
+		http.Error(w, "No regstered data", http.StatusBadRequest)
+		return
+	}
+	registrations := getRegistrationArray(profile.U2fAuthData)
+	if len(registrations) < 1 {
+		http.Error(w, "registration missing", http.StatusBadRequest)
+		return
+	}
+
+	c, err := u2f.NewChallenge(u2fAppID, u2fTrustedFacets)
+	if err != nil {
+		log.Printf("u2f.NewChallenge error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	profile.u2fAuthChallenge = c
+	state.userProfile[authUser] = profile
+
+	req := c.SignRequest(registrations)
+	log.Printf("Sign request: %+v", req)
+
+	json.NewEncoder(w).Encode(req)
+}
+
+const u2fSignResponsePath = "/u2f/SignResponse"
+
+func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Request) {
+	// User must be logged in
+	var signerIsNull bool
+
+	// copy runtime singer if not nil
+	state.Mutex.Lock()
+	signerIsNull = (state.Signer == nil)
+	state.Mutex.Unlock()
+
+	//local sanity tests
+	if signerIsNull {
+		writeFailureResponse(w, http.StatusInternalServerError, "")
+		log.Printf("Signer not loaded")
+		return
+	}
+	/*
+	 */
+	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
+	authUser, err := checkAuth(w, r, state)
+	if err != nil {
+		log.Printf("%v", err)
+
+		return
+	}
+	//now the actual work
+	var signResp u2f.SignResponse
+	if err := json.NewDecoder(r.Body).Decode(&signResp); err != nil {
+		http.Error(w, "invalid response: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("signResponse: %+v", signResp)
+
+	state.Mutex.Lock()
+	defer state.Mutex.Unlock()
+	profile, ok := state.userProfile[authUser]
+
+	/////////
+	if !ok {
+		http.Error(w, "No regstered data", http.StatusBadRequest)
+		return
+	}
+	registrations := getRegistrationArray(profile.U2fAuthData)
+	if len(registrations) < 1 {
+		http.Error(w, "registration missing", http.StatusBadRequest)
+		return
+	}
+
+	if profile.u2fAuthChallenge == nil {
+		http.Error(w, "challenge missing", http.StatusBadRequest)
+		return
+	}
+	if registrations == nil {
+		http.Error(w, "registration missing", http.StatusBadRequest)
+		return
+	}
+
+	//var err error
+	for i, u2fReg := range profile.U2fAuthData {
+		newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *profile.u2fAuthChallenge, u2fReg.Counter)
+		if authErr == nil {
+			log.Printf("newCounter: %d", newCounter)
+			//counter = newCounter
+			profile.U2fAuthData[i].Counter = newCounter
+			profile.u2fAuthChallenge = nil
+			state.userProfile[authUser] = profile
+
+			// TODO: make goroutine!
+			state.SaveUserProfiles()
+
+			// TODO: update local cookie state
+			w.Write([]byte("success"))
+			return
+		}
+	}
+
+	log.Printf("VerifySignResponse error: %v", err)
+	http.Error(w, "error verifying response", http.StatusInternalServerError)
+}
+
 const indexHTML = `<!DOCTYPE html>
 <html>
   <head>
@@ -1067,12 +1206,12 @@ const indexHTML = `<!DOCTYPE html>
     if (checkError(resp)) {
       return;
     }
-    $.post('/signResponse', JSON.stringify(resp)).success(function() {
+    $.post('/u2f/SignResponse', JSON.stringify(resp)).success(function() {
       alert('Success');
     }).fail(serverError);
   }
   function sign() {
-    $.getJSON('/signRequest').success(function(req) {
+    $.getJSON('/u2f/SignRequest').success(function(req) {
       console.log(req);
       u2f.sign(req.appId, req.challenge, req.registeredKeys, u2fSigned, 30);
     }).fail(serverError);
@@ -1120,6 +1259,8 @@ func main() {
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static_files"))))
 	http.HandleFunc(u2fRegustisterRequestPath, runtimeState.u2fRegisterRequest)
 	http.HandleFunc(u2fRegisterRequesponsePath, runtimeState.u2fRegisterResponse)
+	http.HandleFunc(u2fSignRequestPath, runtimeState.u2fSignRequest)
+	http.HandleFunc(u2fSignResponsePath, runtimeState.u2fSignResponse)
 
 	cfg := &tls.Config{
 		ClientCAs:                runtimeState.ClientCAPool,
