@@ -390,7 +390,6 @@ func checkAuth(w http.ResponseWriter, r *http.Request, state *RuntimeState) (str
 	if !ok {
 		//redirect to login page?
 		//better would be to return the content of the redirect form with a 401 code?
-		//http.Redirect(w, r, "/public/loginForm", 302)
 		writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		err := errors.New("Invalid Cookie")
 		return "", err
@@ -1187,7 +1186,7 @@ const profilePath = "/profile/"
 const indexHTML = `<!DOCTYPE html>
 <html>
   <head>
-    <script src="//code.jquery.com/jquery-1.11.2.min.js"></script>
+    <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
     <!-- The original u2f-api.js code can be found here:
     https://github.com/google/u2f-ref-code/blob/master/u2f-gae-demo/war/js/u2f-api.js -->
     <script type="text/javascript" src="/static/u2f-api.js"></script>
