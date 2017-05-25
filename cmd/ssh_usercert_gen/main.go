@@ -63,9 +63,16 @@ type AppConfigFile struct {
 	Ldap LdapConfig
 }
 
+const (
+	AuthLevelNone     = -1
+	AuthLevelPassword = 0
+	AuthLevelU2F      = 1
+)
+
 type authInfo struct {
 	ExpiresAt time.Time
 	Username  string
+	AuthLevel int
 }
 
 type u2fAuthData struct {
@@ -347,8 +354,24 @@ func writeFailureResponse(w http.ResponseWriter, r *http.Request, code int, mess
 	}
 }
 
+// returns true if the system is locked and sends message to the requester
+func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r *http.Request) bool {
+	var signerIsNull bool
+
+	state.Mutex.Lock()
+	signerIsNull = (state.Signer == nil)
+	state.Mutex.Unlock()
+
+	if signerIsNull {
+		writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		log.Printf("Signer has not been unlocked")
+		return true
+	}
+	return false
+}
+
 // Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
-func checkAuth(w http.ResponseWriter, r *http.Request, state *RuntimeState) (string, error) {
+func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (string, int, error) {
 	// We first check for cookies
 	var authCookie *http.Cookie
 	for _, cookie := range r.Cookies() {
@@ -364,7 +387,7 @@ func checkAuth(w http.ResponseWriter, r *http.Request, state *RuntimeState) (str
 			writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			//toLoginOrBasicAuth(w, r)
 			err := errors.New("check_Auth, Invalid or no auth header")
-			return "", err
+			return "", AuthLevelNone, err
 		}
 		state.Mutex.Lock()
 		config := state.Config
@@ -372,14 +395,14 @@ func checkAuth(w http.ResponseWriter, r *http.Request, state *RuntimeState) (str
 		valid, err := checkUserPassword(user, pass, config)
 		if err != nil {
 			writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			return "", err
+			return "", AuthLevelNone, err
 		}
 		if !valid {
 			writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			err := errors.New("Invalid Credentials")
-			return "", err
+			return "", AuthLevelNone, err
 		}
-		return user, nil
+		return user, AuthLevelPassword, nil
 	}
 
 	//Critical section
@@ -392,18 +415,16 @@ func checkAuth(w http.ResponseWriter, r *http.Request, state *RuntimeState) (str
 		//better would be to return the content of the redirect form with a 401 code?
 		writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		err := errors.New("Invalid Cookie")
-		return "", err
+		return "", AuthLevelNone, err
 	}
 	//check for expiration...
 	if info.ExpiresAt.Before(time.Now()) {
 		writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		err := errors.New("Expired Cookie")
-		return "", err
+		return "", AuthLevelNone, err
 
 	}
-
-	return info.Username, nil
-
+	return info.Username, info.AuthLevel, nil
 }
 
 func (state *RuntimeState) SaveUserProfiles() error {
@@ -450,7 +471,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, err := checkAuth(w, r, state)
+	authUser, _, err := state.checkAuth(w, r)
 	if err != nil {
 		log.Printf("%v", err)
 
@@ -721,23 +742,6 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 
 const PUBLIC_PATH = "/public/"
 
-//Should be a template
-const loginFormText = `
-<html>
-    <head>
-	<meta charset="UTF-8">
-	<title>{{.Title}}</title>
-    </head>
-    <body>
-	<form enctype="application/x-www-form-urlencoded" action="/api/v0/login" method="post">
-	    <p>Username: <INPUT TYPE="text" NAME="username" SIZE=18></p>
-	    <p>Password: <INPUT TYPE="password" NAME="password" SIZE=18></p>
-	    <p><input type="submit" value="Submit" /></p>
-	</form>
-    </body>
-</html>
-`
-
 const loginFormPath = "/public/loginForm"
 
 func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Request) {
@@ -791,15 +795,7 @@ func genRandomString() (string, error) {
 const LOGIN_PATH = "/api/v0/login"
 
 func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) {
-	//log.Printf("Top of LoginHandler")
-	signerIsNull := true
-	// check if initialized(singer  not nil)
-	state.Mutex.Lock()
-	signerIsNull = (state.Signer == nil)
-	state.Mutex.Unlock()
-	if signerIsNull {
-		writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		log.Printf("Signer not loaded")
+	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
 
@@ -926,24 +922,14 @@ func getRegistrationArray(U2fAuthData []u2fAuthData) (regArray []u2f.Registratio
 const u2fRegustisterRequestPath = "/u2f/RegisterRequest"
 
 func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Request) {
-	// User must be logged in
-	var signerIsNull bool
-
-	// copy runtime singer if not nil
-	state.Mutex.Lock()
-	signerIsNull = (state.Signer == nil)
-	state.Mutex.Unlock()
-
-	//local sanity tests
-	if signerIsNull {
-		writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		log.Printf("Signer not loaded")
+	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
+
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, err := checkAuth(w, r, state)
+	authUser, _, err := state.checkAuth(w, r)
 	if err != nil {
 		log.Printf("%v", err)
 
@@ -974,24 +960,14 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 const u2fRegisterRequesponsePath = "/u2f/RegisterResponse"
 
 func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Request) {
-	// User must be logged in
-	var signerIsNull bool
-
-	// copy runtime singer if not nil
-	state.Mutex.Lock()
-	signerIsNull = (state.Signer == nil)
-	state.Mutex.Unlock()
-
-	//local sanity tests
-	if signerIsNull {
-		writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		log.Printf("Signer not loaded")
+	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
+
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, err := checkAuth(w, r, state)
+	authUser, _, err := state.checkAuth(w, r)
 	if err != nil {
 		log.Printf("%v", err)
 
@@ -1042,26 +1018,13 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 const u2fSignRequestPath = "/u2f/SignRequest"
 
 func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request) {
-	/// Check if unlocked
-
-	// User must be logged in
-	var signerIsNull bool
-
-	// copy runtime singer if not nil
-	state.Mutex.Lock()
-	signerIsNull = (state.Signer == nil)
-	state.Mutex.Unlock()
-
-	//local sanity tests
-	if signerIsNull {
-		writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		log.Printf("Signer not loaded")
+	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, err := checkAuth(w, r, state)
+	authUser, _, err := state.checkAuth(w, r)
 	if err != nil {
 		log.Printf("%v", err)
 
@@ -1103,23 +1066,13 @@ const u2fSignResponsePath = "/u2f/SignResponse"
 
 func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Request) {
 	// User must be logged in
-	var signerIsNull bool
-
-	// copy runtime singer if not nil
-	state.Mutex.Lock()
-	signerIsNull = (state.Signer == nil)
-	state.Mutex.Unlock()
-
-	//local sanity tests
-	if signerIsNull {
-		writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		log.Printf("Signer not loaded")
+	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, err := checkAuth(w, r, state)
+	authUser, _, err := state.checkAuth(w, r)
 	if err != nil {
 		log.Printf("%v", err)
 
@@ -1183,101 +1136,14 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 
 const profilePath = "/profile/"
 
-const indexHTML = `<!DOCTYPE html>
-<html>
-  <head>
-    <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
-    <!-- The original u2f-api.js code can be found here:
-    https://github.com/google/u2f-ref-code/blob/master/u2f-gae-demo/war/js/u2f-api.js -->
-    <script type="text/javascript" src="/static/u2f-api.js"></script>
-    <!-- script type="text/javascript" src="https://demo.yubico.com/js/u2f-api.js"></script-->
-  </head>
-  <body>
-    <h1>FIDO U2F Go Library Demo</h1>
-    <ul>
-      <li><a href="javascript:register();">Register token</a></li>
-      <li><a href="javascript:sign();">Authenticate</a></li>
-    </ul>
-    <p>Open Chrome Developer Tools to see debug console logs.</p>
-    <script>
-  function serverError(data) {
-    console.log(data);
-    alert('Server error code ' + data.status + ': ' + data.responseText);
-  }
-  function checkError(resp) {
-    if (!('errorCode' in resp)) {
-      return false;
-    }
-    if (resp.errorCode === u2f.ErrorCodes['OK']) {
-      return false;
-    }
-    var msg = 'U2F error code ' + resp.errorCode;
-    for (name in u2f.ErrorCodes) {
-      if (u2f.ErrorCodes[name] === resp.errorCode) {
-        msg += ' (' + name + ')';
-      }
-    }
-    if (resp.errorMessage) {
-      msg += ': ' + resp.errorMessage;
-    }
-    console.log(msg);
-    alert(msg);
-    return true;
-  }
-  function u2fRegistered(resp) {
-    console.log(resp);
-    if (checkError(resp)) {
-      return;
-    }
-    $.post('/u2f/RegisterResponse', JSON.stringify(resp)).success(function() {
-      alert('Success');
-    }).fail(serverError);
-  }
-  function register() {
-    $.getJSON('/u2f/RegisterRequest').success(function(req) {
-      console.log(req);
-      u2f.register(req.appId, req.registerRequests, req.registeredKeys, u2fRegistered, 30);
-    }).fail(serverError);
-  }
-  function u2fSigned(resp) {
-    console.log(resp);
-    if (checkError(resp)) {
-      return;
-    }
-    $.post('/u2f/SignResponse', JSON.stringify(resp)).success(function() {
-      alert('Success');
-    }).fail(serverError);
-  }
-  function sign() {
-    $.getJSON('/u2f/SignRequest').success(function(req) {
-      console.log(req);
-      u2f.sign(req.appId, req.challenge, req.registeredKeys, u2fSigned, 30);
-    }).fail(serverError);
-  }
-    </script>
-  </body>
-</html>
-`
-
 func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request) {
-	// User must be logged in
-	var signerIsNull bool
-
-	// copy runtime singer if not nil
-	state.Mutex.Lock()
-	signerIsNull = (state.Signer == nil)
-	state.Mutex.Unlock()
-
-	//local sanity tests
-	if signerIsNull {
-		writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		log.Printf("Signer not loaded")
+	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	_, err := checkAuth(w, r, state)
+	_, _, err := state.checkAuth(w, r)
 	if err != nil {
 		log.Printf("%v", err)
 
