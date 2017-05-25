@@ -188,8 +188,8 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			return runtimeState, err
 		}
 	}
-	// TODO:HACK ALERT
-	u2fAppID = "https://" + runtimeState.HostIdentity + ":33443"
+	// TODO: This assumes httpAddress is just the port..
+	u2fAppID = "https://" + runtimeState.HostIdentity + runtimeState.Config.Base.HttpAddress
 	u2fTrustedFacets = append(u2fTrustedFacets, u2fAppID)
 
 	if len(runtimeState.Config.Base.KerberosRealm) > 0 {
@@ -876,7 +876,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) * time.Second)
-	savedUserInfo := authInfo{Username: username, ExpiresAt: expiration}
+	savedUserInfo := authInfo{Username: username, ExpiresAt: expiration, AuthLevel: AuthLevelPassword}
 	state.Mutex.Lock()
 	state.authCookie[cookieVal] = savedUserInfo
 	state.Mutex.Unlock()
