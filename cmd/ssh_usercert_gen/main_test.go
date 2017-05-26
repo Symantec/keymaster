@@ -588,5 +588,59 @@ func TestLoginAPIFormAuth(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+}
 
+func TestProfileHandlerTemplate(t *testing.T) {
+	var state RuntimeState
+	//load signer
+	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Signer = signer
+	state.authCookie = make(map[string]authInfo)
+
+	/*
+		cookieVal := "supersecret"
+		state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+		authCookie := http.Cookie{Name: authCookieName, Value: "nonmatchingvalue"}
+		cookieReq.AddCookie(&authCookie)
+
+		state, passwdFile, err := setupValidRuntimeStateSigner()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer os.Remove(passwdFile.Name()) // clean up
+
+		//Fist we ensure OK is working
+
+		cookieReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		cookieVal := "supersecret"
+		state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+		authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+		cookieReq.AddCookie(&authCookie)
+
+		_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusOK)
+		if err != nil {
+			t.Fatal(err)
+		}
+	*/
+	req, err := http.NewRequest("GET", "/profile/", nil)
+	if err != nil {
+		t.Fatal(err)
+		//return nil, err
+	}
+	cookieVal := "supersecret"
+	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+	req.AddCookie(&authCookie)
+
+	_, err = checkRequestHandlerCode(req, state.profileHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
 }
