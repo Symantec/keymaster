@@ -22,6 +22,7 @@ import (
 	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v2"
+	"html/template"
 	//"io"
 	"io/ioutil"
 	"log"
@@ -31,7 +32,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	//"strconv"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -64,9 +65,9 @@ type AppConfigFile struct {
 }
 
 const (
-	AuthLevelNone     = -1
-	AuthLevelPassword = 0
-	AuthLevelU2F      = 1
+	AuthLevelNone     = 0
+	AuthLevelPassword = 1
+	AuthLevelU2F      = 2
 )
 
 type authInfo struct {
@@ -76,7 +77,11 @@ type authInfo struct {
 }
 
 type u2fAuthData struct {
+	Enabled      bool
+	CreatedAt    time.Time
+	CreatorAddr  string
 	Counter      uint32
+	Name         string
 	Registration *u2f.Registration
 }
 
@@ -914,7 +919,9 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 
 func getRegistrationArray(U2fAuthData []u2fAuthData) (regArray []u2f.Registration) {
 	for _, data := range U2fAuthData {
-		regArray = append(regArray, *data.Registration)
+		if data.Enabled {
+			regArray = append(regArray, *data.Registration)
+		}
 	}
 	return regArray
 }
@@ -999,7 +1006,12 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	newReg := u2fAuthData{Counter: 0, Registration: reg}
+	newReg := u2fAuthData{Counter: 0,
+		Registration: reg,
+		Enabled:      true,
+		CreatedAt:    time.Now(),
+		CreatorAddr:  r.RemoteAddr,
+	}
 	profile.U2fAuthData = append(profile.U2fAuthData, newReg)
 	//registrations = append(registrations, *reg)
 	//counter = 0
@@ -1143,13 +1155,144 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	_, _, err := state.checkAuth(w, r)
+	authUser, _, err := state.checkAuth(w, r)
 	if err != nil {
 		log.Printf("%v", err)
 
 		return
 	}
-	w.Write([]byte(indexHTML))
+	//find the user token
+	state.Mutex.Lock()
+	profile, _ := state.userProfile[authUser]
+	state.Mutex.Unlock()
+	displayData := profilePageTemplateData{Username: authUser,
+		Title:     "Keymaster User Profile",
+		JSSources: []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js"}}
+	for i, tokenInfo := range profile.U2fAuthData {
+
+		deviceData := registeredU2FTokenDisplayInfo{
+			DeviceData: fmt.Sprintf("%+v", tokenInfo.Registration.AttestationCert.Subject.CommonName),
+			Enabled:    tokenInfo.Enabled,
+			Name:       tokenInfo.Name,
+			Index:      i}
+		displayData.RegisteredToken = append(displayData.RegisteredToken, deviceData)
+	}
+
+	log.Printf("%v", displayData)
+
+	t, err := template.New("webpage").Parse(profileHTML)
+	if err != nil {
+		log.Printf("bad template %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	err = t.Execute(w, displayData)
+	if err != nil {
+		log.Printf("Failed to execute %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	//w.Write([]byte(indexHTML))
+}
+
+const u2fTokenManagementPath = "/api/v0/manageU2FToken"
+
+func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http.Request) {
+	// User must be logged in
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
+	/*
+	 */
+	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
+	authUser, _, err := state.checkAuth(w, r)
+	if err != nil {
+		log.Printf("%v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	// TODO: ensure is a valid method (POST)
+	err = r.ParseForm()
+	if err != nil {
+		log.Println(err)
+		writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+		return
+	}
+
+	log.Printf("%+v", r.Form)
+
+	// Check params
+	if r.Form.Get("username") != authUser {
+		writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		return
+	}
+
+	tokenIndex, err := strconv.Atoi(r.Form.Get("index"))
+	if err != nil {
+		writeFailureResponse(w, r, http.StatusBadRequest, "tokenindex is not a number")
+		return
+	}
+	/*
+		tokenName := r.Form.Get("name")
+		if m, _ := regexp.MatchString("^[a-zA-Z0-9_ ]+$", tokenName); !m {
+			log.Printf("%s", tokenName)
+			writeFailureResponse(w, r, http.StatusBadRequest, "invalidtokenName")
+			return
+		}
+	*/
+	//Do a redirect
+	state.Mutex.Lock()
+	profile, _ := state.userProfile[authUser]
+	state.Mutex.Unlock()
+
+	// Todo: check for negative values
+	if tokenIndex >= len(profile.U2fAuthData) {
+		writeFailureResponse(w, r, http.StatusBadRequest, "bad index Value")
+		return
+
+	}
+	//profile.U2fAuthData[tokenIndex].Name = tokenName
+
+	// map[name:[123123] action:[UpdateName] index:[0] username:[camilo_viecco1]]
+	actionName := r.Form.Get("action")
+	switch actionName {
+	case "Update":
+		tokenName := r.Form.Get("name")
+		if m, _ := regexp.MatchString("^[a-zA-Z0-9_ ]+$", tokenName); !m {
+			log.Printf("%s", tokenName)
+			writeFailureResponse(w, r, http.StatusBadRequest, "invalidtokenName")
+			return
+		}
+		profile.U2fAuthData[tokenIndex].Name = tokenName
+	case "Disable":
+		profile.U2fAuthData[tokenIndex].Enabled = false
+	case "Enable":
+		profile.U2fAuthData[tokenIndex].Enabled = true
+	case "Delete":
+		//From https://github.com/golang/go/wiki/SliceTricks
+		copy(profile.U2fAuthData[tokenIndex:], profile.U2fAuthData[tokenIndex+1:])
+		profile.U2fAuthData[len(profile.U2fAuthData)-1] = u2fAuthData{} // or the zero value of T
+		profile.U2fAuthData = profile.U2fAuthData[:len(profile.U2fAuthData)-1]
+	default:
+		writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Operation")
+		return
+	}
+
+	state.Mutex.Lock()
+	state.userProfile[authUser] = profile
+	state.SaveUserProfiles()
+	state.Mutex.Unlock()
+
+	// Success!
+	returnAcceptType := getPreferredAcceptType(r)
+	switch returnAcceptType {
+	case "text/html":
+		http.Redirect(w, r, profilePath, 302)
+	default:
+		w.WriteHeader(200)
+		fmt.Fprintf(w, "Success!")
+	}
+	return
 }
 
 func Usage() {
@@ -1188,6 +1331,7 @@ func main() {
 	http.HandleFunc(u2fRegisterRequesponsePath, runtimeState.u2fRegisterResponse)
 	http.HandleFunc(u2fSignRequestPath, runtimeState.u2fSignRequest)
 	http.HandleFunc(u2fSignResponsePath, runtimeState.u2fSignResponse)
+	http.HandleFunc(u2fTokenManagementPath, runtimeState.u2fTokenManagerHandler)
 
 	cfg := &tls.Config{
 		ClientCAs:                runtimeState.ClientCAPool,
