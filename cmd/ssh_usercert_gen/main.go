@@ -476,10 +476,14 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r)
+	authUser, authLevel, err := state.checkAuth(w, r)
 	if err != nil {
 		log.Printf("%v", err)
 
+		return
+	}
+	if authLevel < AuthLevelU2F {
+		writeFailureResponse(w, r, http.StatusBadRequest, "2nd Factor is mandatory for getting certs")
 		return
 	}
 
@@ -1090,6 +1094,16 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 
 		return
 	}
+
+	// If successful I need to update the cookie
+	var authCookie *http.Cookie
+	for _, cookie := range r.Cookies() {
+		if cookie.Name != authCookieName {
+			continue
+		}
+		authCookie = cookie
+	}
+
 	//now the actual work
 	var signResp u2f.SignResponse
 	if err := json.NewDecoder(r.Body).Decode(&signResp); err != nil {
@@ -1132,6 +1146,15 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 			profile.U2fAuthData[i].Counter = newCounter
 			profile.u2fAuthChallenge = nil
 			state.userProfile[authUser] = profile
+
+			// update cookie if found, this should be also a critical section
+			if authCookie != nil {
+				info, ok := state.authCookie[authCookie.Value]
+				if ok {
+					info.AuthLevel = AuthLevelU2F
+					state.authCookie[authCookie.Value] = info
+				}
+			}
 
 			// TODO: make goroutine!
 			state.SaveUserProfiles()
@@ -1197,6 +1220,8 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 
 const u2fTokenManagementPath = "/api/v0/manageU2FToken"
 
+// TODO: add duplicate action filter via cookies (for browser context).
+
 func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http.Request) {
 	// User must be logged in
 	if state.sendFailureToClientIfLocked(w, r) {
@@ -1218,28 +1243,24 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 		writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
 		return
 	}
-
-	log.Printf("%+v", r.Form)
+	if *debug {
+		log.Printf("Form: %+v", r.Form)
+	}
 
 	// Check params
 	if r.Form.Get("username") != authUser {
+		log.Printf("bad username authUser=%s requested=%s", authUser, r.Form.Get("username"))
 		writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}
 
 	tokenIndex, err := strconv.Atoi(r.Form.Get("index"))
 	if err != nil {
+		log.Printf("tokenindex is not a number")
 		writeFailureResponse(w, r, http.StatusBadRequest, "tokenindex is not a number")
 		return
 	}
-	/*
-		tokenName := r.Form.Get("name")
-		if m, _ := regexp.MatchString("^[a-zA-Z0-9_ ]+$", tokenName); !m {
-			log.Printf("%s", tokenName)
-			writeFailureResponse(w, r, http.StatusBadRequest, "invalidtokenName")
-			return
-		}
-	*/
+
 	//Do a redirect
 	state.Mutex.Lock()
 	profile, _ := state.userProfile[authUser]
@@ -1247,6 +1268,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 
 	// Todo: check for negative values
 	if tokenIndex >= len(profile.U2fAuthData) {
+		log.Printf("bad index number")
 		writeFailureResponse(w, r, http.StatusBadRequest, "bad index Value")
 		return
 

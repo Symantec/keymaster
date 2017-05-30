@@ -224,19 +224,10 @@ func TestSuccessFullSigningSSH(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusOK)
+	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	/*
-		// Check the response body is what we expect.
-		expected := `{"alive": true}`
-		if rr.Body.String() != expected {
-			t.Errorf("handler returned unexpected body: got %v want %v",
-				rr.Body.String(), expected)
-		}
-
-	*/
 
 	// now we check using login auth + cookies
 	// For now just inject cookie into space
@@ -247,7 +238,7 @@ func TestSuccessFullSigningSSH(t *testing.T) {
 	}
 
 	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{Username: "username", AuthLevel: AuthLevelU2F, ExpiresAt: time.Now().Add(120 * time.Second)}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	cookieReq.AddCookie(&authCookie)
 
@@ -270,7 +261,7 @@ func TestSuccessFullSigningX509(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusOK)
+	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +274,7 @@ func TestSuccessFullSigningX509(t *testing.T) {
 	}
 
 	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{Username: "username", AuthLevel: AuthLevelU2F, ExpiresAt: time.Now().Add(120 * time.Second)}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	cookieReq.AddCookie(&authCookie)
 
@@ -307,7 +298,10 @@ func TestFailSingingExpiredCookie(t *testing.T) {
 	}
 
 	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{
+		Username:  "username",
+		AuthLevel: AuthLevelU2F,
+		ExpiresAt: time.Now().Add(120 * time.Second)}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	cookieReq.AddCookie(&authCookie)
 
@@ -316,7 +310,7 @@ func TestFailSingingExpiredCookie(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Now expire the cookie and retry
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(-120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{Username: "username", AuthLevel: AuthLevelU2F, ExpiresAt: time.Now().Add(-120 * time.Second)}
 	_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusUnauthorized)
 	if err != nil {
 		t.Fatal(err)
@@ -374,8 +368,23 @@ func TestInjectingSecret(t *testing.T) {
 	defer os.Remove(passwdFile.Name()) // clean up
 	state.Config.Base.HtpasswdFilename = passwdFile.Name()
 
+	state.authCookie = make(map[string]authInfo)
 	// Make certgen Request
-	certGenReq, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username", "username", "password", testUserSSHPublicKey)
+	//Fist we ensure OK is working
+	certGenReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cookieVal := "supersecret"
+	state.authCookie[cookieVal] = authInfo{
+		Username:  "username",
+		AuthLevel: AuthLevelU2F,
+		ExpiresAt: time.Now().Add(120 * time.Second)}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+	certGenReq.AddCookie(&authCookie)
+
+	//certGenReq, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username", "username", "password", testUserSSHPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
