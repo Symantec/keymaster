@@ -430,8 +430,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 func (state *RuntimeState) SaveUserProfiles() error {
 	var gobBuffer bytes.Buffer
 	encoder := gob.NewEncoder(&gobBuffer)
-	err := encoder.Encode(state.userProfile)
-	if err != nil {
+	if err := encoder.Encode(state.userProfile); err != nil {
 		return err
 	}
 	userProfilePath := filepath.Join(state.Config.Base.DataDirectory, userProfileFilename)
@@ -1062,8 +1061,7 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	req := c.SignRequest(registrations)
 	log.Printf("Sign request: %+v", req)
 
-	err = json.NewEncoder(w).Encode(req)
-	if err != nil {
+	if err := json.NewEncoder(w).Encode(req); err != nil {
 		log.Printf("json encofing error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
