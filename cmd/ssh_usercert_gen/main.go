@@ -65,9 +65,9 @@ type AppConfigFile struct {
 }
 
 const (
-	AuthLevelNone     = 0
-	AuthLevelPassword = 1
-	AuthLevelU2F      = 2
+	AuthTypeNone     = 0
+	AuthTypePassword = 1 << iota
+	AuthTypeU2F
 )
 
 type authInfo struct {
@@ -392,7 +392,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 			writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			//toLoginOrBasicAuth(w, r)
 			err := errors.New("check_Auth, Invalid or no auth header")
-			return "", AuthLevelNone, err
+			return "", AuthTypeNone, err
 		}
 		state.Mutex.Lock()
 		config := state.Config
@@ -400,14 +400,14 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 		valid, err := checkUserPassword(user, pass, config)
 		if err != nil {
 			writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			return "", AuthLevelNone, err
+			return "", AuthTypeNone, err
 		}
 		if !valid {
 			writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			err := errors.New("Invalid Credentials")
-			return "", AuthLevelNone, err
+			return "", AuthTypeNone, err
 		}
-		return user, AuthLevelPassword, nil
+		return user, AuthTypePassword, nil
 	}
 
 	//Critical section
@@ -420,13 +420,13 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 		//better would be to return the content of the redirect form with a 401 code?
 		writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		err := errors.New("Invalid Cookie")
-		return "", AuthLevelNone, err
+		return "", AuthTypeNone, err
 	}
 	//check for expiration...
 	if info.ExpiresAt.Before(time.Now()) {
 		writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		err := errors.New("Expired Cookie")
-		return "", AuthLevelNone, err
+		return "", AuthTypeNone, err
 
 	}
 	return info.Username, info.AuthLevel, nil
@@ -881,7 +881,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) * time.Second)
-	savedUserInfo := authInfo{Username: username, ExpiresAt: expiration, AuthLevel: AuthLevelPassword}
+	savedUserInfo := authInfo{Username: username, ExpiresAt: expiration, AuthLevel: AuthTypePassword}
 	state.Mutex.Lock()
 	state.authCookie[cookieVal] = savedUserInfo
 	state.Mutex.Unlock()
