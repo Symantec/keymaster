@@ -21,7 +21,7 @@ import (
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/ssh"
-	//"golang.org/x/net/context"
+	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v2"
 	"html/template"
@@ -109,7 +109,7 @@ type userProfile struct {
 type pendingAuth2Request struct {
 	ExpiresAt time.Time
 	state     string
-	//ctx       *context.Context
+	ctx       context.Context
 }
 
 type RuntimeState struct {
@@ -297,7 +297,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			Endpoint: oauth2.Endpoint{
 				AuthURL:  runtimeState.Config.Oauth2.AuthUrl,
 				TokenURL: runtimeState.Config.Oauth2.TokenUrl},
-			RedirectURL: redirectPath,
+			RedirectURL: "https://" + runtimeState.HostIdentity + runtimeState.Config.Base.HttpAddress + redirectPath,
 			Scopes:      strings.Split(runtimeState.Config.Oauth2.Scopes, " ")}
 	}
 	///
@@ -1391,6 +1391,8 @@ func main() {
 	http.HandleFunc(u2fSignRequestPath, runtimeState.u2fSignRequest)
 	http.HandleFunc(u2fSignResponsePath, runtimeState.u2fSignResponse)
 	http.HandleFunc(u2fTokenManagementPath, runtimeState.u2fTokenManagerHandler)
+	http.HandleFunc(oauth2LoginBeginPath, runtimeState.oauth2DoRedirectoToProviderHandler)
+	http.HandleFunc(redirectPath, runtimeState.oauth2RedirectPathHandler)
 
 	cfg := &tls.Config{
 		ClientCAs:                runtimeState.ClientCAPool,

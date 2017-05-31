@@ -18,6 +18,10 @@ const loginFormText = `
             <p>Password: <INPUT TYPE="password" NAME="password" SIZE=18></p>
             <p><input type="submit" value="Submit" /></p>
         </form>
+
+	<p>
+	 <a href="/auth/oauth2/login"> Oauth2 Login </a>
+	</p>
     </body>
 </html>
 `
