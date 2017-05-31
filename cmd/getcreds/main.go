@@ -203,16 +203,18 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 		//        return
 		log.Fatal(err)
 	}
-	log.Printf("%+v\n", webSignRequest)
-	for i, rKeyHandle := range webSignRequest.RegisteredKeys {
-		khfoo, err := base64.RawURLEncoding.DecodeString(rKeyHandle.KeyHandle)
-		if err != nil {
-			log.Fatal(err)
+	/*
+		log.Printf("%+v\n", webSignRequest)
+		for i, rKeyHandle := range webSignRequest.RegisteredKeys {
+			khfoo, err := base64.RawURLEncoding.DecodeString(rKeyHandle.KeyHandle)
+			if err != nil {
+				log.Fatal(err)
+			}
+			log.Printf("index=%d handle=%x\n", i, khfoo)
 		}
-		log.Printf("index=%d handle=%x\n", i, khfoo)
-	}
+	*/
 
-	// TODO: move this to initialization code
+	// TODO: move this to initialization code?
 	devices, err := u2fhid.Devices()
 	if err != nil {
 		log.Fatal(err)
@@ -221,6 +223,7 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 		log.Fatal("no U2F tokens found")
 	}
 
+	// TODO: transform this into an iteration over all found devices
 	d := devices[0]
 	log.Printf("manufacturer = %q, product = %q, vid = 0x%04x, pid = 0x%04x", d.Manufacturer, d.Product, d.ProductID, d.VendorID)
 
@@ -246,7 +249,6 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 		log.Fatal(err)
 	}
 	reqSignChallenge := sha256.Sum256(tokenAuthenticationBuf.Bytes())
-	//reqSignChallenge := sha256.Sum256([]byte(webSignRequest.Challenge))
 
 	challenge := make([]byte, 32)
 	app := make([]byte, 32)
@@ -255,24 +257,35 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 	reqSingApp := sha256.Sum256([]byte(webSignRequest.AppID))
 	app = reqSingApp[:]
 
-	// Begin TODO: Section needs to be changed for an iteration over checkAuthenticate.... so that we can handle multiple keys
-	decodedHandle, err := base64.RawURLEncoding.DecodeString(webSignRequest.RegisteredKeys[0].KeyHandle)
-	if err != nil {
-		log.Fatal(err)
-	}
-	keyHandle := decodedHandle
+	// We find out what key is associated to the currently inserted device.
+	keyIsKnown := false
+	var req u2ftoken.AuthenticateRequest
+	var keyHandle []byte
+	for _, registeredKey := range webSignRequest.RegisteredKeys {
+		decodedHandle, err := base64.RawURLEncoding.DecodeString(registeredKey.KeyHandle)
+		if err != nil {
+			log.Fatal(err)
+		}
+		keyHandle = decodedHandle
 
-	req := u2ftoken.AuthenticateRequest{
-		Challenge:   challenge,
-		Application: app,
-		KeyHandle:   keyHandle,
+		req = u2ftoken.AuthenticateRequest{
+			Challenge:   challenge,
+			Application: app,
+			KeyHandle:   keyHandle,
+		}
+
+		//log.Printf("%+v", req)
+		if err := t.CheckAuthenticate(req); err == nil {
+			keyIsKnown = true
+			break
+		}
+	}
+	if !keyIsKnown {
+		err = errors.New("key is not known")
+		return err
 	}
 
-	log.Printf("%+v", req)
-	if err := t.CheckAuthenticate(req); err != nil {
-		log.Fatal(err)
-	}
-	//  End TODO.
+	// Now we ask the token to sign/authenticate
 	log.Println("authenticating, provide user presence")
 	var rawBytes []byte
 	for {
@@ -286,17 +299,6 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 		rawBytes = res.RawResponse
 		log.Printf("counter = %d, signature = %x", res.Counter, res.Signature)
 		break
-	}
-
-	if dev.CapabilityWink {
-		log.Println("testing wink in 2s...")
-		time.Sleep(2 * time.Second)
-		if err := dev.Wink(); err != nil {
-			log.Fatal(err)
-		}
-		time.Sleep(2 * time.Second)
-	} else {
-		log.Println("no wink capability detected")
 	}
 
 	// now we do the last request
@@ -367,24 +369,13 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 	client := &http.Client{Transport: clientTransport, Timeout: 5 * time.Second}
 
 	loginUrl := baseUrl + "/api/v0/login"
-	/*
-		req, err := http.NewRequest("POST", loginUrl, nil)
-		if err != nil {
-			return nil, nil, err
-		}
-		req.SetBasicAuth(userName, string(password[:]))
-	*/
 	form := url.Values{}
 	form.Add("username", userName)
 	form.Add("password", string(password[:]))
-
 	req, err := http.NewRequest("POST", loginUrl, strings.NewReader(form.Encode()))
 	if err != nil {
-		//t.Fatal(err)
 		return nil, nil, err
 	}
-	// TODO: add thest with multipart/form-data support and test
-	//req.Header.Add("Content-Type", "multipart/form-data")
 	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
