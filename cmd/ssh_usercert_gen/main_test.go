@@ -588,5 +588,120 @@ func TestLoginAPIFormAuth(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+}
 
+func TestProfileHandlerTemplate(t *testing.T) {
+	var state RuntimeState
+	//load signer
+	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Signer = signer
+	state.authCookie = make(map[string]authInfo)
+
+	req, err := http.NewRequest("GET", "/profile/", nil)
+	if err != nil {
+		t.Fatal(err)
+		//return nil, err
+	}
+	cookieVal := "supersecret"
+	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+	req.AddCookie(&authCookie)
+
+	_, err = checkRequestHandlerCode(req, state.profileHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//TODO: verify HTML output
+}
+
+func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
+	var state RuntimeState
+	//load signer
+	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Signer = signer
+	state.authCookie = make(map[string]authInfo)
+	state.userProfile = make(map[string]userProfile)
+
+	cookieVal := "supersecret"
+	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+
+	const newName = "New"
+	const oldName = "Old"
+
+	state.userProfile["username"] = userProfile{U2fAuthData: []u2fAuthData{u2fAuthData{Name: oldName}}}
+
+	form := url.Values{}
+	form.Add("username", "username")
+	//form.Add("password", validPasswordConst)
+	form.Add("index", "0")
+	form.Add("name", newName)
+	form.Add("action", "Update")
+
+	req, err := http.NewRequest("POST", u2fTokenManagementPath, strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(&authCookie)
+	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	val, err := checkRequestHandlerCode(req, state.u2fTokenManagerHandler, http.StatusOK)
+	if err != nil {
+		t.Log(val)
+		t.Fatal(err)
+	}
+	// Todo... check against the FS.
+	if state.userProfile["username"].U2fAuthData[0].Name != newName {
+		t.Fatal("update not successul")
+	}
+}
+
+func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
+	var state RuntimeState
+	//load signer
+	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Signer = signer
+	state.authCookie = make(map[string]authInfo)
+	state.userProfile = make(map[string]userProfile)
+
+	cookieVal := "supersecret"
+	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+
+	state.userProfile["username"] = userProfile{
+		U2fAuthData: []u2fAuthData{
+			u2fAuthData{Name: "name1", Enabled: false},
+			u2fAuthData{Name: "name2", Enabled: false}}}
+
+	form := url.Values{}
+	form.Add("username", "username")
+	//form.Add("password", validPasswordConst)
+	form.Add("index", "0")
+	form.Add("action", "Delete")
+
+	req, err := http.NewRequest("POST", u2fTokenManagementPath, strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(&authCookie)
+	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	val, err := checkRequestHandlerCode(req, state.u2fTokenManagerHandler, http.StatusOK)
+	if err != nil {
+		t.Log(val)
+		t.Fatal(err)
+	}
+	// Todo... check against the FS.
+	if len(state.userProfile["username"].U2fAuthData) != 1 {
+		t.Fatal("update not successul")
+	}
 }
