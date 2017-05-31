@@ -21,6 +21,8 @@ import (
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/ssh"
+	//"golang.org/x/net/context"
+	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v2"
 	"html/template"
 	//"io"
@@ -59,9 +61,22 @@ type LdapConfig struct {
 	LDAP_Target_URLs string
 }
 
+type Oauth2Config struct {
+	Config       *oauth2.Config
+	Enabled      bool   `yaml:"enabled"`
+	ClientID     string `yaml:"client_id"`
+	ClientSecret string `yaml:"client_secret"`
+	TokenUrl     string `yaml:"token_url"`
+	AuthUrl      string `yaml:"auth_url"`
+	UserinfoUrl  string `yaml:"userinfo_url"`
+	Scopes       string `yaml:"scopes"`
+	//Todo add allowed orgs...
+}
+
 type AppConfigFile struct {
-	Base baseConfig
-	Ldap LdapConfig
+	Base   baseConfig
+	Ldap   LdapConfig
+	Oauth2 Oauth2Config
 }
 
 const (
@@ -91,6 +106,12 @@ type userProfile struct {
 	u2fAuthChallenge      *u2f.Challenge
 }
 
+type pendingAuth2Request struct {
+	ExpiresAt time.Time
+	state     string
+	//ctx       *context.Context
+}
+
 type RuntimeState struct {
 	Config              AppConfigFile
 	SSHCARawFileContent []byte
@@ -102,8 +123,10 @@ type RuntimeState struct {
 	authCookie          map[string]authInfo
 	Mutex               sync.Mutex
 	userProfile         map[string]userProfile
+	pendingOauth2       map[string]pendingAuth2Request
 }
 
+const redirectPath = "/auth/oauth2/callback"
 const userProfileFilename = "userProfiles.gob"
 
 var (
@@ -183,6 +206,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	//share config
 	runtimeState.authCookie = make(map[string]authInfo)
 	runtimeState.userProfile = make(map[string]userProfile)
+	runtimeState.pendingOauth2 = make(map[string]pendingAuth2Request)
 
 	//verify config
 	if len(runtimeState.Config.Base.HostIdentity) > 0 {
@@ -262,6 +286,19 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			return runtimeState, err
 		}
 
+	}
+
+	//create the oath2 config
+	if runtimeState.Config.Oauth2.Enabled == true {
+		log.Printf("oath2 is enabled")
+		runtimeState.Config.Oauth2.Config = &oauth2.Config{
+			ClientID:     runtimeState.Config.Oauth2.ClientID,
+			ClientSecret: runtimeState.Config.Oauth2.ClientSecret,
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  runtimeState.Config.Oauth2.AuthUrl,
+				TokenURL: runtimeState.Config.Oauth2.TokenUrl},
+			RedirectURL: redirectPath,
+			Scopes:      strings.Split(runtimeState.Config.Oauth2.Scopes, " ")}
 	}
 	///
 	err = runtimeState.LoadUserProfiles()
