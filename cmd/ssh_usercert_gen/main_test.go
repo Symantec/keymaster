@@ -548,7 +548,7 @@ func TestLoginAPIFormAuth(t *testing.T) {
 	form.Add("username", validUsernameConst)
 	form.Add("password", validPasswordConst)
 
-	req, err := http.NewRequest("POST", LOGIN_PATH, strings.NewReader(form.Encode()))
+	req, err := http.NewRequest("POST", loginPath, strings.NewReader(form.Encode()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -575,7 +575,7 @@ func TestLoginAPIFormAuth(t *testing.T) {
 		if testVector.Username != nil {
 			form.Add("username", *testVector.Username)
 		}
-		req, err := http.NewRequest("POST", LOGIN_PATH, strings.NewReader(form.Encode()))
+		req, err := http.NewRequest("POST", loginPath, strings.NewReader(form.Encode()))
 		if err != nil {
 			t.Fatal(err)
 		}
