@@ -207,7 +207,7 @@ func setupValidRuntimeStateSigner() (*RuntimeState, *os.File, error) {
 	}
 	state.Config.Base.HtpasswdFilename = passwdFile.Name()
 
-	state.authCookie = make(map[string]userInfo)
+	state.authCookie = make(map[string]authInfo)
 
 	return &state, passwdFile, nil
 }
@@ -247,7 +247,7 @@ func TestSuccessFullSigningSSH(t *testing.T) {
 	}
 
 	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = userInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	cookieReq.AddCookie(&authCookie)
 
@@ -283,7 +283,7 @@ func TestSuccessFullSigningX509(t *testing.T) {
 	}
 
 	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = userInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	cookieReq.AddCookie(&authCookie)
 
@@ -307,7 +307,7 @@ func TestFailSingingExpiredCookie(t *testing.T) {
 	}
 
 	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = userInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	cookieReq.AddCookie(&authCookie)
 
@@ -316,7 +316,7 @@ func TestFailSingingExpiredCookie(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Now expire the cookie and retry
-	state.authCookie[cookieVal] = userInfo{Username: "username", ExpiresAt: time.Now().Add(-120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(-120 * time.Second)}
 	_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusUnauthorized)
 	if err != nil {
 		t.Fatal(err)
@@ -337,7 +337,7 @@ func TestFailSingingUnexpectedCookie(t *testing.T) {
 	}
 
 	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = userInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
 	authCookie := http.Cookie{Name: authCookieName, Value: "nonmatchingvalue"}
 	cookieReq.AddCookie(&authCookie)
 
@@ -486,7 +486,7 @@ func TestLoginAPIBasicAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.Signer = signer
-	state.authCookie = make(map[string]userInfo)
+	state.authCookie = make(map[string]authInfo)
 
 	passwdFile, err := setupPasswdFile()
 	if err != nil {
@@ -535,7 +535,7 @@ func TestLoginAPIFormAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.Signer = signer
-	state.authCookie = make(map[string]userInfo)
+	state.authCookie = make(map[string]authInfo)
 
 	passwdFile, err := setupPasswdFile()
 	if err != nil {
@@ -548,7 +548,7 @@ func TestLoginAPIFormAuth(t *testing.T) {
 	form.Add("username", validUsernameConst)
 	form.Add("password", validPasswordConst)
 
-	req, err := http.NewRequest("POST", LOGIN_PATH, strings.NewReader(form.Encode()))
+	req, err := http.NewRequest("POST", loginPath, strings.NewReader(form.Encode()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -575,7 +575,7 @@ func TestLoginAPIFormAuth(t *testing.T) {
 		if testVector.Username != nil {
 			form.Add("username", *testVector.Username)
 		}
-		req, err := http.NewRequest("POST", LOGIN_PATH, strings.NewReader(form.Encode()))
+		req, err := http.NewRequest("POST", loginPath, strings.NewReader(form.Encode()))
 		if err != nil {
 			t.Fatal(err)
 		}
