@@ -66,7 +66,7 @@ func httpGet(client *http.Client, url string) ([]byte, error) {
 		return nil, fmt.Errorf(string(body))
 	}
 
-	log.Printf("HTTP GET %s: %s %s", url, r.Status, string(body))
+	//log.Printf("HTTP GET %s: %s %s", url, r.Status, string(body))
 
 	return body, nil
 }
@@ -99,7 +99,7 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 		return
 	}
 	//if Debug {
-	log.Printf("req : %+v", r)
+	//log.Printf("req : %+v", r)
 	//}
 	oauth2Token, err := state.Config.Oauth2.Config.Exchange(pending.ctx, r.URL.Query().Get("code"))
 	if err != nil {
@@ -132,7 +132,7 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 		return
 	}
 
-	log.Printf("%+v", data)
+	//log.Printf("%+v", data)
 
 	// Check if name is there..
 	//Make new auth cookie

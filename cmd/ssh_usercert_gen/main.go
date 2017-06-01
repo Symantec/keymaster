@@ -994,13 +994,15 @@ func (state *RuntimeState) logoutHandler(w http.ResponseWriter, r *http.Request)
 		authCookie = cookie
 	}
 
-	//Critical section
-	state.Mutex.Lock()
-	_, ok := state.authCookie[authCookie.Value]
-	if ok {
-		delete(state.authCookie, authCookie.Value)
+	if authCookie != nil {
+		//Critical section
+		state.Mutex.Lock()
+		_, ok := state.authCookie[authCookie.Value]
+		if ok {
+			delete(state.authCookie, authCookie.Value)
+		}
+		state.Mutex.Unlock()
 	}
-	state.Mutex.Unlock()
 	//redirect to login
 	http.Redirect(w, r, profilePath, 302)
 }
