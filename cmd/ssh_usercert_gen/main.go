@@ -376,8 +376,20 @@ func getPreferredAcceptType(r *http.Request) string {
 }
 
 func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter, r *http.Request) error {
-	_, err := fmt.Fprintf(w, "%s", loginFormText)
-	return err
+	displayData := loginPageTemplateData{Title: "Keymaster Login", ShowOauth2: state.Config.Oauth2.Enabled}
+	t, err := template.New("webpage").Parse(loginFormText)
+	if err != nil {
+		log.Printf("bad template %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return err
+	}
+	err = t.Execute(w, displayData)
+	if err != nil {
+		log.Printf("Failed to execute %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return err
+	}
+	return nil
 }
 
 func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter, r *http.Request, code int, message string) {
