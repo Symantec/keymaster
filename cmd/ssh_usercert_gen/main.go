@@ -65,9 +65,9 @@ type AppConfigFile struct {
 }
 
 const (
-	AuthLevelNone     = 0
-	AuthLevelPassword = 1
-	AuthLevelU2F      = 2
+	AuthTypeNone     = 0
+	AuthTypePassword = 1 << iota
+	AuthTypeU2F
 )
 
 type authInfo struct {
@@ -392,7 +392,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 			writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			//toLoginOrBasicAuth(w, r)
 			err := errors.New("check_Auth, Invalid or no auth header")
-			return "", AuthLevelNone, err
+			return "", AuthTypeNone, err
 		}
 		state.Mutex.Lock()
 		config := state.Config
@@ -400,14 +400,14 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 		valid, err := checkUserPassword(user, pass, config)
 		if err != nil {
 			writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			return "", AuthLevelNone, err
+			return "", AuthTypeNone, err
 		}
 		if !valid {
 			writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			err := errors.New("Invalid Credentials")
-			return "", AuthLevelNone, err
+			return "", AuthTypeNone, err
 		}
-		return user, AuthLevelPassword, nil
+		return user, AuthTypePassword, nil
 	}
 
 	//Critical section
@@ -420,13 +420,13 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 		//better would be to return the content of the redirect form with a 401 code?
 		writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		err := errors.New("Invalid Cookie")
-		return "", AuthLevelNone, err
+		return "", AuthTypeNone, err
 	}
 	//check for expiration...
 	if info.ExpiresAt.Before(time.Now()) {
 		writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		err := errors.New("Expired Cookie")
-		return "", AuthLevelNone, err
+		return "", AuthTypeNone, err
 
 	}
 	return info.Username, info.AuthLevel, nil
@@ -435,7 +435,9 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 func (state *RuntimeState) SaveUserProfiles() error {
 	var gobBuffer bytes.Buffer
 	encoder := gob.NewEncoder(&gobBuffer)
-	encoder.Encode(state.userProfile)
+	if err := encoder.Encode(state.userProfile); err != nil {
+		return err
+	}
 	userProfilePath := filepath.Join(state.Config.Base.DataDirectory, userProfileFilename)
 	return ioutil.WriteFile(userProfilePath, gobBuffer.Bytes(), 0640)
 }
@@ -453,7 +455,7 @@ func (state *RuntimeState) LoadUserProfiles() error {
 	return decoder.Decode(&state.userProfile)
 }
 
-const CERTGEN_PATH = "/certgen/"
+const certgenPath = "/certgen/"
 
 func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request) {
 	var signerIsNull bool
@@ -487,7 +489,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	targetUser := r.URL.Path[len(CERTGEN_PATH):]
+	targetUser := r.URL.Path[len(certgenPath):]
 	if authUser != targetUser {
 		writeFailureResponse(w, r, http.StatusForbidden, "")
 		log.Printf("User %s asking for creds for %s", authUser, targetUser)
@@ -660,7 +662,7 @@ func (state *RuntimeState) postAuthX509CertHandler(w http.ResponseWriter, r *htt
 	log.Printf("Generated x509 Certifcate for %s", targetUser)
 }
 
-const SECRETINJECTOR_PATH = "/admin/inject"
+const secretInjectorPath = "/admin/inject"
 
 func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.Request) {
 	// checks this is only allowed when using TLS client certs.. all other authn
@@ -749,7 +751,7 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 	//fmt.Fprintf(w, "%+v\n", r.TLS)
 }
 
-const PUBLIC_PATH = "/public/"
+const publicPath = "/public/"
 
 const loginFormPath = "/public/loginForm"
 
@@ -766,7 +768,7 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	target := r.URL.Path[len(PUBLIC_PATH):]
+	target := r.URL.Path[len(publicPath):]
 
 	switch target {
 	case "loginForm":
@@ -801,7 +803,7 @@ func genRandomString() (string, error) {
 	return base64.URLEncoding.EncodeToString(rb), nil
 }
 
-const LOGIN_PATH = "/api/v0/login"
+const loginPath = "/api/v0/login"
 
 func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
@@ -885,7 +887,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) * time.Second)
-	savedUserInfo := authInfo{Username: username, ExpiresAt: expiration, AuthLevel: AuthLevelPassword}
+	savedUserInfo := authInfo{Username: username, ExpiresAt: expiration, AuthLevel: AuthTypePassword}
 	state.Mutex.Lock()
 	state.authCookie[cookieVal] = savedUserInfo
 	state.Mutex.Unlock()
@@ -1075,7 +1077,11 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	req := c.SignRequest(registrations)
 	log.Printf("Sign request: %+v", req)
 
-	json.NewEncoder(w).Encode(req)
+	if err := json.NewEncoder(w).Encode(req); err != nil {
+		log.Printf("json encofing error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
 }
 
 const u2fSignResponsePath = "/u2f/SignResponse"
@@ -1342,10 +1348,10 @@ func main() {
 
 	// Expose the registered metrics via HTTP.
 	http.Handle("/metrics", prometheus.Handler())
-	http.HandleFunc(SECRETINJECTOR_PATH, runtimeState.secretInjectorHandler)
-	http.HandleFunc(CERTGEN_PATH, runtimeState.certGenHandler)
-	http.HandleFunc(PUBLIC_PATH, runtimeState.publicPathHandler)
-	http.HandleFunc(LOGIN_PATH, runtimeState.loginHandler)
+	http.HandleFunc(secretInjectorPath, runtimeState.secretInjectorHandler)
+	http.HandleFunc(certgenPath, runtimeState.certGenHandler)
+	http.HandleFunc(publicPath, runtimeState.publicPathHandler)
+	http.HandleFunc(loginPath, runtimeState.loginHandler)
 
 	http.HandleFunc(profilePath, runtimeState.profileHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static_files"))))
