@@ -4,6 +4,12 @@ import (
 	"time"
 )
 
+type loginPageTemplateData struct {
+	Title      string
+	JSSources  []string
+	ShowOauth2 bool
+}
+
 //Should be a template
 const loginFormText = `
 <!DOCTYPE html>
@@ -18,7 +24,6 @@ const loginFormText = `
             <p>Password: <INPUT TYPE="password" NAME="password" SIZE=18></p>
             <p><input type="submit" value="Submit" /></p>
         </form>
-
 	<p>
 	 <a href="/auth/oauth2/login"> Oauth2 Login </a>
 	</p>
@@ -56,9 +61,10 @@ const profileHTML = `<!DOCTYPE html>
   </head>
   <body>
     {{with $top := . }}
-    <h1>FIDO U2F Go Library Demo</h1>
+    <h1>Keymaster User Profile</h1>
     <h2> {{.Username}}</h2>
     <ul>
+      <li><a href="/api/v0/logout" >Logout </a></li>
       <li><a href="javascript:register();">Register token</a></li>
       <li><a href="javascript:sign();">Authenticate</a></li>
     </ul>

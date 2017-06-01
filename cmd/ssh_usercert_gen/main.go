@@ -959,6 +959,34 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 
 }
 
+///
+const logoutPath = "/api/v0/logout"
+
+func (state *RuntimeState) logoutHandler(w http.ResponseWriter, r *http.Request) {
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
+
+	// We first check for cookies
+	var authCookie *http.Cookie
+	for _, cookie := range r.Cookies() {
+		if cookie.Name != authCookieName {
+			continue
+		}
+		authCookie = cookie
+	}
+
+	//Critical section
+	state.Mutex.Lock()
+	_, ok := state.authCookie[authCookie.Value]
+	if ok {
+		delete(state.authCookie, authCookie.Value)
+	}
+	state.Mutex.Unlock()
+	//redirect to login
+	http.Redirect(w, r, profilePath, 302)
+}
+
 ////////////////////////////
 
 func getRegistrationArray(U2fAuthData []u2fAuthData) (regArray []u2f.Registration) {
@@ -1390,6 +1418,7 @@ func main() {
 	http.HandleFunc(certgenPath, runtimeState.certGenHandler)
 	http.HandleFunc(publicPath, runtimeState.publicPathHandler)
 	http.HandleFunc(loginPath, runtimeState.loginHandler)
+	http.HandleFunc(logoutPath, runtimeState.logoutHandler)
 
 	http.HandleFunc(profilePath, runtimeState.profileHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static_files"))))
