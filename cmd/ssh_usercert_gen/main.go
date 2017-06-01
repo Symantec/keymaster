@@ -88,7 +88,7 @@ const (
 type authInfo struct {
 	ExpiresAt time.Time
 	Username  string
-	AuthLevel int
+	AuthType  int
 }
 
 type u2fAuthData struct {
@@ -466,7 +466,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 		return "", AuthTypeNone, err
 
 	}
-	return info.Username, info.AuthLevel, nil
+	return info.Username, info.AuthType, nil
 }
 
 func (state *RuntimeState) SaveUserProfiles() error {
@@ -521,7 +521,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 
 		return
 	}
-	if authLevel < AuthLevelU2F {
+	if authLevel != AuthTypeU2F {
 		writeFailureResponse(w, r, http.StatusBadRequest, "2nd Factor is mandatory for getting certs")
 		return
 	}
@@ -924,7 +924,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) * time.Second)
-	savedUserInfo := authInfo{Username: username, ExpiresAt: expiration, AuthLevel: AuthTypePassword}
+	savedUserInfo := authInfo{Username: username, ExpiresAt: expiration, AuthType: AuthTypePassword}
 	state.Mutex.Lock()
 	state.authCookie[cookieVal] = savedUserInfo
 	state.Mutex.Unlock()
@@ -1194,7 +1194,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 			if authCookie != nil {
 				info, ok := state.authCookie[authCookie.Value]
 				if ok {
-					info.AuthLevel = AuthLevelU2F
+					info.AuthType = AuthTypeU2F
 					state.authCookie[authCookie.Value] = info
 				}
 			}

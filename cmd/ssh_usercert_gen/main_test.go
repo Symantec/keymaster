@@ -238,7 +238,7 @@ func TestSuccessFullSigningSSH(t *testing.T) {
 	}
 
 	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", AuthLevel: AuthLevelU2F, ExpiresAt: time.Now().Add(120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{Username: "username", AuthType: AuthTypeU2F, ExpiresAt: time.Now().Add(120 * time.Second)}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	cookieReq.AddCookie(&authCookie)
 
@@ -274,7 +274,7 @@ func TestSuccessFullSigningX509(t *testing.T) {
 	}
 
 	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", AuthLevel: AuthLevelU2F, ExpiresAt: time.Now().Add(120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{Username: "username", AuthType: AuthTypeU2F, ExpiresAt: time.Now().Add(120 * time.Second)}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	cookieReq.AddCookie(&authCookie)
 
@@ -300,7 +300,7 @@ func TestFailSingingExpiredCookie(t *testing.T) {
 	cookieVal := "supersecret"
 	state.authCookie[cookieVal] = authInfo{
 		Username:  "username",
-		AuthLevel: AuthLevelU2F,
+		AuthType:  AuthTypeU2F,
 		ExpiresAt: time.Now().Add(120 * time.Second)}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	cookieReq.AddCookie(&authCookie)
@@ -310,7 +310,7 @@ func TestFailSingingExpiredCookie(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Now expire the cookie and retry
-	state.authCookie[cookieVal] = authInfo{Username: "username", AuthLevel: AuthLevelU2F, ExpiresAt: time.Now().Add(-120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{Username: "username", AuthType: AuthTypeU2F, ExpiresAt: time.Now().Add(-120 * time.Second)}
 	_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusUnauthorized)
 	if err != nil {
 		t.Fatal(err)
@@ -379,7 +379,7 @@ func TestInjectingSecret(t *testing.T) {
 	cookieVal := "supersecret"
 	state.authCookie[cookieVal] = authInfo{
 		Username:  "username",
-		AuthLevel: AuthLevelU2F,
+		AuthType:  AuthTypeU2F,
 		ExpiresAt: time.Now().Add(120 * time.Second)}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	certGenReq.AddCookie(&authCookie)

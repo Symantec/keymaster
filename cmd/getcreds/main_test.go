@@ -268,8 +268,8 @@ func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	_, _, err = getCertFromTargetUrls(privateKey, "username", []byte("password"), []string{localHttpsTarget}, certPool) //(cert []byte, err error)
+	skipu2f := true
+	_, _, err = getCertFromTargetUrls(privateKey, "username", []byte("password"), []string{localHttpsTarget}, certPool, skipu2f) //(cert []byte, err error)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,8 +280,8 @@ func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	_, _, err = getCertFromTargetUrls(privateKey, "username", []byte("password"), []string{localHttpsTarget}, nil)
+	skipu2f := true
+	_, _, err = getCertFromTargetUrls(privateKey, "username", []byte("password"), []string{localHttpsTarget}, nil, skipu2f)
 	if err == nil {
 		t.Fatal("Should have failed to connect untrusted CA")
 	}
