@@ -15,7 +15,7 @@ import (
 	"flag"
 	"fmt"
 
-	// client side... replace cviecco for flynn
+	// client side (interface with hardware)
 	"github.com/flynn/u2f/u2fhid"
 	"github.com/flynn/u2f/u2ftoken"
 	// server side:
@@ -203,18 +203,9 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 		//        return
 		log.Fatal(err)
 	}
-	/*
-		log.Printf("%+v\n", webSignRequest)
-		for i, rKeyHandle := range webSignRequest.RegisteredKeys {
-			khfoo, err := base64.RawURLEncoding.DecodeString(rKeyHandle.KeyHandle)
-			if err != nil {
-				log.Fatal(err)
-			}
-			log.Printf("index=%d handle=%x\n", i, khfoo)
-		}
-	*/
 
-	// TODO: move this to initialization code?
+	// TODO: move this to initialization code, ans pass the device list to this function?
+	// or maybe pass the token?...
 	devices, err := u2fhid.Devices()
 	if err != nil {
 		log.Fatal(err)
