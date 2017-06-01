@@ -20,7 +20,7 @@ func (state *RuntimeState) oauth2DoRedirectoToProviderHandler(w http.ResponseWri
 
 	cookieVal, err := genRandomString()
 	if err != nil {
-		writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
 		log.Println(err)
 		return
 	}
@@ -30,7 +30,7 @@ func (state *RuntimeState) oauth2DoRedirectoToProviderHandler(w http.ResponseWri
 
 	stateString, err := genRandomString()
 	if err != nil {
-		writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
 		log.Println(err)
 		return
 	}
@@ -75,11 +75,11 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 	redirCookie, err := r.Cookie(redirCookieName)
 	if err != nil {
 		if err == http.ErrNoCookie {
-			writeFailureResponse(w, r, http.StatusBadRequest, "Missing setup cookie!")
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing setup cookie!")
 			log.Println(err)
 			return
 		}
-		writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
 		log.Println(err)
 		return
 	}
@@ -89,7 +89,7 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 	state.Mutex.Unlock()
 	if !ok {
 		// clear cookie here!!!!
-		writeFailureResponse(w, r, http.StatusBadRequest, "Invalid setup cookie!")
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid setup cookie!")
 		log.Println(err)
 		return
 	}
@@ -138,7 +138,7 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 	//Make new auth cookie
 	cookieVal, err := genRandomString()
 	if err != nil {
-		writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
 		log.Println(err)
 		return
 	}
