@@ -16,8 +16,8 @@ import (
 	"fmt"
 
 	// client side... replace cviecco for flynn
-	"github.com/cviecco/u2f/u2fhid"
-	"github.com/cviecco/u2f/u2ftoken"
+	"github.com/flynn/u2f/u2fhid"
+	"github.com/flynn/u2f/u2ftoken"
 	// server side:
 	"github.com/tstranex/u2f"
 
@@ -348,7 +348,7 @@ func getParseURLEnvVariable(name string) (*url.URL, error) {
 	return envUrl, nil
 }
 
-func getCertsFromServer(signer crypto.Signer, userName string, password []byte, baseUrl string, tlsConfig *tls.Config) (sshCert []byte, x509Cert []byte, err error) {
+func getCertsFromServer(signer crypto.Signer, userName string, password []byte, baseUrl string, tlsConfig *tls.Config, skipu2f bool) (sshCert []byte, x509Cert []byte, err error) {
 	//First Do Login
 
 	clientTransport := &http.Transport{
@@ -400,12 +400,13 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 	loginResp.Body.Close() //so that we can reuse the channel
 
 	// upgrade to u2f
-	err = doU2FAuthenticate(client, loginResp.Cookies(), baseUrl)
-	if err != nil {
+	if !skipu2f {
+		err = doU2FAuthenticate(client, loginResp.Cookies(), baseUrl)
+		if err != nil {
 
-		return nil, nil, err
+			return nil, nil, err
+		}
 	}
-
 	//now get x509 cert
 	pubKey := signer.Public()
 	derKey, err := x509.MarshalPKIXPublicKey(pubKey)
@@ -435,13 +436,13 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 	return sshCert, x509Cert, nil
 }
 
-func getCertFromTargetUrls(signer crypto.Signer, userName string, password []byte, targetUrls []string, rootCAs *x509.CertPool) (sshCert []byte, x509Cert []byte, err error) {
+func getCertFromTargetUrls(signer crypto.Signer, userName string, password []byte, targetUrls []string, rootCAs *x509.CertPool, skipu2f bool) (sshCert []byte, x509Cert []byte, err error) {
 	success := false
 	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
 
 	for _, baseUrl := range targetUrls {
 		log.Printf("attempting to target '%s' for '%s'\n", baseUrl, userName)
-		sshCert, x509Cert, err = getCertsFromServer(signer, userName, password, baseUrl, tlsConfig)
+		sshCert, x509Cert, err = getCertsFromServer(signer, userName, password, baseUrl, tlsConfig, skipu2f)
 		if err != nil {
 			log.Println(err)
 			continue
@@ -507,7 +508,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	sshCert, x509Cert, err := getCertFromTargetUrls(signer, userName, password, strings.Split(config.Base.Gen_Cert_URLS, ","), nil)
+	sshCert, x509Cert, err := getCertFromTargetUrls(signer, userName,
+		password, strings.Split(config.Base.Gen_Cert_URLS, ","), nil, false)
 	if err != nil {
 		log.Fatal(err)
 	}
