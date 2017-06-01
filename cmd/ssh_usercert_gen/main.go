@@ -82,6 +82,7 @@ type AppConfigFile struct {
 const (
 	AuthTypeNone     = 0
 	AuthTypePassword = 1 << iota
+	AuthTypeFederated
 	AuthTypeU2F
 )
 

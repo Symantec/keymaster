@@ -144,7 +144,7 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 	}
 	username := data.Name
 	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) * time.Second)
-	savedUserInfo := authInfo{Username: username, ExpiresAt: expiration, AuthLevel: AuthLevelPassword}
+	savedUserInfo := authInfo{Username: username, ExpiresAt: expiration, AuthType: AuthTypeFederated}
 	state.Mutex.Lock()
 	state.authCookie[cookieVal] = savedUserInfo
 	state.Mutex.Unlock()
