@@ -16,6 +16,7 @@ import (
 	"github.com/Symantec/Dominator/lib/logbuf"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
+	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/tstranex/u2f"
 	"golang.org/x/crypto/openpgp"
@@ -42,16 +43,17 @@ import (
 // While the contents of the certificaes are public, we want to
 // restrict generation to authenticated users
 type baseConfig struct {
-	HttpAddress      string `yaml:"http_address"`
-	TLSCertFilename  string `yaml:"tls_cert_filename"`
-	TLSKeyFilename   string `yaml:"tls_key_filename"`
-	UserAuth         string
-	SSHCAFilename    string `yaml:"ssh_ca_filename"`
-	HtpasswdFilename string `yaml:"htpasswd_filename"`
-	ClientCAFilename string `yaml:"client_ca_filename"`
-	HostIdentity     string `yaml:"host_identity"`
-	KerberosRealm    string `yaml:"kerberos_realm"`
-	DataDirectory    string `yaml:"data_directory"`
+	HttpAddress     string `yaml:"http_address"`
+	TLSCertFilename string `yaml:"tls_cert_filename"`
+	TLSKeyFilename  string `yaml:"tls_key_filename"`
+	//UserAuth         string
+	RequiredAuthForCert string `yaml:"required_auth_for_cert"`
+	SSHCAFilename       string `yaml:"ssh_ca_filename"`
+	HtpasswdFilename    string `yaml:"htpasswd_filename"`
+	ClientCAFilename    string `yaml:"client_ca_filename"`
+	HostIdentity        string `yaml:"host_identity"`
+	KerberosRealm       string `yaml:"kerberos_realm"`
+	DataDirectory       string `yaml:"data_directory"`
 }
 
 type LdapConfig struct {
