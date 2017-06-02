@@ -18,6 +18,11 @@ const oauth2LoginBeginPath = "/auth/oauth2/login"
 
 func (state *RuntimeState) oauth2DoRedirectoToProviderHandler(w http.ResponseWriter, r *http.Request) {
 
+	if state.Config.Oauth2.Config == nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
+		log.Println("asking for oauth2, but it is not defined")
+		return
+	}
 	cookieVal, err := genRandomString()
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
