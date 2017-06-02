@@ -47,3 +47,25 @@ func TestOauth2DoRedirectoToProviderHandlerSuccess(t *testing.T) {
 	}
 	// Todo Check for the response contents
 }
+
+func TestOauth2RedirectPathHandlerSuccess(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+	state.authCookie = make(map[string]authInfo)
+	state.pendingOauth2 = make(map[string]pendingAuth2Request)
+	state.Config.Oauth2.Config = &testOauth2Config
+
+	//initially the request should fail for lack of preconditions
+	req, err := http.NewRequest("GET", redirectPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// request has no cookies
+	_, err = checkRequestHandlerCode(req, state.oauth2RedirectPathHandler, http.StatusBadRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
