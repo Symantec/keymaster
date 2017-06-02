@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -164,7 +165,16 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 		log.Println(err)
 		return
 	}
-	username := data.Name
+
+	// TODO: we need a more robust way to get the username and to add some filters. This
+	// mechanism is ok for 0.2 but not for 0.3.
+	components := strings.Split(data.Email, "@")
+	if len(components[0]) < 1 {
+		http.Error(w, "Email from userinfo is invalid: ", http.StatusInternalServerError)
+		return
+	}
+	username := components[0]
+
 	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) * time.Second)
 	savedUserInfo := authInfo{Username: username, ExpiresAt: expiration, AuthType: AuthTypeFederated}
 	state.Mutex.Lock()
