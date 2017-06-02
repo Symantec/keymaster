@@ -23,6 +23,11 @@ func (state *RuntimeState) oauth2DoRedirectoToProviderHandler(w http.ResponseWri
 		log.Println("asking for oauth2, but it is not defined")
 		return
 	}
+	if !state.Config.Oauth2.Enabled {
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Oauth2 is not enabled in for this system")
+		log.Println("asking for oauth2, but it is not enabled")
+		return
+	}
 	cookieVal, err := genRandomString()
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
@@ -77,6 +82,18 @@ func httpGet(client *http.Client, url string) ([]byte, error) {
 }
 
 func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *http.Request) {
+
+	if state.Config.Oauth2.Config == nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
+		log.Println("asking for oauth2, but it is not defined")
+		return
+	}
+	if !state.Config.Oauth2.Enabled {
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Oauth2 is not enabled in for this system")
+		log.Println("asking for oauth2, but it is not enabled")
+		return
+	}
+
 	redirCookie, err := r.Cookie(redirCookieName)
 	if err != nil {
 		if err == http.ErrNoCookie {

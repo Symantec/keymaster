@@ -129,6 +129,7 @@ type RuntimeState struct {
 
 const redirectPath = "/auth/oauth2/callback"
 const userProfileFilename = "userProfiles.gob"
+const secsBetweenCleanup = 30
 
 var (
 	Version          = "No version provided"
@@ -167,8 +168,7 @@ func generateCADer(state *RuntimeState, keySigner crypto.Signer) ([]byte, error)
 	return certgen.GenSelfSignedCACert(state.HostIdentity, organizationName, keySigner)
 }
 
-func (state *RuntimeState) performStateCleanup() {
-	secsBetweenCleanup := 30
+func (state *RuntimeState) performStateCleanup(secsBetweenCleanup int) {
 	for {
 		state.Mutex.Lock()
 		initAuthSize := len(state.authCookie)
@@ -178,9 +178,20 @@ func (state *RuntimeState) performStateCleanup() {
 			}
 		}
 		finalAuthSize := len(state.authCookie)
+
+		//
+		initPendingSize := len(state.pendingOauth2)
+		for key, oauth2Pending := range state.pendingOauth2 {
+			if oauth2Pending.ExpiresAt.Before(time.Now()) {
+				delete(state.pendingOauth2, key)
+			}
+		}
+		finalPendingSize := len(state.pendingOauth2)
+
 		state.Mutex.Unlock()
 		if *debug {
 			log.Printf("Auth Cookie sizes: before:(%d) after (%d)\n", initAuthSize, finalAuthSize)
+			log.Printf("Pending Cookie sizes: before(%d) after(%d)", initPendingSize, finalPendingSize)
 		}
 		time.Sleep(time.Duration(secsBetweenCleanup) * time.Second)
 	}
@@ -309,7 +320,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	log.Printf("%+v", runtimeState.userProfile)
 
 	// and we start the cleanup
-	go runtimeState.performStateCleanup()
+	go runtimeState.performStateCleanup(secsBetweenCleanup)
 
 	return runtimeState, nil
 }
