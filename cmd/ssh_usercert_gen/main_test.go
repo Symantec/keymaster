@@ -5,8 +5,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	//"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
@@ -224,19 +226,10 @@ func TestSuccessFullSigningSSH(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusOK)
+	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	/*
-		// Check the response body is what we expect.
-		expected := `{"alive": true}`
-		if rr.Body.String() != expected {
-			t.Errorf("handler returned unexpected body: got %v want %v",
-				rr.Body.String(), expected)
-		}
-
-	*/
 
 	// now we check using login auth + cookies
 	// For now just inject cookie into space
@@ -247,7 +240,7 @@ func TestSuccessFullSigningSSH(t *testing.T) {
 	}
 
 	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{Username: "username", AuthType: AuthTypeU2F, ExpiresAt: time.Now().Add(120 * time.Second)}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	cookieReq.AddCookie(&authCookie)
 
@@ -270,7 +263,7 @@ func TestSuccessFullSigningX509(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusOK)
+	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +276,7 @@ func TestSuccessFullSigningX509(t *testing.T) {
 	}
 
 	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{Username: "username", AuthType: AuthTypeU2F, ExpiresAt: time.Now().Add(120 * time.Second)}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	cookieReq.AddCookie(&authCookie)
 
@@ -307,7 +300,10 @@ func TestFailSingingExpiredCookie(t *testing.T) {
 	}
 
 	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{
+		Username:  "username",
+		AuthType:  AuthTypeU2F,
+		ExpiresAt: time.Now().Add(120 * time.Second)}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	cookieReq.AddCookie(&authCookie)
 
@@ -316,7 +312,7 @@ func TestFailSingingExpiredCookie(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Now expire the cookie and retry
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(-120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{Username: "username", AuthType: AuthTypeU2F, ExpiresAt: time.Now().Add(-120 * time.Second)}
 	_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusUnauthorized)
 	if err != nil {
 		t.Fatal(err)
@@ -374,8 +370,23 @@ func TestInjectingSecret(t *testing.T) {
 	defer os.Remove(passwdFile.Name()) // clean up
 	state.Config.Base.HtpasswdFilename = passwdFile.Name()
 
+	state.authCookie = make(map[string]authInfo)
 	// Make certgen Request
-	certGenReq, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username", "username", "password", testUserSSHPublicKey)
+	//Fist we ensure OK is working
+	certGenReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cookieVal := "supersecret"
+	state.authCookie[cookieVal] = authInfo{
+		Username:  "username",
+		AuthType:  AuthTypeU2F,
+		ExpiresAt: time.Now().Add(120 * time.Second)}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+	certGenReq.AddCookie(&authCookie)
+
+	//certGenReq, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username", "username", "password", testUserSSHPublicKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -548,7 +559,7 @@ func TestLoginAPIFormAuth(t *testing.T) {
 	form.Add("username", validUsernameConst)
 	form.Add("password", validPasswordConst)
 
-	req, err := http.NewRequest("POST", loginPath, strings.NewReader(form.Encode()))
+	req, err := http.NewRequest("POST", proto.LoginPath, strings.NewReader(form.Encode()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -561,12 +572,29 @@ func TestLoginAPIFormAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	//TODO: check for existence of login cookie!
+	// TODO: check for existence of login cookie!
 	if !checkValidLoginResponse(rr.Result(), &state, validUsernameConst) {
 		t.Fatal(err)
 	}
 
-	//now we check for failed auth
+	// test with form AND with json return
+	req.Header.Add("Accept", "application/json")
+	jsonrr, err := checkRequestHandlerCode(req, state.loginHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !checkValidLoginResponse(jsonrr.Result(), &state, validUsernameConst) {
+		t.Fatal(err)
+	}
+	loginResponse := proto.LoginResponse{}
+	body := jsonrr.Result().Body
+	err = json.NewDecoder(body).Decode(&loginResponse)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("loginResponse='%+v'", loginResponse)
+
+	// now we check for failed auth
 	for _, testVector := range loginFailValues {
 		form := url.Values{}
 		if testVector.Password != nil {
@@ -575,7 +603,7 @@ func TestLoginAPIFormAuth(t *testing.T) {
 		if testVector.Username != nil {
 			form.Add("username", *testVector.Username)
 		}
-		req, err := http.NewRequest("POST", loginPath, strings.NewReader(form.Encode()))
+		req, err := http.NewRequest("POST", proto.LoginPath, strings.NewReader(form.Encode()))
 		if err != nil {
 			t.Fatal(err)
 		}

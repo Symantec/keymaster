@@ -5,12 +5,22 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
+
+	// client side (interface with hardware)
+	"github.com/flynn/u2f/u2fhid"
+	"github.com/flynn/u2f/u2ftoken"
+	// server side:
+	"github.com/tstranex/u2f"
+
 	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v2"
@@ -23,6 +33,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -30,6 +41,8 @@ import (
 const DefaultKeysLocation = "/.ssh/"
 const RSAKeySize = 2048
 const FilePrefix = "keymaster"
+
+const ClientDataAuthenticationTypeValue = "navigator.id.getAssertion"
 
 type baseConfig struct {
 	Gen_Cert_URLS string
@@ -161,6 +174,158 @@ func doCertRequest(client *http.Client, authCookies []*http.Cookie, url, filedat
 
 }
 
+func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL string) error {
+	log.Printf("top of doU2fAuthenticate")
+	url := baseURL + "/u2f/SignRequest"
+	signRequest, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Add the login cookies
+	for _, cookie := range authCookies {
+		signRequest.AddCookie(cookie)
+	}
+	signRequestResp, err := client.Do(signRequest) // Client.Get(targetUrl)
+	if err != nil {
+		log.Printf("Failure to sign request req %s", err)
+		return err
+	}
+
+	defer signRequestResp.Body.Close()
+	if signRequestResp.StatusCode != 200 {
+		log.Printf("got error from call %s, url='%s'\n", signRequestResp.Status, url)
+		return err
+	}
+
+	var webSignRequest u2f.WebSignRequest
+	if err := json.NewDecoder(signRequestResp.Body).Decode(&webSignRequest); err != nil {
+		//http.Error(w, "invalid response: "+err.Error(), http.StatusBadRequest)
+		//        return
+		log.Fatal(err)
+	}
+
+	// TODO: move this to initialization code, ans pass the device list to this function?
+	// or maybe pass the token?...
+	devices, err := u2fhid.Devices()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if len(devices) == 0 {
+		log.Fatal("no U2F tokens found")
+	}
+
+	// TODO: transform this into an iteration over all found devices
+	d := devices[0]
+	log.Printf("manufacturer = %q, product = %q, vid = 0x%04x, pid = 0x%04x", d.Manufacturer, d.Product, d.ProductID, d.VendorID)
+
+	dev, err := u2fhid.Open(d)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer dev.Close()
+	t := u2ftoken.NewToken(dev)
+
+	// This section of version could be if *debug
+	version, err := t.Version()
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Println("version:", version)
+
+	///////
+	tokenAuthenticationClientData := u2f.ClientData{Typ: ClientDataAuthenticationTypeValue, Challenge: webSignRequest.Challenge, Origin: webSignRequest.AppID}
+	tokenAuthenticationBuf := new(bytes.Buffer)
+	err = json.NewEncoder(tokenAuthenticationBuf).Encode(tokenAuthenticationClientData)
+	if err != nil {
+		log.Fatal(err)
+	}
+	reqSignChallenge := sha256.Sum256(tokenAuthenticationBuf.Bytes())
+
+	challenge := make([]byte, 32)
+	app := make([]byte, 32)
+
+	challenge = reqSignChallenge[:]
+	reqSingApp := sha256.Sum256([]byte(webSignRequest.AppID))
+	app = reqSingApp[:]
+
+	// We find out what key is associated to the currently inserted device.
+	keyIsKnown := false
+	var req u2ftoken.AuthenticateRequest
+	var keyHandle []byte
+	for _, registeredKey := range webSignRequest.RegisteredKeys {
+		decodedHandle, err := base64.RawURLEncoding.DecodeString(registeredKey.KeyHandle)
+		if err != nil {
+			log.Fatal(err)
+		}
+		keyHandle = decodedHandle
+
+		req = u2ftoken.AuthenticateRequest{
+			Challenge:   challenge,
+			Application: app,
+			KeyHandle:   keyHandle,
+		}
+
+		//log.Printf("%+v", req)
+		if err := t.CheckAuthenticate(req); err == nil {
+			keyIsKnown = true
+			break
+		}
+	}
+	if !keyIsKnown {
+		err = errors.New("key is not known")
+		return err
+	}
+
+	// Now we ask the token to sign/authenticate
+	log.Println("authenticating, provide user presence")
+	var rawBytes []byte
+	for {
+		res, err := t.Authenticate(req)
+		if err == u2ftoken.ErrPresenceRequired {
+			time.Sleep(200 * time.Millisecond)
+			continue
+		} else if err != nil {
+			log.Fatal(err)
+		}
+		rawBytes = res.RawResponse
+		log.Printf("counter = %d, signature = %x", res.Counter, res.Signature)
+		break
+	}
+
+	// now we do the last request
+	var signRequestResponse u2f.SignResponse
+	signRequestResponse.KeyHandle = base64.RawURLEncoding.EncodeToString(keyHandle)
+	signRequestResponse.SignatureData = base64.RawURLEncoding.EncodeToString(rawBytes)
+	signRequestResponse.ClientData = base64.RawURLEncoding.EncodeToString(tokenAuthenticationBuf.Bytes())
+
+	//
+	webSignRequestBuf := &bytes.Buffer{}
+	err = json.NewEncoder(webSignRequestBuf).Encode(signRequestResponse)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	url = baseURL + "/u2f/SignResponse"
+	webSignRequest2, err := http.NewRequest("POST", url, webSignRequestBuf)
+	// Add the login cookies
+	for _, cookie := range authCookies {
+		webSignRequest2.AddCookie(cookie)
+	}
+	signRequestResp2, err := client.Do(webSignRequest2) // Client.Get(targetUrl)
+	if err != nil {
+		log.Printf("Failure to sign request req %s", err)
+		return err
+	}
+
+	defer signRequestResp2.Body.Close()
+	if signRequestResp2.StatusCode != 200 {
+		log.Printf("got error from call %s, url='%s'\n", signRequestResp2.Status, url)
+		return err
+	}
+
+	return nil
+}
+
 func getParseURLEnvVariable(name string) (*url.URL, error) {
 	envVariable := os.Getenv(name)
 	if len(envVariable) < 1 {
@@ -174,7 +339,7 @@ func getParseURLEnvVariable(name string) (*url.URL, error) {
 	return envUrl, nil
 }
 
-func getCertsFromServer(signer crypto.Signer, userName string, password []byte, baseUrl string, tlsConfig *tls.Config) (sshCert []byte, x509Cert []byte, err error) {
+func getCertsFromServer(signer crypto.Signer, userName string, password []byte, baseUrl string, tlsConfig *tls.Config, skipu2f bool) (sshCert []byte, x509Cert []byte, err error) {
 	//First Do Login
 
 	clientTransport := &http.Transport{
@@ -195,11 +360,17 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 	client := &http.Client{Transport: clientTransport, Timeout: 5 * time.Second}
 
 	loginUrl := baseUrl + "/api/v0/login"
-	req, err := http.NewRequest("POST", loginUrl, nil)
+	form := url.Values{}
+	form.Add("username", userName)
+	form.Add("password", string(password[:]))
+	req, err := http.NewRequest("POST", loginUrl, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, nil, err
 	}
-	req.SetBasicAuth(userName, string(password[:]))
+	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Accept", "application/json")
+
 	loginResp, err := client.Do(req) //client.Get(targetUrl)
 	if err != nil {
 		log.Printf("got error from req")
@@ -220,6 +391,14 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 	}
 	loginResp.Body.Close() //so that we can reuse the channel
 
+	// upgrade to u2f
+	if !skipu2f {
+		err = doU2FAuthenticate(client, loginResp.Cookies(), baseUrl)
+		if err != nil {
+
+			return nil, nil, err
+		}
+	}
 	//now get x509 cert
 	pubKey := signer.Public()
 	derKey, err := x509.MarshalPKIXPublicKey(pubKey)
@@ -249,13 +428,13 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 	return sshCert, x509Cert, nil
 }
 
-func getCertFromTargetUrls(signer crypto.Signer, userName string, password []byte, targetUrls []string, rootCAs *x509.CertPool) (sshCert []byte, x509Cert []byte, err error) {
+func getCertFromTargetUrls(signer crypto.Signer, userName string, password []byte, targetUrls []string, rootCAs *x509.CertPool, skipu2f bool) (sshCert []byte, x509Cert []byte, err error) {
 	success := false
 	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
 
 	for _, baseUrl := range targetUrls {
 		log.Printf("attempting to target '%s' for '%s'\n", baseUrl, userName)
-		sshCert, x509Cert, err = getCertsFromServer(signer, userName, password, baseUrl, tlsConfig)
+		sshCert, x509Cert, err = getCertsFromServer(signer, userName, password, baseUrl, tlsConfig, skipu2f)
 		if err != nil {
 			log.Println(err)
 			continue
@@ -321,7 +500,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	sshCert, x509Cert, err := getCertFromTargetUrls(signer, userName, password, strings.Split(config.Base.Gen_Cert_URLS, ","), nil)
+	sshCert, x509Cert, err := getCertFromTargetUrls(signer, userName,
+		password, strings.Split(config.Base.Gen_Cert_URLS, ","), nil, false)
 	if err != nil {
 		log.Fatal(err)
 	}

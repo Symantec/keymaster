@@ -16,6 +16,7 @@ import (
 	"github.com/Symantec/Dominator/lib/logbuf"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
+	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/tstranex/u2f"
 	"golang.org/x/crypto/openpgp"
@@ -42,16 +43,17 @@ import (
 // While the contents of the certificaes are public, we want to
 // restrict generation to authenticated users
 type baseConfig struct {
-	HttpAddress      string `yaml:"http_address"`
-	TLSCertFilename  string `yaml:"tls_cert_filename"`
-	TLSKeyFilename   string `yaml:"tls_key_filename"`
-	UserAuth         string
-	SSHCAFilename    string `yaml:"ssh_ca_filename"`
-	HtpasswdFilename string `yaml:"htpasswd_filename"`
-	ClientCAFilename string `yaml:"client_ca_filename"`
-	HostIdentity     string `yaml:"host_identity"`
-	KerberosRealm    string `yaml:"kerberos_realm"`
-	DataDirectory    string `yaml:"data_directory"`
+	HttpAddress     string `yaml:"http_address"`
+	TLSCertFilename string `yaml:"tls_cert_filename"`
+	TLSKeyFilename  string `yaml:"tls_key_filename"`
+	//UserAuth         string
+	RequiredAuthForCert string `yaml:"required_auth_for_cert"`
+	SSHCAFilename       string `yaml:"ssh_ca_filename"`
+	HtpasswdFilename    string `yaml:"htpasswd_filename"`
+	ClientCAFilename    string `yaml:"client_ca_filename"`
+	HostIdentity        string `yaml:"host_identity"`
+	KerberosRealm       string `yaml:"kerberos_realm"`
+	DataDirectory       string `yaml:"data_directory"`
 }
 
 type LdapConfig struct {
@@ -73,7 +75,7 @@ const (
 type authInfo struct {
 	ExpiresAt time.Time
 	Username  string
-	AuthLevel int
+	AuthType  int
 }
 
 type u2fAuthData struct {
@@ -429,7 +431,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 		return "", AuthTypeNone, err
 
 	}
-	return info.Username, info.AuthLevel, nil
+	return info.Username, info.AuthType, nil
 }
 
 func (state *RuntimeState) SaveUserProfiles() error {
@@ -478,10 +480,14 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r)
+	authUser, authLevel, err := state.checkAuth(w, r)
 	if err != nil {
 		log.Printf("%v", err)
 
+		return
+	}
+	if authLevel != AuthTypeU2F {
+		writeFailureResponse(w, r, http.StatusBadRequest, "2nd Factor is mandatory for getting certs")
 		return
 	}
 
@@ -799,7 +805,7 @@ func genRandomString() (string, error) {
 	return base64.URLEncoding.EncodeToString(rb), nil
 }
 
-const loginPath = "/api/v0/login"
+//const loginPath = "/api/v0/login"
 
 func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
@@ -883,7 +889,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) * time.Second)
-	savedUserInfo := authInfo{Username: username, ExpiresAt: expiration, AuthLevel: AuthTypePassword}
+	savedUserInfo := authInfo{Username: username, ExpiresAt: expiration, AuthType: AuthTypePassword}
 	state.Mutex.Lock()
 	state.authCookie[cookieVal] = savedUserInfo
 	state.Mutex.Unlock()
@@ -906,12 +912,15 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 	}
+	loginResponse := proto.LoginResponse{Message: "success",
+		CertAuthBackend: []string{proto.AuthTypePassword, proto.AuthTypeU2F}}
 	switch returnAcceptType {
 	case "text/html":
 		http.Redirect(w, r, profilePath, 302)
 	default:
 		w.WriteHeader(200)
-		fmt.Fprintf(w, "Success!")
+		json.NewEncoder(w).Encode(loginResponse)
+		//fmt.Fprintf(w, "Success!")
 	}
 	return
 
@@ -1096,6 +1105,16 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 
 		return
 	}
+
+	// If successful I need to update the cookie
+	var authCookie *http.Cookie
+	for _, cookie := range r.Cookies() {
+		if cookie.Name != authCookieName {
+			continue
+		}
+		authCookie = cookie
+	}
+
 	//now the actual work
 	var signResp u2f.SignResponse
 	if err := json.NewDecoder(r.Body).Decode(&signResp); err != nil {
@@ -1138,6 +1157,15 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 			profile.U2fAuthData[i].Counter = newCounter
 			profile.u2fAuthChallenge = nil
 			state.userProfile[authUser] = profile
+
+			// update cookie if found, this should be also a critical section
+			if authCookie != nil {
+				info, ok := state.authCookie[authCookie.Value]
+				if ok {
+					info.AuthType = AuthTypeU2F
+					state.authCookie[authCookie.Value] = info
+				}
+			}
 
 			// TODO: make goroutine!
 			state.SaveUserProfiles()
@@ -1203,6 +1231,8 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 
 const u2fTokenManagementPath = "/api/v0/manageU2FToken"
 
+// TODO: add duplicate action filter via cookies (for browser context).
+
 func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http.Request) {
 	// User must be logged in
 	if state.sendFailureToClientIfLocked(w, r) {
@@ -1224,28 +1254,24 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 		writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
 		return
 	}
-
-	log.Printf("%+v", r.Form)
+	if *debug {
+		log.Printf("Form: %+v", r.Form)
+	}
 
 	// Check params
 	if r.Form.Get("username") != authUser {
+		log.Printf("bad username authUser=%s requested=%s", authUser, r.Form.Get("username"))
 		writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}
 
 	tokenIndex, err := strconv.Atoi(r.Form.Get("index"))
 	if err != nil {
+		log.Printf("tokenindex is not a number")
 		writeFailureResponse(w, r, http.StatusBadRequest, "tokenindex is not a number")
 		return
 	}
-	/*
-		tokenName := r.Form.Get("name")
-		if m, _ := regexp.MatchString("^[a-zA-Z0-9_ ]+$", tokenName); !m {
-			log.Printf("%s", tokenName)
-			writeFailureResponse(w, r, http.StatusBadRequest, "invalidtokenName")
-			return
-		}
-	*/
+
 	//Do a redirect
 	state.Mutex.Lock()
 	profile, _ := state.userProfile[authUser]
@@ -1253,6 +1279,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 
 	// Todo: check for negative values
 	if tokenIndex >= len(profile.U2fAuthData) {
+		log.Printf("bad index number")
 		writeFailureResponse(w, r, http.StatusBadRequest, "bad index Value")
 		return
 
@@ -1329,7 +1356,7 @@ func main() {
 	http.HandleFunc(secretInjectorPath, runtimeState.secretInjectorHandler)
 	http.HandleFunc(certgenPath, runtimeState.certGenHandler)
 	http.HandleFunc(publicPath, runtimeState.publicPathHandler)
-	http.HandleFunc(loginPath, runtimeState.loginHandler)
+	http.HandleFunc(proto.LoginPath, runtimeState.loginHandler)
 
 	http.HandleFunc(profilePath, runtimeState.profileHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static_files"))))
