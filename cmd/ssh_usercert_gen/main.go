@@ -805,7 +805,7 @@ func genRandomString() (string, error) {
 	return base64.URLEncoding.EncodeToString(rb), nil
 }
 
-const loginPath = "/api/v0/login"
+//const loginPath = "/api/v0/login"
 
 func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
@@ -912,12 +912,15 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 	}
+	loginResponse := proto.LoginResponse{Message: "success",
+		CertAuthBackend: []string{proto.AuthTypePassword, proto.AuthTypeU2F}}
 	switch returnAcceptType {
 	case "text/html":
 		http.Redirect(w, r, profilePath, 302)
 	default:
 		w.WriteHeader(200)
-		fmt.Fprintf(w, "Success!")
+		json.NewEncoder(w).Encode(loginResponse)
+		//fmt.Fprintf(w, "Success!")
 	}
 	return
 
@@ -1353,7 +1356,7 @@ func main() {
 	http.HandleFunc(secretInjectorPath, runtimeState.secretInjectorHandler)
 	http.HandleFunc(certgenPath, runtimeState.certGenHandler)
 	http.HandleFunc(publicPath, runtimeState.publicPathHandler)
-	http.HandleFunc(loginPath, runtimeState.loginHandler)
+	http.HandleFunc(proto.LoginPath, runtimeState.loginHandler)
 
 	http.HandleFunc(profilePath, runtimeState.profileHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static_files"))))
