@@ -5,8 +5,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	//"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
@@ -557,7 +559,7 @@ func TestLoginAPIFormAuth(t *testing.T) {
 	form.Add("username", validUsernameConst)
 	form.Add("password", validPasswordConst)
 
-	req, err := http.NewRequest("POST", loginPath, strings.NewReader(form.Encode()))
+	req, err := http.NewRequest("POST", proto.LoginPath, strings.NewReader(form.Encode()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -570,12 +572,29 @@ func TestLoginAPIFormAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	//TODO: check for existence of login cookie!
+	// TODO: check for existence of login cookie!
 	if !checkValidLoginResponse(rr.Result(), &state, validUsernameConst) {
 		t.Fatal(err)
 	}
 
-	//now we check for failed auth
+	// test with form AND with json return
+	req.Header.Add("Accept", "application/json")
+	jsonrr, err := checkRequestHandlerCode(req, state.loginHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !checkValidLoginResponse(jsonrr.Result(), &state, validUsernameConst) {
+		t.Fatal(err)
+	}
+	loginResponse := proto.LoginResponse{}
+	body := jsonrr.Result().Body
+	err = json.NewDecoder(body).Decode(&loginResponse)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("loginResponse='%+v'", loginResponse)
+
+	// now we check for failed auth
 	for _, testVector := range loginFailValues {
 		form := url.Values{}
 		if testVector.Password != nil {
@@ -584,7 +603,7 @@ func TestLoginAPIFormAuth(t *testing.T) {
 		if testVector.Username != nil {
 			form.Add("username", *testVector.Username)
 		}
-		req, err := http.NewRequest("POST", loginPath, strings.NewReader(form.Encode()))
+		req, err := http.NewRequest("POST", proto.LoginPath, strings.NewReader(form.Encode()))
 		if err != nil {
 			t.Fatal(err)
 		}

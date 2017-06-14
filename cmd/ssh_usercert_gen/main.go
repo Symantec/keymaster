@@ -16,6 +16,7 @@ import (
 	"github.com/Symantec/Dominator/lib/logbuf"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
+	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/tstranex/u2f"
 	"golang.org/x/crypto/openpgp"
@@ -44,16 +45,17 @@ import (
 // While the contents of the certificaes are public, we want to
 // restrict generation to authenticated users
 type baseConfig struct {
-	HttpAddress      string `yaml:"http_address"`
-	TLSCertFilename  string `yaml:"tls_cert_filename"`
-	TLSKeyFilename   string `yaml:"tls_key_filename"`
-	UserAuth         string
-	SSHCAFilename    string `yaml:"ssh_ca_filename"`
-	HtpasswdFilename string `yaml:"htpasswd_filename"`
-	ClientCAFilename string `yaml:"client_ca_filename"`
-	HostIdentity     string `yaml:"host_identity"`
-	KerberosRealm    string `yaml:"kerberos_realm"`
-	DataDirectory    string `yaml:"data_directory"`
+	HttpAddress     string `yaml:"http_address"`
+	TLSCertFilename string `yaml:"tls_cert_filename"`
+	TLSKeyFilename  string `yaml:"tls_key_filename"`
+	//UserAuth         string
+	RequiredAuthForCert string `yaml:"required_auth_for_cert"`
+	SSHCAFilename       string `yaml:"ssh_ca_filename"`
+	HtpasswdFilename    string `yaml:"htpasswd_filename"`
+	ClientCAFilename    string `yaml:"client_ca_filename"`
+	HostIdentity        string `yaml:"host_identity"`
+	KerberosRealm       string `yaml:"kerberos_realm"`
+	DataDirectory       string `yaml:"data_directory"`
 }
 
 type LdapConfig struct {
@@ -870,7 +872,7 @@ func genRandomString() (string, error) {
 	return base64.URLEncoding.EncodeToString(rb), nil
 }
 
-const loginPath = "/api/v0/login"
+//const loginPath = "/api/v0/login"
 
 func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
@@ -977,12 +979,15 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 	}
+	loginResponse := proto.LoginResponse{Message: "success",
+		CertAuthBackend: []string{proto.AuthTypePassword, proto.AuthTypeU2F}}
 	switch returnAcceptType {
 	case "text/html":
 		http.Redirect(w, r, profilePath, 302)
 	default:
 		w.WriteHeader(200)
-		fmt.Fprintf(w, "Success!")
+		json.NewEncoder(w).Encode(loginResponse)
+		//fmt.Fprintf(w, "Success!")
 	}
 	return
 
@@ -1448,8 +1453,9 @@ func main() {
 	http.HandleFunc(secretInjectorPath, runtimeState.secretInjectorHandler)
 	http.HandleFunc(certgenPath, runtimeState.certGenHandler)
 	http.HandleFunc(publicPath, runtimeState.publicPathHandler)
-	http.HandleFunc(loginPath, runtimeState.loginHandler)
+	http.HandleFunc(proto.LoginPath, runtimeState.loginHandler)
 	http.HandleFunc(logoutPath, runtimeState.logoutHandler)
+	http.HandleFunc(proto.LoginPath, runtimeState.loginHandler)
 
 	http.HandleFunc(profilePath, runtimeState.profileHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static_files"))))

@@ -369,6 +369,7 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 	}
 	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Accept", "application/json")
 
 	loginResp, err := client.Do(req) //client.Get(targetUrl)
 	if err != nil {
