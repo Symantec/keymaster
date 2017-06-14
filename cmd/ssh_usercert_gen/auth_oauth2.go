@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const maxAgeSecondsRedirCookie = 30
+const maxAgeSecondsRedirCookie = 60
 const redirCookieName = "oauth2_redir"
 
 const oauth2LoginBeginPath = "/auth/oauth2/login"
@@ -102,6 +102,7 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 			log.Println(err)
 			return
 		}
+		// TODO: this is probably a user error? send back to oath2 login path?
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
 		log.Println(err)
 		return
