@@ -487,8 +487,21 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 
 		return
 	}
-	if authLevel != AuthTypeU2F {
-		writeFailureResponse(w, r, http.StatusBadRequest, "2nd Factor is mandatory for getting certs")
+
+	sufficientAuthLevel := false
+	// We should do an intersection operation here
+	for _, certPref := range state.Config.Base.AllowedAuthBackendsForCerts {
+		if certPref == proto.AuthTypePassword {
+			sufficientAuthLevel = true
+		}
+	}
+	// if you have u2f you can get the cert
+	if (authLevel & AuthTypeU2F) == AuthTypeU2F {
+		sufficientAuthLevel = true
+	}
+
+	if !sufficientAuthLevel {
+		writeFailureResponse(w, r, http.StatusBadRequest, "Not enough auth level for getting certs")
 		return
 	}
 
