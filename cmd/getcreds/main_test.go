@@ -5,8 +5,10 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"github.com/Symantec/keymaster/lib/certgen"
+	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -121,10 +123,21 @@ func getTLSconfig() (*tls.Config, error) {
 
 const localHttpsTarget = "https://localhost:22443/"
 
+var testAllowedCertBackends = []string{proto.AuthTypePassword, proto.AuthTypeU2F}
+
 func handler(w http.ResponseWriter, r *http.Request) {
 	authCookie := http.Cookie{Name: "somename", Value: "somevalue"}
 	http.SetCookie(w, &authCookie)
-	fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
+	switch r.URL.Path {
+	case proto.LoginPath:
+		loginResponse := proto.LoginResponse{Message: "success",
+			CertAuthBackend: testAllowedCertBackends}
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(loginResponse)
+
+	default:
+		fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
+	}
 }
 
 func init() {

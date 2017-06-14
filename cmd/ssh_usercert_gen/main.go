@@ -47,13 +47,14 @@ type baseConfig struct {
 	TLSCertFilename string `yaml:"tls_cert_filename"`
 	TLSKeyFilename  string `yaml:"tls_key_filename"`
 	//UserAuth         string
-	RequiredAuthForCert string `yaml:"required_auth_for_cert"`
-	SSHCAFilename       string `yaml:"ssh_ca_filename"`
-	HtpasswdFilename    string `yaml:"htpasswd_filename"`
-	ClientCAFilename    string `yaml:"client_ca_filename"`
-	HostIdentity        string `yaml:"host_identity"`
-	KerberosRealm       string `yaml:"kerberos_realm"`
-	DataDirectory       string `yaml:"data_directory"`
+	RequiredAuthForCert         string   `yaml:"required_auth_for_cert"`
+	SSHCAFilename               string   `yaml:"ssh_ca_filename"`
+	HtpasswdFilename            string   `yaml:"htpasswd_filename"`
+	ClientCAFilename            string   `yaml:"client_ca_filename"`
+	HostIdentity                string   `yaml:"host_identity"`
+	KerberosRealm               string   `yaml:"kerberos_realm"`
+	DataDirectory               string   `yaml:"data_directory"`
+	AllowedAuthBackendsForCerts []string `yaml:"allowed_auth_backends_for_certs"`
 }
 
 type LdapConfig struct {
@@ -486,8 +487,21 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 
 		return
 	}
-	if authLevel != AuthTypeU2F {
-		writeFailureResponse(w, r, http.StatusBadRequest, "2nd Factor is mandatory for getting certs")
+
+	sufficientAuthLevel := false
+	// We should do an intersection operation here
+	for _, certPref := range state.Config.Base.AllowedAuthBackendsForCerts {
+		if certPref == proto.AuthTypePassword {
+			sufficientAuthLevel = true
+		}
+	}
+	// if you have u2f you can get the cert
+	if (authLevel & AuthTypeU2F) == AuthTypeU2F {
+		sufficientAuthLevel = true
+	}
+
+	if !sufficientAuthLevel {
+		writeFailureResponse(w, r, http.StatusBadRequest, "Not enough auth level for getting certs")
 		return
 	}
 
@@ -912,8 +926,24 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 	}
+
+	// Compute the cert prefs
+	var certBackends []string
+	for _, certPref := range state.Config.Base.AllowedAuthBackendsForCerts {
+		if certPref == proto.AuthTypePassword {
+			certBackends = append(certBackends, proto.AuthTypePassword)
+		}
+		if certPref == proto.AuthTypeU2F {
+			certBackends = append(certBackends, proto.AuthTypeU2F)
+		}
+	}
+	if len(certBackends) == 0 {
+		certBackends = append(certBackends, proto.AuthTypeU2F)
+	}
+
+	// TODO: The cert backend should depend also on per user preferences.
 	loginResponse := proto.LoginResponse{Message: "success",
-		CertAuthBackend: []string{proto.AuthTypePassword, proto.AuthTypeU2F}}
+		CertAuthBackend: certBackends}
 	switch returnAcceptType {
 	case "text/html":
 		http.Redirect(w, r, profilePath, 302)
