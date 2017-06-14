@@ -21,6 +21,8 @@ import (
 	// server side:
 	"github.com/tstranex/u2f"
 
+	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
+
 	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v2"
@@ -359,7 +361,7 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 	// TODO: change timeout const for a flag
 	client := &http.Client{Transport: clientTransport, Timeout: 5 * time.Second}
 
-	loginUrl := baseUrl + "/api/v0/login"
+	loginUrl := baseUrl + proto.LoginPath
 	form := url.Values{}
 	form.Add("username", userName)
 	form.Add("password", string(password[:]))
@@ -389,8 +391,20 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 		err = errors.New("No cookies from login")
 		return nil, nil, err
 	}
+
+	loginJSONResponse := proto.LoginResponse{}
+	//body := jsonrr.Result().Body
+	err = json.NewDecoder(loginResp.Body).Decode(&loginJSONResponse)
+	if err != nil {
+		return nil, nil, err
+	}
 	loginResp.Body.Close() //so that we can reuse the channel
 
+	for _, backend := range loginJSONResponse.CertAuthBackend {
+		if backend == proto.AuthTypePassword {
+			skipu2f = true
+		}
+	}
 	// upgrade to u2f
 	if !skipu2f {
 		err = doU2FAuthenticate(client, loginResp.Cookies(), baseUrl)
