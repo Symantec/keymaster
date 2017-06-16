@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -16,8 +17,10 @@ import (
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
+	"math/big"
 	"os"
 	"strings"
+	"time"
 )
 
 type baseConfig struct {
@@ -249,7 +252,129 @@ func getUserString(reader *bufio.Reader, displayValue, defaultValue string) (str
 	return defaultValue, nil
 }
 
+func generateRSAKeyAndSaveInFile(filename string, bits int) (*rsa.PrivateKey, error) {
+	if bits < 2048 {
+		bits = defaultRSAKeySize
+	}
+	privateKey, err := rsa.GenerateKey(rand.Reader, bits)
+	if err != nil {
+		return nil, err
+	}
+	file, err := os.Create(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	privateKeyPEM := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)}
+	if err := pem.Encode(file, privateKeyPEM); err != nil {
+		return nil, err
+	}
+	return privateKey, nil
+}
+
+func generateCertAndWriteToFile(filename string, template, parent *x509.Certificate, pub, priv interface{}) ([]byte, error) {
+	derBytes, err := x509.CreateCertificate(rand.Reader, template, parent, pub, priv)
+	if err != nil {
+		log.Fatalf("Failed to create certificate: %s", err)
+	}
+	certOut, err := os.Create(filename)
+	if err != nil {
+		log.Fatalf("failed to open cert.pem for writing: %s", err)
+	}
+	defer certOut.Close()
+	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+
+	log.Print("written cert.pem\n")
+	return derBytes, nil
+}
+
+func generateCerts(configDir string, config *baseConfig) error {
+	const rsaKeySize = 3072
+	//First generate a self signeed cert for itelf
+	serverKeyFilename := configDir + "/server.key"
+	serverKey, err := generateRSAKeyAndSaveInFile(serverKeyFilename, rsaKeySize)
+	if err != nil {
+		return err
+	}
+	// Now make the cert
+	notBefore := time.Now()
+	validFor := time.Duration(5 * 365 * 24 * time.Hour)
+	notAfter := notBefore.Add(validFor)
+	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
+	if err != nil {
+		log.Fatalf("failed to generate serial number: %s", err)
+	}
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"Acme Co"},
+		},
+		NotBefore:             notBefore,
+		NotAfter:              notAfter,
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+	template.DNSNames = append(template.DNSNames, "localhost")
+	serverCertFilename := configDir + "/server.pem"
+	_, err = generateCertAndWriteToFile(serverCertFilename, &template, &template, &serverKey.PublicKey, serverKey)
+	if err != nil {
+		log.Fatalf("Failed to create certificate: %s", err)
+	}
+
+	//now the admin CA
+	adminCAKeyFilename := configDir + "/adminCA.key"
+	adminCAKey, err := generateRSAKeyAndSaveInFile(adminCAKeyFilename, rsaKeySize)
+	if err != nil {
+		return err
+	}
+	//
+	caTemplate := template
+	serialNumber, err = rand.Int(rand.Reader, serialNumberLimit)
+	if err != nil {
+		log.Fatalf("failed to generate serial number: %s", err)
+	}
+	caTemplate.DNSNames = nil
+	caTemplate.SerialNumber = serialNumber
+	caTemplate.IsCA = true
+	caTemplate.KeyUsage |= x509.KeyUsageCertSign
+	caTemplate.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth}
+	caTemplate.Subject = pkix.Name{Organization: []string{"Acme Co CA"}}
+	adminCACertFilename := configDir + "/adminCA.pem"
+	caDer, err := generateCertAndWriteToFile(adminCACertFilename, &caTemplate, &caTemplate, &adminCAKey.PublicKey, adminCAKey)
+	if err != nil {
+		log.Fatalf("Failed to create certificate: %s", err)
+	}
+	// Now the admin client
+	caCert, err := x509.ParseCertificate(caDer)
+	if err != nil {
+		log.Fatalf("Failed to parse certificate: %s", err)
+	}
+	clientKeyFilename := configDir + "/adminClient.key"
+	clientKey, err := generateRSAKeyAndSaveInFile(clientKeyFilename, rsaKeySize)
+	//Fix template!
+	clientTemplate := template
+	//client.KeyUsage |= ExtKeyUsageClientAuth
+	clientTemplate.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth}
+	clientCertFilename := configDir + "/adminClient.pem"
+	_, err = generateCertAndWriteToFile(clientCertFilename, &clientTemplate, caCert, &clientKey.PublicKey, adminCAKey)
+	if err != nil {
+		log.Fatalf("Failed to create certificate: %s", err)
+	}
+
+	config.TLSKeyFilename = serverKeyFilename
+	config.TLSCertFilename = serverCertFilename
+	config.ClientCAFilename = adminCACertFilename
+	return nil
+}
+
 func generateNewConfig(configFilename string) error {
+	reader := bufio.NewReader(os.Stdin)
+	return generateNewConfigInternal(reader, configFilename)
+}
+
+func generateNewConfigInternal(reader *bufio.Reader, configFilename string) error {
 	/*
 		type baseConfig struct {
 			HttpAddress     string `yaml:"http_address"`
@@ -268,13 +393,17 @@ func generateNewConfig(configFilename string) error {
 	*/
 	var config AppConfigFile
 	//Get base dir
-	reader := bufio.NewReader(os.Stdin)
 	baseDir, err := getUserString(reader, "Default base Dir", "/tmp")
-	/*
-	 */
 	if err != nil {
 		return err
 	}
+	//make dest tartget
+	configDir := baseDir + "/etc/keymaster"
+	err = os.MkdirAll(configDir, os.ModeDir|0755)
+	if err != nil {
+		return err
+	}
+
 	//fmt.Println(baseDir)
 	config.Base.DataDirectory, err = getUserString(reader, "Data Directory", baseDir+"/var/lib/keymaster")
 	if err != nil {
@@ -284,6 +413,27 @@ func generateNewConfig(configFilename string) error {
 	defaultHttpAddress := ":33443"
 	config.Base.HttpAddress, err = getUserString(reader, "HttpAddress", defaultHttpAddress)
 	// Todo check if valid
+
+	passphrase := []byte("passphrase")
+	config.Base.SSHCAFilename = configDir + "/masterKey.asc"
+	err = generateArmoredEncryptedCAPritaveKey(passphrase, config.Base.SSHCAFilename)
+	if err != nil {
+		return err
+	}
+
+	//generatecerts
+	err = generateCerts(configDir, &config.Base)
+	if err != nil {
+		return err
+	}
+	//make sample apache config file
+	// This DB has user 'username' with password 'password'
+	const userdbContent = `username:$2y$05$D4qQmZbWYqfgtGtez2EGdOkcNne40EdEznOqMvZegQypT8Jdz42Jy`
+	httpPassFilename := configDir + "/passfile.htpass"
+	err = ioutil.WriteFile(httpPassFilename, []byte(userdbContent), 0644)
+	if err != nil {
+		return err
+	}
 
 	//log.Printf("%+v", config)
 	d, err := yaml.Marshal(&config)
