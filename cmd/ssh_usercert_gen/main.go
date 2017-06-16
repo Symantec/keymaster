@@ -22,6 +22,8 @@ import (
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/net/context"
+	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v2"
 	"html/template"
 	//"io"
@@ -62,14 +64,28 @@ type LdapConfig struct {
 	LDAP_Target_URLs string
 }
 
+type Oauth2Config struct {
+	Config       *oauth2.Config
+	Enabled      bool   `yaml:"enabled"`
+	ClientID     string `yaml:"client_id"`
+	ClientSecret string `yaml:"client_secret"`
+	TokenUrl     string `yaml:"token_url"`
+	AuthUrl      string `yaml:"auth_url"`
+	UserinfoUrl  string `yaml:"userinfo_url"`
+	Scopes       string `yaml:"scopes"`
+	//Todo add allowed orgs...
+}
+
 type AppConfigFile struct {
-	Base baseConfig
-	Ldap LdapConfig
+	Base   baseConfig
+	Ldap   LdapConfig
+	Oauth2 Oauth2Config
 }
 
 const (
 	AuthTypeNone     = 0
 	AuthTypePassword = 1 << iota
+	AuthTypeFederated
 	AuthTypeU2F
 )
 
@@ -94,6 +110,12 @@ type userProfile struct {
 	u2fAuthChallenge      *u2f.Challenge
 }
 
+type pendingAuth2Request struct {
+	ExpiresAt time.Time
+	state     string
+	ctx       context.Context
+}
+
 type RuntimeState struct {
 	Config              AppConfigFile
 	SSHCARawFileContent []byte
@@ -105,9 +127,12 @@ type RuntimeState struct {
 	authCookie          map[string]authInfo
 	Mutex               sync.Mutex
 	userProfile         map[string]userProfile
+	pendingOauth2       map[string]pendingAuth2Request
 }
 
+const redirectPath = "/auth/oauth2/callback"
 const userProfileFilename = "userProfiles.gob"
+const secsBetweenCleanup = 30
 
 var (
 	Version          = "No version provided"
@@ -146,8 +171,7 @@ func generateCADer(state *RuntimeState, keySigner crypto.Signer) ([]byte, error)
 	return certgen.GenSelfSignedCACert(state.HostIdentity, organizationName, keySigner)
 }
 
-func (state *RuntimeState) performStateCleanup() {
-	secsBetweenCleanup := 30
+func (state *RuntimeState) performStateCleanup(secsBetweenCleanup int) {
 	for {
 		state.Mutex.Lock()
 		initAuthSize := len(state.authCookie)
@@ -157,9 +181,20 @@ func (state *RuntimeState) performStateCleanup() {
 			}
 		}
 		finalAuthSize := len(state.authCookie)
+
+		//
+		initPendingSize := len(state.pendingOauth2)
+		for key, oauth2Pending := range state.pendingOauth2 {
+			if oauth2Pending.ExpiresAt.Before(time.Now()) {
+				delete(state.pendingOauth2, key)
+			}
+		}
+		finalPendingSize := len(state.pendingOauth2)
+
 		state.Mutex.Unlock()
 		if *debug {
 			log.Printf("Auth Cookie sizes: before:(%d) after (%d)\n", initAuthSize, finalAuthSize)
+			log.Printf("Pending Cookie sizes: before(%d) after(%d)", initPendingSize, finalPendingSize)
 		}
 		time.Sleep(time.Duration(secsBetweenCleanup) * time.Second)
 	}
@@ -186,6 +221,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	//share config
 	runtimeState.authCookie = make(map[string]authInfo)
 	runtimeState.userProfile = make(map[string]userProfile)
+	runtimeState.pendingOauth2 = make(map[string]pendingAuth2Request)
 
 	//verify config
 	if len(runtimeState.Config.Base.HostIdentity) > 0 {
@@ -266,6 +302,19 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		}
 
 	}
+
+	//create the oath2 config
+	if runtimeState.Config.Oauth2.Enabled == true {
+		log.Printf("oath2 is enabled")
+		runtimeState.Config.Oauth2.Config = &oauth2.Config{
+			ClientID:     runtimeState.Config.Oauth2.ClientID,
+			ClientSecret: runtimeState.Config.Oauth2.ClientSecret,
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  runtimeState.Config.Oauth2.AuthUrl,
+				TokenURL: runtimeState.Config.Oauth2.TokenUrl},
+			RedirectURL: "https://" + runtimeState.HostIdentity + runtimeState.Config.Base.HttpAddress + redirectPath,
+			Scopes:      strings.Split(runtimeState.Config.Oauth2.Scopes, " ")}
+	}
 	///
 	err = runtimeState.LoadUserProfiles()
 	if err != nil {
@@ -274,7 +323,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	log.Printf("%+v", runtimeState.userProfile)
 
 	// and we start the cleanup
-	go runtimeState.performStateCleanup()
+	go runtimeState.performStateCleanup(secsBetweenCleanup)
 
 	return runtimeState, nil
 }
@@ -340,7 +389,24 @@ func getPreferredAcceptType(r *http.Request) string {
 	return preferredAcceptType
 }
 
-func writeFailureResponse(w http.ResponseWriter, r *http.Request, code int, message string) {
+func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter, r *http.Request) error {
+	displayData := loginPageTemplateData{Title: "Keymaster Login", ShowOauth2: state.Config.Oauth2.Enabled}
+	t, err := template.New("webpage").Parse(loginFormText)
+	if err != nil {
+		log.Printf("bad template %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return err
+	}
+	err = t.Execute(w, displayData)
+	if err != nil {
+		log.Printf("Failed to execute %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return err
+	}
+	return nil
+}
+
+func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter, r *http.Request, code int, message string) {
 	returnAcceptType := getPreferredAcceptType(r)
 	if code == http.StatusUnauthorized && returnAcceptType != "text/html" {
 		w.Header().Set("WWW-Authenticate", `Basic realm="User Credentials"`)
@@ -353,7 +419,7 @@ func writeFailureResponse(w http.ResponseWriter, r *http.Request, code int, mess
 		switch returnAcceptType {
 		case "text/html":
 			// TODO: change by a message followed by an HTTP redirection
-			fmt.Fprintf(w, "%s", loginFormText)
+			state.writeHTMLLoginPage(w, r)
 		default:
 			w.Write([]byte(publicErrorText))
 		}
@@ -371,7 +437,7 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 	state.Mutex.Unlock()
 
 	if signerIsNull {
-		writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		log.Printf("Signer has not been unlocked")
 		return true
 	}
@@ -392,7 +458,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 		//For now try also http basic (to be deprecated)
 		user, pass, ok := r.BasicAuth()
 		if !ok {
-			writeFailureResponse(w, r, http.StatusUnauthorized, "")
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			//toLoginOrBasicAuth(w, r)
 			err := errors.New("check_Auth, Invalid or no auth header")
 			return "", AuthTypeNone, err
@@ -402,11 +468,11 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 		state.Mutex.Unlock()
 		valid, err := checkUserPassword(user, pass, config)
 		if err != nil {
-			writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			return "", AuthTypeNone, err
 		}
 		if !valid {
-			writeFailureResponse(w, r, http.StatusUnauthorized, "")
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			err := errors.New("Invalid Credentials")
 			return "", AuthTypeNone, err
 		}
@@ -421,13 +487,13 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 	if !ok {
 		//redirect to login page?
 		//better would be to return the content of the redirect form with a 401 code?
-		writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		err := errors.New("Invalid Cookie")
 		return "", AuthTypeNone, err
 	}
 	//check for expiration...
 	if info.ExpiresAt.Before(time.Now()) {
-		writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		err := errors.New("Expired Cookie")
 		return "", AuthTypeNone, err
 
@@ -474,7 +540,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 
 	//local sanity tests
 	if signerIsNull {
-		writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		log.Printf("Signer not loaded")
 		return
 	}
@@ -501,13 +567,13 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	if !sufficientAuthLevel {
-		writeFailureResponse(w, r, http.StatusBadRequest, "Not enough auth level for getting certs")
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Not enough auth level for getting certs")
 		return
 	}
 
 	targetUser := r.URL.Path[len(certgenPath):]
 	if authUser != targetUser {
-		writeFailureResponse(w, r, http.StatusForbidden, "")
+		state.writeFailureResponse(w, r, http.StatusForbidden, "")
 		log.Printf("User %s asking for creds for %s", authUser, targetUser)
 		return
 	}
@@ -523,7 +589,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		err = r.ParseForm()
 		if err != nil {
 			log.Println(err)
-			writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
 			return
 		}
 	case "POST":
@@ -533,11 +599,11 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		err = r.ParseMultipartForm(1e7)
 		if err != nil {
 			log.Println(err)
-			writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
 			return
 		}
 	default:
-		writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
 	}
 
@@ -555,11 +621,11 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		state.postAuthX509CertHandler(w, r, targetUser, keySigner)
 		return
 	default:
-		writeFailureResponse(w, r, http.StatusBadRequest, "Unrecognized cert type")
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Unrecognized cert type")
 		return
 	}
 	//SHOULD have never reached this!
-	writeFailureResponse(w, r, http.StatusInternalServerError, "")
+	state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 	log.Printf("Escape from default paths")
 	return
 
@@ -568,7 +634,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 func (state *RuntimeState) postAuthSSHCertHandler(w http.ResponseWriter, r *http.Request, targetUser string, keySigner crypto.Signer) {
 	signer, err := ssh.NewSignerFromSigner(keySigner)
 	if err != nil {
-		writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		log.Printf("Signer failed to load")
 		return
 	}
@@ -585,7 +651,7 @@ func (state *RuntimeState) postAuthSSHCertHandler(w http.ResponseWriter, r *http
 		file, _, err := r.FormFile("pubkeyfile")
 		if err != nil {
 			log.Println(err)
-			writeFailureResponse(w, r, http.StatusBadRequest, "Missing public key file")
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing public key file")
 			return
 		}
 		defer file.Close()
@@ -596,11 +662,11 @@ func (state *RuntimeState) postAuthSSHCertHandler(w http.ResponseWriter, r *http
 		validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? ?.{0,512}\n?$", userPubKey)
 		if err != nil {
 			log.Println(err)
-			writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			return
 		}
 		if !validKey {
-			writeFailureResponse(w, r, http.StatusBadRequest, "Invalid File, bad re")
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid File, bad re")
 			log.Printf("invalid file, bad re")
 			return
 
@@ -608,13 +674,13 @@ func (state *RuntimeState) postAuthSSHCertHandler(w http.ResponseWriter, r *http
 
 		cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity)
 		if err != nil {
-			writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			log.Printf("signUserPubkey Err")
 			return
 		}
 
 	default:
-		writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
 
 	}
@@ -632,7 +698,7 @@ func (state *RuntimeState) postAuthX509CertHandler(w http.ResponseWriter, r *htt
 		file, _, err := r.FormFile("pubkeyfile")
 		if err != nil {
 			log.Println(err)
-			writeFailureResponse(w, r, http.StatusBadRequest, "Missing public key file")
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing public key file")
 			return
 		}
 		defer file.Close()
@@ -641,34 +707,34 @@ func (state *RuntimeState) postAuthX509CertHandler(w http.ResponseWriter, r *htt
 
 		block, _ := pem.Decode(buf.Bytes())
 		if block == nil || block.Type != "PUBLIC KEY" {
-			writeFailureResponse(w, r, http.StatusBadRequest, "Invalid File, Unable to decode pem")
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid File, Unable to decode pem")
 			log.Printf("invalid file, unable to decode pem")
 			return
 		}
 		userPub, err := x509.ParsePKIXPublicKey(block.Bytes)
 		if err != nil {
-			writeFailureResponse(w, r, http.StatusBadRequest, "Cannot parse public key")
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Cannot parse public key")
 			log.Printf("Cannot parse public key")
 			return
 		}
 		//tate.caCertDer
 		caCert, err := x509.ParseCertificate(state.caCertDer)
 		if err != nil {
-			//writeFailureResponse(w, http.StatusBadRequest, "Cannot parse public key")
-			writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			//state.writeFailureResponse(w, http.StatusBadRequest, "Cannot parse public key")
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			log.Printf("Cannot parse CA Der data")
 			return
 		}
 		derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert, keySigner, state.KerberosRealm)
 		if err != nil {
-			writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			log.Printf("Cannot Generate x509cert")
 			return
 		}
 		cert = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derCert}))
 
 	default:
-		writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
 
 	}
@@ -685,13 +751,13 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 	// mechanisms are considered invalid... for now no authz mechanisms are in place ie
 	// Any user with a valid cert can use this handler
 	if r.TLS == nil {
-		writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		log.Printf("We require TLS\n")
 		return
 	}
 
 	if len(r.TLS.VerifiedChains) < 1 {
-		writeFailureResponse(w, r, http.StatusForbidden, "")
+		state.writeFailureResponse(w, r, http.StatusForbidden, "")
 		log.Printf("Forbidden\n")
 		return
 	}
@@ -700,7 +766,7 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 	r.ParseForm()
 	sshCAPassword, ok := r.Form["ssh_ca_password"]
 	if !ok {
-		writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Post, missing data")
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Post, missing data")
 		log.Printf("missing ssh_ca_password")
 		return
 	}
@@ -709,7 +775,7 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 
 	// TODO.. make network error blocks to goroutines
 	if state.Signer != nil {
-		writeFailureResponse(w, r, http.StatusConflict, "Conflict post, signer already unlocked")
+		state.writeFailureResponse(w, r, http.StatusConflict, "Conflict post, signer already unlocked")
 		log.Printf("Signer not null, already unlocked")
 		return
 	}
@@ -779,7 +845,7 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 	signerIsNull = (state.Signer == nil)
 	state.Mutex.Unlock()
 	if signerIsNull {
-		writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		log.Printf("Signer not loaded")
 		return
 	}
@@ -789,7 +855,8 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 	switch target {
 	case "loginForm":
 		w.WriteHeader(200)
-		fmt.Fprintf(w, "%s", loginFormText)
+		//fmt.Fprintf(w, "%s", loginFormText)
+		state.writeHTMLLoginPage(w, r)
 		return
 	case "x509ca":
 		pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: state.caCertDer}))
@@ -798,7 +865,7 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 		w.WriteHeader(200)
 		fmt.Fprintf(w, "%s", pemCert)
 	default:
-		writeFailureResponse(w, r, http.StatusNotFound, "")
+		state.writeFailureResponse(w, r, http.StatusNotFound, "")
 		return
 		//w.WriteHeader(200)
 		//fmt.Fprintf(w, "OK\n")
@@ -835,7 +902,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		err := r.ParseForm()
 		if err != nil {
 			log.Println(err)
-			writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
 			return
 		}
 	case "POST":
@@ -846,12 +913,12 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		err := r.ParseForm()
 		if err != nil {
 			log.Println(err)
-			writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
 			return
 		}
 		//log.Printf("req =%+v", r)
 	default:
-		writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
 	}
 
@@ -861,7 +928,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		//var username string
 		if val, ok := r.Form["username"]; ok {
 			if len(val) > 1 {
-				writeFailureResponse(w, r, http.StatusBadRequest, "Just one username allowed")
+				state.writeFailureResponse(w, r, http.StatusBadRequest, "Just one username allowed")
 				log.Printf("Login with multiple usernames")
 				return
 			}
@@ -870,7 +937,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		//var password string
 		if val, ok := r.Form["password"]; ok {
 			if len(val) > 1 {
-				writeFailureResponse(w, r, http.StatusBadRequest, "Just one password allowed")
+				state.writeFailureResponse(w, r, http.StatusBadRequest, "Just one password allowed")
 				log.Printf("Login with passwords")
 				return
 			}
@@ -878,18 +945,18 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		}
 
 		if len(username) < 1 || len(password) < 1 {
-			writeFailureResponse(w, r, http.StatusUnauthorized, "")
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 			return
 		}
 	}
 
 	valid, err := checkUserPassword(username, password, state.Config)
 	if err != nil {
-		writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
 	if !valid {
-		writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		log.Printf("Invalid login for %s", username)
 		//err := errors.New("Invalid Credentials")
 		return
@@ -897,7 +964,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	//
 	cookieVal, err := genRandomString()
 	if err != nil {
-		writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
 		log.Println(err)
 		return
 	}
@@ -954,6 +1021,36 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	return
 
+}
+
+///
+const logoutPath = "/api/v0/logout"
+
+func (state *RuntimeState) logoutHandler(w http.ResponseWriter, r *http.Request) {
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
+
+	// We first check for cookies
+	var authCookie *http.Cookie
+	for _, cookie := range r.Cookies() {
+		if cookie.Name != authCookieName {
+			continue
+		}
+		authCookie = cookie
+	}
+
+	if authCookie != nil {
+		//Critical section
+		state.Mutex.Lock()
+		_, ok := state.authCookie[authCookie.Value]
+		if ok {
+			delete(state.authCookie, authCookie.Value)
+		}
+		state.Mutex.Unlock()
+	}
+	//redirect to login
+	http.Redirect(w, r, profilePath, 302)
 }
 
 ////////////////////////////
@@ -1281,7 +1378,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	err = r.ParseForm()
 	if err != nil {
 		log.Println(err)
-		writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
 		return
 	}
 	if *debug {
@@ -1291,14 +1388,14 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	// Check params
 	if r.Form.Get("username") != authUser {
 		log.Printf("bad username authUser=%s requested=%s", authUser, r.Form.Get("username"))
-		writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}
 
 	tokenIndex, err := strconv.Atoi(r.Form.Get("index"))
 	if err != nil {
 		log.Printf("tokenindex is not a number")
-		writeFailureResponse(w, r, http.StatusBadRequest, "tokenindex is not a number")
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "tokenindex is not a number")
 		return
 	}
 
@@ -1310,7 +1407,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	// Todo: check for negative values
 	if tokenIndex >= len(profile.U2fAuthData) {
 		log.Printf("bad index number")
-		writeFailureResponse(w, r, http.StatusBadRequest, "bad index Value")
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad index Value")
 		return
 
 	}
@@ -1323,7 +1420,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 		tokenName := r.Form.Get("name")
 		if m, _ := regexp.MatchString("^[a-zA-Z0-9_ ]+$", tokenName); !m {
 			log.Printf("%s", tokenName)
-			writeFailureResponse(w, r, http.StatusBadRequest, "invalidtokenName")
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "invalidtokenName")
 			return
 		}
 		profile.U2fAuthData[tokenIndex].Name = tokenName
@@ -1337,7 +1434,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 		profile.U2fAuthData[len(profile.U2fAuthData)-1] = u2fAuthData{} // or the zero value of T
 		profile.U2fAuthData = profile.U2fAuthData[:len(profile.U2fAuthData)-1]
 	default:
-		writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Operation")
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Operation")
 		return
 	}
 
@@ -1387,6 +1484,8 @@ func main() {
 	http.HandleFunc(certgenPath, runtimeState.certGenHandler)
 	http.HandleFunc(publicPath, runtimeState.publicPathHandler)
 	http.HandleFunc(proto.LoginPath, runtimeState.loginHandler)
+	http.HandleFunc(logoutPath, runtimeState.logoutHandler)
+	http.HandleFunc(proto.LoginPath, runtimeState.loginHandler)
 
 	http.HandleFunc(profilePath, runtimeState.profileHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static_files"))))
@@ -1395,6 +1494,8 @@ func main() {
 	http.HandleFunc(u2fSignRequestPath, runtimeState.u2fSignRequest)
 	http.HandleFunc(u2fSignResponsePath, runtimeState.u2fSignResponse)
 	http.HandleFunc(u2fTokenManagementPath, runtimeState.u2fTokenManagerHandler)
+	http.HandleFunc(oauth2LoginBeginPath, runtimeState.oauth2DoRedirectoToProviderHandler)
+	http.HandleFunc(redirectPath, runtimeState.oauth2RedirectPathHandler)
 
 	cfg := &tls.Config{
 		ClientCAs:                runtimeState.ClientCAPool,

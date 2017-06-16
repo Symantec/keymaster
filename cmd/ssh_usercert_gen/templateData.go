@@ -4,6 +4,12 @@ import (
 	"time"
 )
 
+type loginPageTemplateData struct {
+	Title      string
+	JSSources  []string
+	ShowOauth2 bool
+}
+
 //Should be a template
 const loginFormText = `
 <!DOCTYPE html>
@@ -11,8 +17,15 @@ const loginFormText = `
     <head>
         <meta charset="UTF-8">
         <title>{{.Title}}</title>
+	<style>body{margin:1em auto;max-width:80em;padding:0 .62em;font-family: sans-serif;}h1,h2,h3{line-height:1.2;}@media print{body{max-width:none}}</style>
     </head>
     <body>
+        <h2> Keymaster Login </h2>
+	{{if .ShowOauth2}}
+	<p>
+	<a href="/auth/oauth2/login"> Oauth2 Login </a>
+	</p>
+        {{end}}
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/login" method="post">
             <p>Username: <INPUT TYPE="text" NAME="username" SIZE=18></p>
             <p>Password: <INPUT TYPE="password" NAME="password" SIZE=18></p>
@@ -49,12 +62,14 @@ const profileHTML = `<!DOCTYPE html>
     <!-- The original u2f-api.js code can be found here:
     https://github.com/google/u2f-ref-code/blob/master/u2f-gae-demo/war/js/u2f-api.js -->
     <!-- script type="text/javascript" src="https://demo.yubico.com/js/u2f-api.js"></script-->
+     <style>body{margin:1em auto;max-width:80em;padding:0 .62em;font-family: sans-serif;}h1,h2,h3{line-height:1.2;}@media print{body{max-width:none}}</style>
   </head>
   <body>
     {{with $top := . }}
-    <h1>FIDO U2F Go Library Demo</h1>
+    <h1>Keymaster User Profile</h1>
     <h2> {{.Username}}</h2>
     <ul>
+      <li><a href="/api/v0/logout" >Logout </a></li>
       <li><a href="javascript:register();">Register token</a></li>
       <li><a href="javascript:sign();">Authenticate</a></li>
     </ul>
