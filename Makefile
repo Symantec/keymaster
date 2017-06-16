@@ -2,7 +2,7 @@
 BINARY=keymaster
 
 # These are the values we want to pass for Version and BuildTime
-VERSION=0.1.0
+VERSION=0.2.0
 #BUILD_TIME=`date +%FT%T%z`
 
 # Setup the -ldflags option for go build here, interpolate the variable values
@@ -11,8 +11,8 @@ VERSION=0.1.0
 all:
 	go test -v ./...
 	mkdir -p bin/
-	go build  -o bin/getcreds  -ldflags "-X main.Version=${VERSION}" cmd/getcreds/main.go
-	go build  -o bin/keymaster -ldflags "-X main.Version=${VERSION}" cmd/ssh_usercert_gen/main.go cmd/ssh_usercert_gen/auth_oauth2.go cmd/ssh_usercert_gen/templateData.go
+	cd cmd/getcreds; go build  -o ../../bin/getcreds  -ldflags "-X main.Version=${VERSION}"
+	cd cmd/ssh_usercert_gen; go build  -o ../../bin/keymaster -ldflags "-X main.Version=${VERSION}"
 
 get-deps:
 	go get -t ./...
