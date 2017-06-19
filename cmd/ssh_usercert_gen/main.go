@@ -1303,7 +1303,7 @@ func main() {
 	}
 	log.New(circularBuffer, "", log.LstdFlags)
 
-	if *generateConfig || true {
+	if *generateConfig {
 		err := generateNewConfig(*configFilename)
 		if err != nil {
 			panic(err)

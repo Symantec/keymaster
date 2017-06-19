@@ -19,6 +19,7 @@ import (
 	"log"
 	"math/big"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -196,7 +197,7 @@ func generateArmoredEncryptedCAPritaveKey(passphrase []byte, filepath string) er
 		return err
 	}
 
-	encryptionType := "PGP SIGNATURE"
+	encryptionType := "PGP MESSAGE"
 	armoredBuf := new(bytes.Buffer)
 	armoredWriter, err := armor.Encode(armoredBuf, encryptionType, nil)
 	if err != nil {
@@ -288,8 +289,7 @@ func generateCertAndWriteToFile(filename string, template, parent *x509.Certific
 	return derBytes, nil
 }
 
-func generateCerts(configDir string, config *baseConfig) error {
-	const rsaKeySize = 3072
+func generateCerts(configDir string, config *baseConfig, rsaKeySize int) error {
 	//First generate a self signeed cert for itelf
 	serverKeyFilename := configDir + "/server.key"
 	serverKey, err := generateRSAKeyAndSaveInFile(serverKeyFilename, rsaKeySize)
@@ -371,10 +371,11 @@ func generateCerts(configDir string, config *baseConfig) error {
 
 func generateNewConfig(configFilename string) error {
 	reader := bufio.NewReader(os.Stdin)
-	return generateNewConfigInternal(reader, configFilename)
+	const rsaKeySize = 3072
+	return generateNewConfigInternal(reader, configFilename, rsaKeySize)
 }
 
-func generateNewConfigInternal(reader *bufio.Reader, configFilename string) error {
+func generateNewConfigInternal(reader *bufio.Reader, configFilename string, rsaKeySize int) error {
 	/*
 		type baseConfig struct {
 			HttpAddress     string `yaml:"http_address"`
@@ -397,8 +398,10 @@ func generateNewConfigInternal(reader *bufio.Reader, configFilename string) erro
 	if err != nil {
 		return err
 	}
+	baseDir = strings.Trim(baseDir, "\r\n")
 	//make dest tartget
-	configDir := baseDir + "/etc/keymaster"
+	configDir := filepath.Join(baseDir, "/etc/keymaster")
+	log.Printf("configdir = '%s'", configDir)
 	err = os.MkdirAll(configDir, os.ModeDir|0755)
 	if err != nil {
 		return err
@@ -415,28 +418,34 @@ func generateNewConfigInternal(reader *bufio.Reader, configFilename string) erro
 	// Todo check if valid
 
 	passphrase := []byte("passphrase")
-	config.Base.SSHCAFilename = configDir + "/masterKey.asc"
+	config.Base.SSHCAFilename = filepath.Join(configDir, "masterKey.asc")
 	err = generateArmoredEncryptedCAPritaveKey(passphrase, config.Base.SSHCAFilename)
 	if err != nil {
 		return err
 	}
 
 	//generatecerts
-	err = generateCerts(configDir, &config.Base)
+	err = generateCerts(configDir, &config.Base, rsaKeySize)
 	if err != nil {
 		return err
 	}
 	//make sample apache config file
 	// This DB has user 'username' with password 'password'
 	const userdbContent = `username:$2y$05$D4qQmZbWYqfgtGtez2EGdOkcNne40EdEznOqMvZegQypT8Jdz42Jy`
-	httpPassFilename := configDir + "/passfile.htpass"
+	httpPassFilename := filepath.Join(configDir, "passfile.htpass")
 	err = ioutil.WriteFile(httpPassFilename, []byte(userdbContent), 0644)
 	if err != nil {
 		return err
 	}
+	config.Base.HtpasswdFilename = httpPassFilename
 
 	//log.Printf("%+v", config)
 	d, err := yaml.Marshal(&config)
+	if err != nil {
+		return err
+	}
+
+	err = ioutil.WriteFile(configFilename, d, 0640)
 	if err != nil {
 		return err
 	}
