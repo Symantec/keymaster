@@ -2,18 +2,11 @@ package main
 
 import (
 	"bufio"
-	//"encoding/json"
-	//"fmt"
-	//"golang.org/x/net/context"
-	//"golang.org/x/oauth2"
 	"io/ioutil"
-	//"log"
-	//"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	//"time"
 )
 
 func TestGenerateNewConfigInternal(t *testing.T) {
@@ -38,6 +31,6 @@ func TestGenerateNewConfigInternal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	//Need to decrypt file
+	// TODO: test decrypt file
 
 }

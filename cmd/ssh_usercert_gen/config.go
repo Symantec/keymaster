@@ -28,8 +28,7 @@ type baseConfig struct {
 	HttpAddress     string `yaml:"http_address"`
 	TLSCertFilename string `yaml:"tls_cert_filename"`
 	TLSKeyFilename  string `yaml:"tls_key_filename"`
-	//UserAuth         string
-	RequiredAuthForCert         string   `yaml:"required_auth_for_cert"`
+	//RequiredAuthForCert         string   `yaml:"required_auth_for_cert"`
 	SSHCAFilename               string   `yaml:"ssh_ca_filename"`
 	HtpasswdFilename            string   `yaml:"htpasswd_filename"`
 	ClientCAFilename            string   `yaml:"client_ca_filename"`
@@ -375,23 +374,8 @@ func generateNewConfig(configFilename string) error {
 	return generateNewConfigInternal(reader, configFilename, rsaKeySize)
 }
 
+// Generates a simple base config via an interview like process
 func generateNewConfigInternal(reader *bufio.Reader, configFilename string, rsaKeySize int) error {
-	/*
-		type baseConfig struct {
-			HttpAddress     string `yaml:"http_address"`
-			TLSCertFilename string `yaml:"tls_cert_filename"`
-			TLSKeyFilename  string `yaml:"tls_key_filename"`
-			//UserAuth         string
-			RequiredAuthForCert         string   `yaml:"required_auth_for_cert"`
-			SSHCAFilename               string   `yaml:"ssh_ca_filename"`
-			HtpasswdFilename            string   `yaml:"htpasswd_filename"`
-			ClientCAFilename            string   `yaml:"client_ca_filename"`
-			HostIdentity                string   `yaml:"host_identity"`
-			KerberosRealm               string   `yaml:"kerberos_realm"`
-			DataDirectory               string   `yaml:"data_directory"`
-			AllowedAuthBackendsForCerts []string `yaml:"allowed_auth_backends_for_certs"`
-		}
-	*/
 	var config AppConfigFile
 	//Get base dir
 	baseDir, err := getUserString(reader, "Default base Dir", "/tmp")
@@ -440,15 +424,15 @@ func generateNewConfigInternal(reader *bufio.Reader, configFilename string, rsaK
 	config.Base.HtpasswdFilename = httpPassFilename
 
 	//log.Printf("%+v", config)
-	d, err := yaml.Marshal(&config)
+	configText, err := yaml.Marshal(&config)
 	if err != nil {
 		return err
 	}
 
-	err = ioutil.WriteFile(configFilename, d, 0640)
+	err = ioutil.WriteFile(configFilename, configText, 0640)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("--- m dump:\n%s\n\n", string(d))
+	fmt.Printf("--- config dump:\n%s\n\n", string(configText))
 	return nil
 }

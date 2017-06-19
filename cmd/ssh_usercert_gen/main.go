@@ -23,8 +23,6 @@ import (
 	"golang.org/x/crypto/openpgp/armor"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/net/context"
-	//"golang.org/x/oauth2"
-	//"gopkg.in/yaml.v2"
 	"html/template"
 	//"io"
 	"io/ioutil"
