@@ -1,6 +1,6 @@
 Name:           keymaster
-Version:        0.2.0
-Release:        1%{?dist}
+Version:        0.2.1
+Release:        2%{?dist}
 Summary:        Short term access certificate generator and client
 
 #Group:
@@ -40,6 +40,8 @@ install -p -m 0644 misc/startup/keymaster.service %{buildroot}/usr/lib/systemd/s
 
 %post
 mkdir -p /etc/keymaster/
+mkdir -p /var/lib/keymaster
+chown keymaster /var/lib/keymaster
 systemctl daemon-reload
 
 %postun

@@ -1485,7 +1485,6 @@ func main() {
 	http.HandleFunc(publicPath, runtimeState.publicPathHandler)
 	http.HandleFunc(proto.LoginPath, runtimeState.loginHandler)
 	http.HandleFunc(logoutPath, runtimeState.logoutHandler)
-	http.HandleFunc(proto.LoginPath, runtimeState.loginHandler)
 
 	http.HandleFunc(profilePath, runtimeState.profileHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static_files"))))
