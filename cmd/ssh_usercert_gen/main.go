@@ -7,7 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/gob"
+	//	"encoding/gob"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -88,7 +88,6 @@ type RuntimeState struct {
 }
 
 const redirectPath = "/auth/oauth2/callback"
-const userProfileFilename = "userProfiles.gob"
 const secsBetweenCleanup = 30
 
 var (
@@ -330,29 +329,6 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 
 	}
 	return info.Username, info.AuthType, nil
-}
-
-func (state *RuntimeState) SaveUserProfiles() error {
-	var gobBuffer bytes.Buffer
-	encoder := gob.NewEncoder(&gobBuffer)
-	if err := encoder.Encode(state.userProfile); err != nil {
-		return err
-	}
-	userProfilePath := filepath.Join(state.Config.Base.DataDirectory, userProfileFilename)
-	return ioutil.WriteFile(userProfilePath, gobBuffer.Bytes(), 0640)
-}
-
-func (state *RuntimeState) LoadUserProfiles() error {
-	userProfilePath := filepath.Join(state.Config.Base.DataDirectory, userProfileFilename)
-
-	fileBytes, err := exitsAndCanRead(userProfilePath, "user Profile file")
-	if err != nil {
-		log.Printf("problem with user Profile data")
-		return err
-	}
-	gobReader := bytes.NewReader(fileBytes)
-	decoder := gob.NewDecoder(gobReader)
-	return decoder.Decode(&state.userProfile)
 }
 
 const certgenPath = "/certgen/"
