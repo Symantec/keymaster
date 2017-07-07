@@ -1326,7 +1326,9 @@ func main() {
 	http.HandleFunc(logoutPath, runtimeState.logoutHandler)
 
 	http.HandleFunc(profilePath, runtimeState.profileHandler)
-	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static_files"))))
+
+	staticFilesPath := filepath.Join(runtimeState.Config.Base.SharedDataDirectory, "static_files")
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticFilesPath))))
 	http.HandleFunc(u2fRegustisterRequestPath, runtimeState.u2fRegisterRequest)
 	http.HandleFunc(u2fRegisterRequesponsePath, runtimeState.u2fRegisterResponse)
 	http.HandleFunc(u2fSignRequestPath, runtimeState.u2fSignRequest)

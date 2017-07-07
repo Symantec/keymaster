@@ -1,6 +1,6 @@
 Name:           keymaster
-Version:        0.2.1
-Release:        2%{?dist}
+Version:        0.2.2
+Release:        1%{?dist}
 Summary:        Short term access certificate generator and client
 
 #Group:
@@ -34,6 +34,8 @@ make
 %{__install} -Dp -m0755 bin/getcreds %{buildroot}%{_bindir}/getcreds
 install -d %{buildroot}/usr/lib/systemd/system
 install -p -m 0644 misc/startup/keymaster.service %{buildroot}/usr/lib/systemd/system/keymaster.service
+install -d %{buildroot}/%{_datarootdir}/keymaster/static_files/
+install -p -m 0644 cmd/ssh_usercert_gen/static_files/u2f-api.js  %{buildroot}/%{_datarootdir}/keymaster/static_files/u2f-api.js
 
 %pre
 /usr/bin/getent passwd keymaster || useradd -d /var/lib/keymaster -s /bin/false -U -r  keymaster
@@ -53,7 +55,7 @@ systemctl daemon-reload
 %{_sbindir}/keymaster
 %{_bindir}/getcreds
 /usr/lib/systemd/system/keymaster.service
-
+%{_datarootdir}/keymaster/static_files/*
 
 %changelog
 
