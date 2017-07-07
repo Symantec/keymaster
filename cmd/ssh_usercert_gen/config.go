@@ -35,6 +35,7 @@ type baseConfig struct {
 	HostIdentity                string   `yaml:"host_identity"`
 	KerberosRealm               string   `yaml:"kerberos_realm"`
 	DataDirectory               string   `yaml:"data_directory"`
+	SharedDataDirectory         string   `yaml:"shared_data_directory"`
 	AllowedAuthBackendsForCerts []string `yaml:"allowed_auth_backends_for_certs"`
 }
 
