@@ -42,13 +42,14 @@ func getFilenameForUser(state *RuntimeState, username string) string {
 }
 
 // If there a valid user profile returns: profile, true nil
-// If there is NO user profile returns nil, false, nil
-// Any other case: ni, false, error
+// If there is NO user profile returns default_object, false, nil
+// Any other case: nil, false, error
 func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfile, ok bool, err error) {
+	var defaultProfile userProfile
 	fileName := getFilenameForUser(state, username)
 
 	if _, err := os.Stat(fileName); os.IsNotExist(err) {
-		return nil, false, nil
+		return &defaultProfile, false, nil
 	}
 
 	fileBytes, err := exitsAndCanRead(fileName, "user Profile file")
@@ -58,15 +59,19 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 	}
 	gobReader := bytes.NewReader(fileBytes)
 	decoder := gob.NewDecoder(gobReader)
-	err = decoder.Decode(profile)
+	err = decoder.Decode(&defaultProfile)
 	if err != nil {
 		return nil, false, err
 	}
-	return profile, true, nil
+	//log.Printf("loaded profile=%+v", defaultProfile)
+	return &defaultProfile, true, nil
 }
 
 func (state *RuntimeState) SaveUserProfile(username string, profile *userProfile) error {
 	var gobBuffer bytes.Buffer
+
+	//log.Printf("saving profile=%+v", profile)
+
 	encoder := gob.NewEncoder(&gobBuffer)
 	if err := encoder.Encode(profile); err != nil {
 		return err
