@@ -9,6 +9,8 @@ import (
 )
 
 const userProfileFilename = "userProfiles.gob"
+const userProfilePrefix = "profile_"
+const userProfileSuffix = ".gob"
 
 func (state *RuntimeState) SaveUserProfiles() error {
 	var gobBuffer bytes.Buffer
@@ -31,4 +33,21 @@ func (state *RuntimeState) LoadUserProfiles() error {
 	gobReader := bytes.NewReader(fileBytes)
 	decoder := gob.NewDecoder(gobReader)
 	return decoder.Decode(&state.userProfile)
+}
+
+func getFilenameForUser(state *RuntimeState, username string) string {
+	return filepath.Join(state.Config.Base.DataDirectory, userProfilePrefix+username+userProfileSuffix)
+}
+
+/// Now we change the api to be load/save per user
+func (state *RuntimeState) LoadUserProfile(username string) (*userProfile, error) {
+	userProfilePath := getFilenameForUser(state, username)
+	fileBytes, err := exitsAndCanRead(userProfilePath, "user Profile file")
+	if err != nil {
+		log.Printf("problem with user Profile data")
+		return nil, nil
+	}
+	gobReader := bytes.NewReader(fileBytes)
+	_ = gob.NewDecoder(gobReader)
+	return nil, nil
 }
