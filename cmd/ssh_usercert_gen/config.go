@@ -179,11 +179,6 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			Scopes:      strings.Split(runtimeState.Config.Oauth2.Scopes, " ")}
 	}
 	///
-	err = runtimeState.LoadUserProfiles()
-	if err != nil {
-		log.Printf("Cannot load user Profile %s", err)
-	}
-	log.Printf("%+v", runtimeState.userProfile)
 
 	// and we start the cleanup
 	go runtimeState.performStateCleanup(secsBetweenCleanup)

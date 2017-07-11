@@ -85,6 +85,7 @@ type RuntimeState struct {
 	Mutex               sync.Mutex
 	userProfile         map[string]userProfile
 	pendingOauth2       map[string]pendingAuth2Request
+	storageRWMutex      sync.RWMutex
 }
 
 const redirectPath = "/auth/oauth2/callback"
@@ -888,11 +889,6 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// This is an UGLY big lock... we should at least create a separate lock for
-	// the userProfile struct
-	state.Mutex.Lock()
-	defer state.Mutex.Unlock()
-
 	profile, _, err := state.LoadUserProfile(authUser)
 	if err != nil {
 		log.Printf("loading profile error: %v", err)
@@ -944,8 +940,6 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	state.Mutex.Lock()
-	defer state.Mutex.Unlock()
 	profile, _, err := state.LoadUserProfile(authUser)
 	if err != nil {
 		log.Printf("loading profile error: %v", err)
@@ -1008,8 +1002,6 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	}
 
 	//////////
-	state.Mutex.Lock()
-	defer state.Mutex.Unlock()
 	profile, ok, err := state.LoadUserProfile(authUser)
 	if err != nil {
 		log.Printf("loading profile error: %v", err)
@@ -1088,8 +1080,6 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 
 	log.Printf("signResponse: %+v", signResp)
 
-	state.Mutex.Lock()
-	defer state.Mutex.Unlock()
 	profile, ok, err := state.LoadUserProfile(authUser)
 	if err != nil {
 		log.Printf("loading profile error: %v", err)
@@ -1129,11 +1119,13 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 
 			// update cookie if found, this should be also a critical section
 			if authCookie != nil {
+				state.Mutex.Lock()
 				info, ok := state.authCookie[authCookie.Value]
 				if ok {
 					info.AuthType = AuthTypeU2F
 					state.authCookie[authCookie.Value] = info
 				}
+				state.Mutex.Unlock()
 			}
 
 			err = state.SaveUserProfile(authUser, profile)

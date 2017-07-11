@@ -13,33 +13,14 @@ const userProfileFilename = "userProfiles.gob"
 const userProfilePrefix = "profile_"
 const userProfileSuffix = ".gob"
 
-func (state *RuntimeState) SaveUserProfiles() error {
-	var gobBuffer bytes.Buffer
-	encoder := gob.NewEncoder(&gobBuffer)
-	if err := encoder.Encode(state.userProfile); err != nil {
-		return err
-	}
-	userProfilePath := filepath.Join(state.Config.Base.DataDirectory, userProfileFilename)
-	return ioutil.WriteFile(userProfilePath, gobBuffer.Bytes(), 0640)
-}
-
-func (state *RuntimeState) LoadUserProfiles() error {
-	userProfilePath := filepath.Join(state.Config.Base.DataDirectory, userProfileFilename)
-
-	fileBytes, err := exitsAndCanRead(userProfilePath, "user Profile file")
-	if err != nil {
-		log.Printf("problem with user Profile data")
-		return err
-	}
-	gobReader := bytes.NewReader(fileBytes)
-	decoder := gob.NewDecoder(gobReader)
-	return decoder.Decode(&state.userProfile)
-}
-
 /// Adding api to be load/save per user
 func getFilenameForUser(state *RuntimeState, username string) string {
 	return filepath.Join(state.Config.Base.DataDirectory, userProfilePrefix+username+userProfileSuffix)
 }
+
+// Notice: each operation load/save should be atomic. For inital version we
+// are using a RWMutex to al least serialize writes and allow for some
+// read parallelism. Once SQL is implemented this RWMutex should be removed
 
 // If there a valid user profile returns: profile, true nil
 // If there is NO user profile returns default_object, false, nil
@@ -47,6 +28,9 @@ func getFilenameForUser(state *RuntimeState, username string) string {
 func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfile, ok bool, err error) {
 	var defaultProfile userProfile
 	fileName := getFilenameForUser(state, username)
+
+	state.storageRWMutex.RLock()
+	defer state.storageRWMutex.RUnlock()
 
 	if _, err := os.Stat(fileName); os.IsNotExist(err) {
 		return &defaultProfile, false, nil
@@ -77,5 +61,7 @@ func (state *RuntimeState) SaveUserProfile(username string, profile *userProfile
 		return err
 	}
 	fileName := getFilenameForUser(state, username)
+	state.storageRWMutex.Lock()
+	defer state.storageRWMutex.Unlock()
 	return ioutil.WriteFile(fileName, gobBuffer.Bytes(), 0640)
 }
