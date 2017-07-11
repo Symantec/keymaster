@@ -654,7 +654,13 @@ func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
 	}
 	state.Signer = signer
 	state.authCookie = make(map[string]authInfo)
-	state.userProfile = make(map[string]userProfile)
+
+	dir, err := ioutil.TempDir("", "example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir) // clean up
+	state.Config.Base.DataDirectory = dir
 
 	cookieVal := "supersecret"
 	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
@@ -663,7 +669,11 @@ func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
 	const newName = "New"
 	const oldName = "Old"
 
-	state.userProfile["username"] = userProfile{U2fAuthData: []u2fAuthData{u2fAuthData{Name: oldName}}}
+	profile := &userProfile{U2fAuthData: []u2fAuthData{u2fAuthData{Name: oldName}}}
+	err = state.SaveUserProfile("username", profile)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	form := url.Values{}
 	form.Add("username", "username")
@@ -685,7 +695,11 @@ func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Todo... check against the FS.
-	if state.userProfile["username"].U2fAuthData[0].Name != newName {
+	profile, _, err = state.LoadUserProfile("username")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profile.U2fAuthData[0].Name != newName {
 		t.Fatal("update not successul")
 	}
 }
@@ -705,10 +719,22 @@ func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
 	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 
-	state.userProfile["username"] = userProfile{
+	dir, err := ioutil.TempDir("", "example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir) // clean up
+	state.Config.Base.DataDirectory = dir
+
+	//state.userProfile["username"]
+	profile := &userProfile{
 		U2fAuthData: []u2fAuthData{
 			u2fAuthData{Name: "name1", Enabled: false},
 			u2fAuthData{Name: "name2", Enabled: false}}}
+	err = state.SaveUserProfile("username", profile)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	form := url.Values{}
 	form.Add("username", "username")
@@ -729,7 +755,12 @@ func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Todo... check against the FS.
-	if len(state.userProfile["username"].U2fAuthData) != 1 {
+	profile, _, err = state.LoadUserProfile("username")
+	if err != nil {
+		t.Fatal(err)
+	}
+	//if len(state.userProfile["username"].U2fAuthData) != 1 {
+	if len(profile.U2fAuthData) != 1 {
 		t.Fatal("update not successul")
 	}
 }
