@@ -713,7 +713,6 @@ func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
 	}
 	state.Signer = signer
 	state.authCookie = make(map[string]authInfo)
-	state.userProfile = make(map[string]userProfile)
 
 	cookieVal := "supersecret"
 	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}

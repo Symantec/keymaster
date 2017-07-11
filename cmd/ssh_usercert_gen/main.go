@@ -83,9 +83,9 @@ type RuntimeState struct {
 	caCertDer           []byte
 	authCookie          map[string]authInfo
 	Mutex               sync.Mutex
-	userProfile         map[string]userProfile
-	pendingOauth2       map[string]pendingAuth2Request
-	storageRWMutex      sync.RWMutex
+	//userProfile         map[string]userProfile
+	pendingOauth2  map[string]pendingAuth2Request
+	storageRWMutex sync.RWMutex
 }
 
 const redirectPath = "/auth/oauth2/callback"
