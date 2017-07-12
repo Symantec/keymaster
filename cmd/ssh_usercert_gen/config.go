@@ -178,7 +178,12 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			RedirectURL: "https://" + runtimeState.HostIdentity + runtimeState.Config.Base.HttpAddress + redirectPath,
 			Scopes:      strings.Split(runtimeState.Config.Oauth2.Scopes, " ")}
 	}
-	///
+
+	// DB initialization
+	err = initDB(&runtimeState)
+	if err != nil {
+		return runtimeState, err
+	}
 
 	// and we start the cleanup
 	go runtimeState.performStateCleanup(secsBetweenCleanup)

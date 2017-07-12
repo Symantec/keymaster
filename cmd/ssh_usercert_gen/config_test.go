@@ -25,6 +25,11 @@ func TestGenerateNewConfigInternal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	datapath := filepath.Join(dir, "var/lib/keymaster")
+	err = os.MkdirAll(datapath, 0750)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// AND not try to load
 	_, err = loadVerifyConfigFile(configFilename)
 	if err != nil {

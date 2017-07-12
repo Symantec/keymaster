@@ -628,6 +628,17 @@ func TestProfileHandlerTemplate(t *testing.T) {
 	state.Signer = signer
 	state.authCookie = make(map[string]authInfo)
 
+	dir, err := ioutil.TempDir("", "example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir) // clean up
+	state.Config.Base.DataDirectory = dir
+	err = initDB(&state)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	req, err := http.NewRequest("GET", "/profile/", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -662,6 +673,10 @@ func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
 	defer os.RemoveAll(dir) // clean up
 	state.Config.Base.DataDirectory = dir
 
+	err = initDB(&state)
+	if err != nil {
+		t.Fatal(err)
+	}
 	cookieVal := "supersecret"
 	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
@@ -724,6 +739,10 @@ func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
 	}
 	defer os.RemoveAll(dir) // clean up
 	state.Config.Base.DataDirectory = dir
+	err = initDB(&state)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	//state.userProfile["username"]
 	profile := &userProfile{
