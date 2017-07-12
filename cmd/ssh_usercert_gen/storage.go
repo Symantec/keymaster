@@ -62,6 +62,7 @@ func initDB(state *RuntimeState) (err error) {
 // Any other case: nil, false, error
 func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfile, ok bool, err error) {
 	var defaultProfile userProfile
+	defaultProfile.U2fAuthData = make(map[int64]*u2fAuthData)
 	//load from DB
 	stmt, err := state.db.Prepare("select profile_data from user_profile where username = ?")
 	if err != nil {

@@ -684,7 +684,9 @@ func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
 	const newName = "New"
 	const oldName = "Old"
 
-	profile := &userProfile{U2fAuthData: []u2fAuthData{u2fAuthData{Name: oldName}}}
+	profile := &userProfile{}
+	profile.U2fAuthData = make(map[int64]*u2fAuthData)
+	profile.U2fAuthData[0] = &u2fAuthData{Name: oldName}
 	err = state.SaveUserProfile("username", profile)
 	if err != nil {
 		t.Fatal(err)
@@ -744,11 +746,11 @@ func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	//state.userProfile["username"]
-	profile := &userProfile{
-		U2fAuthData: []u2fAuthData{
-			u2fAuthData{Name: "name1", Enabled: false},
-			u2fAuthData{Name: "name2", Enabled: false}}}
+	profile := &userProfile{}
+	profile.U2fAuthData = make(map[int64]*u2fAuthData)
+	profile.U2fAuthData[0] = &u2fAuthData{Name: "name1", Enabled: false}
+	profile.U2fAuthData[1] = &u2fAuthData{Name: "name2", Enabled: false}
+
 	err = state.SaveUserProfile("username", profile)
 	if err != nil {
 		t.Fatal(err)
