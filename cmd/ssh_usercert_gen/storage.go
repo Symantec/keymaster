@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/gob"
+	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
-	//"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -15,9 +15,31 @@ const userProfilePrefix = "profile_"
 const userProfileSuffix = ".gob"
 const profileDBFilename = "userProfiles.sqlite3"
 
+func initDB(state *RuntimeState) error {
+	return initDBSQlite(state)
+}
+
+func initDBPostgres(state *RuntimeState) (err error) {
+	state.db, err = sql.Open("postgres", state.Config.ProfileStorage.StorageUrl)
+	if err != nil {
+		return err
+	}
+	/// This should be changed to take care of DB schema
+	if true {
+		sqlStmt := `create table if not exists user_profile (id integer not null primary key, username text unique, profile_data bytea);`
+		_, err = state.db.Exec(sqlStmt)
+		if err != nil {
+			log.Printf("%q: %s\n", err, sqlStmt)
+			return err
+		}
+	}
+
+	return nil
+}
+
 // This call initializes the database if it does not exist.
 // TODO: update to handle multiple db types AND to perform auto-updates of the db.
-func initDB(state *RuntimeState) (err error) {
+func initDBSQlite(state *RuntimeState) (err error) {
 	dbFilename := filepath.Join(state.Config.Base.DataDirectory, profileDBFilename)
 	if _, err := os.Stat(dbFilename); os.IsNotExist(err) {
 		//CREATE NEW DB
@@ -27,9 +49,7 @@ func initDB(state *RuntimeState) (err error) {
 		}
 		log.Printf("post DB open")
 		// create profile table
-		sqlStmt := `
-		    create table user_profile (id integer not null primary key, username text unique, profile_data blob);
-			    `
+		sqlStmt := `create table user_profile (id integer not null primary key, username text unique, profile_data blob);`
 		_, err = state.db.Exec(sqlStmt)
 		if err != nil {
 			log.Printf("%q: %s\n", err, sqlStmt)
