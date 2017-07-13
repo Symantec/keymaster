@@ -7,7 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/gob"
+	//	"encoding/gob"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
@@ -64,7 +64,7 @@ type u2fAuthData struct {
 type userProfile struct {
 	U2fAuthData           []u2fAuthData
 	RegistrationChallenge *u2f.Challenge
-	u2fAuthChallenge      *u2f.Challenge
+	U2fAuthChallenge      *u2f.Challenge
 }
 
 type pendingAuth2Request struct {
@@ -83,12 +83,12 @@ type RuntimeState struct {
 	caCertDer           []byte
 	authCookie          map[string]authInfo
 	Mutex               sync.Mutex
-	userProfile         map[string]userProfile
-	pendingOauth2       map[string]pendingAuth2Request
+	//userProfile         map[string]userProfile
+	pendingOauth2  map[string]pendingAuth2Request
+	storageRWMutex sync.RWMutex
 }
 
 const redirectPath = "/auth/oauth2/callback"
-const userProfileFilename = "userProfiles.gob"
 const secsBetweenCleanup = 30
 
 var (
@@ -330,29 +330,6 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 
 	}
 	return info.Username, info.AuthType, nil
-}
-
-func (state *RuntimeState) SaveUserProfiles() error {
-	var gobBuffer bytes.Buffer
-	encoder := gob.NewEncoder(&gobBuffer)
-	if err := encoder.Encode(state.userProfile); err != nil {
-		return err
-	}
-	userProfilePath := filepath.Join(state.Config.Base.DataDirectory, userProfileFilename)
-	return ioutil.WriteFile(userProfilePath, gobBuffer.Bytes(), 0640)
-}
-
-func (state *RuntimeState) LoadUserProfiles() error {
-	userProfilePath := filepath.Join(state.Config.Base.DataDirectory, userProfileFilename)
-
-	fileBytes, err := exitsAndCanRead(userProfilePath, "user Profile file")
-	if err != nil {
-		log.Printf("problem with user Profile data")
-		return err
-	}
-	gobReader := bytes.NewReader(fileBytes)
-	decoder := gob.NewDecoder(gobReader)
-	return decoder.Decode(&state.userProfile)
 }
 
 const certgenPath = "/certgen/"
@@ -912,11 +889,13 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// This is an UGLY big lock... we should at least create a separate lock for
-	// the userProfile struct
-	state.Mutex.Lock()
-	defer state.Mutex.Unlock()
-	profile, _ := state.userProfile[authUser]
+	profile, _, err := state.LoadUserProfile(authUser)
+	if err != nil {
+		log.Printf("loading profile error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+
+	}
 
 	c, err := u2f.NewChallenge(u2fAppID, u2fTrustedFacets)
 	if err != nil {
@@ -929,7 +908,12 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 	req := u2f.NewWebRegisterRequest(c, registrations)
 
 	log.Printf("registerRequest: %+v", req)
-	state.userProfile[authUser] = profile
+	err = state.SaveUserProfile(authUser, profile)
+	if err != nil {
+		log.Printf("Saving profile error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
 	json.NewEncoder(w).Encode(req)
 }
 
@@ -956,9 +940,12 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	state.Mutex.Lock()
-	defer state.Mutex.Unlock()
-	profile, _ := state.userProfile[authUser]
+	profile, _, err := state.LoadUserProfile(authUser)
+	if err != nil {
+		log.Printf("loading profile error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
 
 	if profile.RegistrationChallenge == nil {
 		http.Error(w, "challenge not found", http.StatusBadRequest)
@@ -988,10 +975,12 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 	log.Printf("Registration success: %+v", reg)
 
 	profile.RegistrationChallenge = nil
-	state.userProfile[authUser] = profile
-
-	// TODO: make goroutine!
-	state.SaveUserProfiles()
+	err = state.SaveUserProfile(authUser, profile)
+	if err != nil {
+		log.Printf("Saving profile error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
 
 	w.Write([]byte("success"))
 }
@@ -1013,9 +1002,12 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	}
 
 	//////////
-	state.Mutex.Lock()
-	defer state.Mutex.Unlock()
-	profile, ok := state.userProfile[authUser]
+	profile, ok, err := state.LoadUserProfile(authUser)
+	if err != nil {
+		log.Printf("loading profile error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
 
 	/////////
 	if !ok {
@@ -1034,11 +1026,18 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-	profile.u2fAuthChallenge = c
-	state.userProfile[authUser] = profile
-
+	profile.U2fAuthChallenge = c
 	req := c.SignRequest(registrations)
-	log.Printf("Sign request: %+v", req)
+	if *debug {
+		log.Printf("Sign request: %+v", req)
+	}
+
+	err = state.SaveUserProfile(authUser, profile)
+	if err != nil {
+		log.Printf("Saving profile error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
 
 	if err := json.NewEncoder(w).Encode(req); err != nil {
 		log.Printf("json encofing error: %v", err)
@@ -1060,7 +1059,6 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 	authUser, _, err := state.checkAuth(w, r)
 	if err != nil {
 		log.Printf("%v", err)
-
 		return
 	}
 
@@ -1082,9 +1080,13 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 
 	log.Printf("signResponse: %+v", signResp)
 
-	state.Mutex.Lock()
-	defer state.Mutex.Unlock()
-	profile, ok := state.userProfile[authUser]
+	profile, ok, err := state.LoadUserProfile(authUser)
+	if err != nil {
+		log.Printf("loading profile error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+
+	}
 
 	/////////
 	if !ok {
@@ -1097,7 +1099,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if profile.u2fAuthChallenge == nil {
+	if profile.U2fAuthChallenge == nil {
 		http.Error(w, "challenge missing", http.StatusBadRequest)
 		return
 	}
@@ -1108,25 +1110,30 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 
 	//var err error
 	for i, u2fReg := range profile.U2fAuthData {
-		newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *profile.u2fAuthChallenge, u2fReg.Counter)
+		newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *profile.U2fAuthChallenge, u2fReg.Counter)
 		if authErr == nil {
 			log.Printf("newCounter: %d", newCounter)
 			//counter = newCounter
 			profile.U2fAuthData[i].Counter = newCounter
-			profile.u2fAuthChallenge = nil
-			state.userProfile[authUser] = profile
+			profile.U2fAuthChallenge = nil
 
 			// update cookie if found, this should be also a critical section
 			if authCookie != nil {
+				state.Mutex.Lock()
 				info, ok := state.authCookie[authCookie.Value]
 				if ok {
 					info.AuthType = AuthTypeU2F
 					state.authCookie[authCookie.Value] = info
 				}
+				state.Mutex.Unlock()
 			}
 
-			// TODO: make goroutine!
-			state.SaveUserProfiles()
+			err = state.SaveUserProfile(authUser, profile)
+			if err != nil {
+				log.Printf("Saving profile error: %v", err)
+				http.Error(w, "error", http.StatusInternalServerError)
+				return
+			}
 
 			// TODO: update local cookie state
 			w.Write([]byte("success"))
@@ -1154,9 +1161,13 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	//find the user token
-	state.Mutex.Lock()
-	profile, _ := state.userProfile[authUser]
-	state.Mutex.Unlock()
+	profile, _, err := state.LoadUserProfile(authUser)
+	if err != nil {
+		log.Printf("loading profile error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+
+	}
 	displayData := profilePageTemplateData{Username: authUser,
 		Title:     "Keymaster User Profile",
 		JSSources: []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js"}}
@@ -1231,9 +1242,13 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	}
 
 	//Do a redirect
-	state.Mutex.Lock()
-	profile, _ := state.userProfile[authUser]
-	state.Mutex.Unlock()
+	profile, _, err := state.LoadUserProfile(authUser)
+	if err != nil {
+		log.Printf("loading profile error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+
+	}
 
 	// Todo: check for negative values
 	if tokenIndex >= len(profile.U2fAuthData) {
@@ -1269,10 +1284,12 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 		return
 	}
 
-	state.Mutex.Lock()
-	state.userProfile[authUser] = profile
-	state.SaveUserProfiles()
-	state.Mutex.Unlock()
+	err = state.SaveUserProfile(authUser, profile)
+	if err != nil {
+		log.Printf("Saving profile error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
 
 	// Success!
 	returnAcceptType := getPreferredAcceptType(r)

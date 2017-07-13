@@ -83,7 +83,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 
 	//share config
 	runtimeState.authCookie = make(map[string]authInfo)
-	runtimeState.userProfile = make(map[string]userProfile)
+	//runtimeState.userProfile = make(map[string]userProfile)
 	runtimeState.pendingOauth2 = make(map[string]pendingAuth2Request)
 
 	//verify config
@@ -179,11 +179,6 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			Scopes:      strings.Split(runtimeState.Config.Oauth2.Scopes, " ")}
 	}
 	///
-	err = runtimeState.LoadUserProfiles()
-	if err != nil {
-		log.Printf("Cannot load user Profile %s", err)
-	}
-	log.Printf("%+v", runtimeState.userProfile)
 
 	// and we start the cleanup
 	go runtimeState.performStateCleanup(secsBetweenCleanup)
