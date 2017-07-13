@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"database/sql"
 	"encoding/base64"
 	//	"encoding/gob"
 	"encoding/json"
@@ -86,6 +87,7 @@ type RuntimeState struct {
 	//userProfile         map[string]userProfile
 	pendingOauth2  map[string]pendingAuth2Request
 	storageRWMutex sync.RWMutex
+	db             *sql.DB
 }
 
 const redirectPath = "/auth/oauth2/callback"

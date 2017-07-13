@@ -2,21 +2,56 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/gob"
-	"io/ioutil"
+	_ "github.com/mattn/go-sqlite3"
+	//"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 )
 
-const userProfileFilename = "userProfiles.gob"
 const userProfilePrefix = "profile_"
 const userProfileSuffix = ".gob"
+const profileDBFilename = "userProfiles.sqlite3"
+
+// This call initializes the database if it does not exist.
+// TODO: update to handle multiple db types AND to perform auto-updates of the db.
+func initDB(state *RuntimeState) (err error) {
+	dbFilename := filepath.Join(state.Config.Base.DataDirectory, profileDBFilename)
+	if _, err := os.Stat(dbFilename); os.IsNotExist(err) {
+		//CREATE NEW DB
+		state.db, err = sql.Open("sqlite3", dbFilename)
+		if err != nil {
+			return err
+		}
+		log.Printf("post DB open")
+		// create profile table
+		sqlStmt := `
+		    create table user_profile (id integer not null primary key, username text unique, profile_data blob);
+			    `
+		_, err = state.db.Exec(sqlStmt)
+		if err != nil {
+			log.Printf("%q: %s\n", err, sqlStmt)
+			return err
+		}
+
+		return nil
+	}
+
+	// try open the DB
+	if state.db == nil {
+
+		state.db, err = sql.Open("sqlite3", dbFilename)
+		if err != nil {
+			return err
+		}
+		//defer state.db.Close()
+	}
+	return nil
+}
 
 /// Adding api to be load/save per user
-func getFilenameForUser(state *RuntimeState, username string) string {
-	return filepath.Join(state.Config.Base.DataDirectory, userProfilePrefix+username+userProfileSuffix)
-}
 
 // Notice: each operation load/save should be atomic. For inital version we
 // are using a RWMutex to al least serialize writes and allow for some
@@ -27,21 +62,28 @@ func getFilenameForUser(state *RuntimeState, username string) string {
 // Any other case: nil, false, error
 func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfile, ok bool, err error) {
 	var defaultProfile userProfile
-	fileName := getFilenameForUser(state, username)
-
-	state.storageRWMutex.RLock()
-	defer state.storageRWMutex.RUnlock()
-
-	if _, err := os.Stat(fileName); os.IsNotExist(err) {
-		return &defaultProfile, false, nil
-	}
-
-	fileBytes, err := exitsAndCanRead(fileName, "user Profile file")
+	//load from DB
+	stmt, err := state.db.Prepare("select profile_data from user_profile where username = ?")
 	if err != nil {
-		log.Printf("problem with user Profile data")
-		return nil, false, err
+		log.Fatal(err)
 	}
-	gobReader := bytes.NewReader(fileBytes)
+
+	defer stmt.Close()
+	var profileBytes []byte
+	err = stmt.QueryRow(username).Scan(&profileBytes)
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			log.Printf("err='%s'", err)
+			return &defaultProfile, false, nil
+		} else {
+			log.Printf("Problem with db ='%s'", err)
+			return nil, false, err
+		}
+
+	}
+	//log.Printf("bytes len=%d", len(profileBytes))
+	//gobReader := bytes.NewReader(fileBytes)
+	gobReader := bytes.NewReader(profileBytes)
 	decoder := gob.NewDecoder(gobReader)
 	err = decoder.Decode(&defaultProfile)
 	if err != nil {
@@ -54,14 +96,28 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 func (state *RuntimeState) SaveUserProfile(username string, profile *userProfile) error {
 	var gobBuffer bytes.Buffer
 
-	//log.Printf("saving profile=%+v", profile)
-
 	encoder := gob.NewEncoder(&gobBuffer)
 	if err := encoder.Encode(profile); err != nil {
 		return err
 	}
-	fileName := getFilenameForUser(state, username)
-	state.storageRWMutex.Lock()
-	defer state.storageRWMutex.Unlock()
-	return ioutil.WriteFile(fileName, gobBuffer.Bytes(), 0640)
+
+	//insert into DB
+	tx, err := state.db.Begin()
+	if err != nil {
+		return err
+	}
+	stmt, err := tx.Prepare("insert or replace into user_profile(username, profile_data) values(?, ?)")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.Exec(username, gobBuffer.Bytes())
+	if err != nil {
+		return err
+	}
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+	return nil
 }
