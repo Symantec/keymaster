@@ -63,7 +63,7 @@ type u2fAuthData struct {
 }
 
 type userProfile struct {
-	U2fAuthData           []u2fAuthData
+	U2fAuthData           map[int64]*u2fAuthData
 	RegistrationChallenge *u2f.Challenge
 	U2fAuthChallenge      *u2f.Challenge
 }
@@ -865,7 +865,7 @@ func (state *RuntimeState) logoutHandler(w http.ResponseWriter, r *http.Request)
 
 ////////////////////////////
 
-func getRegistrationArray(U2fAuthData []u2fAuthData) (regArray []u2f.Registration) {
+func getRegistrationArray(U2fAuthData map[int64]*u2fAuthData) (regArray []u2f.Registration) {
 	for _, data := range U2fAuthData {
 		if data.Enabled {
 			regArray = append(regArray, *data.Registration)
@@ -970,7 +970,8 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 		CreatedAt:    time.Now(),
 		CreatorAddr:  r.RemoteAddr,
 	}
-	profile.U2fAuthData = append(profile.U2fAuthData, newReg)
+	newIndex := newReg.CreatedAt.Unix()
+	profile.U2fAuthData[newIndex] = &newReg
 	//registrations = append(registrations, *reg)
 	//counter = 0
 
@@ -1116,7 +1117,10 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 		if authErr == nil {
 			log.Printf("newCounter: %d", newCounter)
 			//counter = newCounter
-			profile.U2fAuthData[i].Counter = newCounter
+			u2fReg.Counter = newCounter
+			//profile.U2fAuthData[i].Counter = newCounter
+			u2fReg.Counter = newCounter
+			profile.U2fAuthData[i] = u2fReg
 			profile.U2fAuthChallenge = nil
 
 			// update cookie if found, this should be also a critical section
@@ -1236,7 +1240,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 		return
 	}
 
-	tokenIndex, err := strconv.Atoi(r.Form.Get("index"))
+	tokenIndex, err := strconv.ParseInt(r.Form.Get("index"), 10, 64)
 	if err != nil {
 		log.Printf("tokenindex is not a number")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "tokenindex is not a number")
@@ -1253,15 +1257,15 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	}
 
 	// Todo: check for negative values
-	if tokenIndex >= len(profile.U2fAuthData) {
+	_, ok := profile.U2fAuthData[tokenIndex]
+	if !ok {
+		//if tokenIndex >= len(profile.U2fAuthData) {
 		log.Printf("bad index number")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad index Value")
 		return
 
 	}
-	//profile.U2fAuthData[tokenIndex].Name = tokenName
 
-	// map[name:[123123] action:[UpdateName] index:[0] username:[camilo_viecco1]]
 	actionName := r.Form.Get("action")
 	switch actionName {
 	case "Update":
@@ -1277,10 +1281,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	case "Enable":
 		profile.U2fAuthData[tokenIndex].Enabled = true
 	case "Delete":
-		//From https://github.com/golang/go/wiki/SliceTricks
-		copy(profile.U2fAuthData[tokenIndex:], profile.U2fAuthData[tokenIndex+1:])
-		profile.U2fAuthData[len(profile.U2fAuthData)-1] = u2fAuthData{} // or the zero value of T
-		profile.U2fAuthData = profile.U2fAuthData[:len(profile.U2fAuthData)-1]
+		delete(profile.U2fAuthData, tokenIndex)
 	default:
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Operation")
 		return

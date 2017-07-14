@@ -39,7 +39,7 @@ type registeredU2FTokenDisplayInfo struct {
 	RegistrationDate time.Time
 	DeviceData       string
 	Name             string
-	Index            int
+	Index            int64
 	Enabled          bool
 }
 type profilePageTemplateData struct {
