@@ -65,7 +65,13 @@ func init() {
 	http.HandleFunc("/userinfo", userinfoHandler)
 	http.HandleFunc("/token", tokenHandler)
 	http.HandleFunc("/", handler)
+	log.Printf("about to start server")
 	go http.ListenAndServe(":12345", nil)
+	time.Sleep(20 * time.Millisecond)
+	_, err := http.Get("http://localhost:12345")
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 var testOauth2Config = oauth2.Config{

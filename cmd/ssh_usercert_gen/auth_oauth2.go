@@ -119,6 +119,7 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 	}
 
 	if r.URL.Query().Get("state") != pending.state {
+		log.Printf("state does not match")
 		http.Error(w, "state did not match", http.StatusBadRequest)
 		return
 	}
@@ -127,7 +128,7 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 	//}
 	oauth2Token, err := state.Config.Oauth2.Config.Exchange(pending.ctx, r.URL.Query().Get("code"))
 	if err != nil {
-		log.Printf("ctx: %+v", pending.ctx)
+		log.Printf("failed to get token: ctx: %+v", pending.ctx)
 		http.Error(w, "Failed to exchange token: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
