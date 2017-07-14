@@ -88,6 +88,7 @@ type RuntimeState struct {
 	pendingOauth2  map[string]pendingAuth2Request
 	storageRWMutex sync.RWMutex
 	db             *sql.DB
+	dbType         string
 }
 
 const redirectPath = "/auth/oauth2/callback"

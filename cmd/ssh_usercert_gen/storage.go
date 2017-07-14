@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/gob"
+	"errors"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const userProfilePrefix = "profile_"
@@ -16,17 +18,44 @@ const userProfileSuffix = ".gob"
 const profileDBFilename = "userProfiles.sqlite3"
 
 func initDB(state *RuntimeState) error {
-	return initDBSQlite(state)
+	log.Printf("storage=%s", state.Config.ProfileStorage.StorageUrl)
+	storageURL := state.Config.ProfileStorage.StorageUrl
+	if storageURL == "" {
+		storageURL = "sqlite:"
+	}
+	splitString := strings.SplitN(storageURL, ":", 2)
+	if len(splitString) < 1 {
+		log.Printf("invalid string")
+		err := errors.New("Bad storage url string")
+		return err
+	}
+	switch splitString[0] {
+	case "sqlite":
+		log.Printf("doing sqlite")
+		return initDBSQlite(state)
+	case "postgresql":
+		log.Printf("doing postgres")
+		return initDBPostgres(state)
+	default:
+		log.Printf("invalid storage url string")
+		err := errors.New("Bad storage url string")
+		return err
+	}
+
+	err := errors.New("invalid state")
+	return err
+
 }
 
 func initDBPostgres(state *RuntimeState) (err error) {
+	state.dbType = "postgres"
 	state.db, err = sql.Open("postgres", state.Config.ProfileStorage.StorageUrl)
 	if err != nil {
 		return err
 	}
 	/// This should be changed to take care of DB schema
 	if true {
-		sqlStmt := `create table if not exists user_profile (id integer not null primary key, username text unique, profile_data bytea);`
+		sqlStmt := `create table if not exists user_profile (id serial not null primary key, username text unique, profile_data bytea);`
 		_, err = state.db.Exec(sqlStmt)
 		if err != nil {
 			log.Printf("%q: %s\n", err, sqlStmt)
@@ -40,6 +69,7 @@ func initDBPostgres(state *RuntimeState) (err error) {
 // This call initializes the database if it does not exist.
 // TODO: update to handle multiple db types AND to perform auto-updates of the db.
 func initDBSQlite(state *RuntimeState) (err error) {
+	state.dbType = "sqlite"
 	dbFilename := filepath.Join(state.Config.Base.DataDirectory, profileDBFilename)
 	if _, err := os.Stat(dbFilename); os.IsNotExist(err) {
 		//CREATE NEW DB
@@ -71,6 +101,11 @@ func initDBSQlite(state *RuntimeState) (err error) {
 	return nil
 }
 
+var loadUserProfileStmt = map[string]string{
+	"sqlite":   "select profile_data from user_profile where username = ?",
+	"postgres": "select profile_data from user_profile where username = $1",
+}
+
 /// Adding api to be load/save per user
 
 // Notice: each operation load/save should be atomic. For inital version we
@@ -84,8 +119,10 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 	var defaultProfile userProfile
 	defaultProfile.U2fAuthData = make(map[int64]*u2fAuthData)
 	//load from DB
-	stmt, err := state.db.Prepare("select profile_data from user_profile where username = ?")
+	stmtText := loadUserProfileStmt[state.dbType]
+	stmt, err := state.db.Prepare(stmtText)
 	if err != nil {
+		log.Print("Error Preparing statement")
 		log.Fatal(err)
 	}
 
@@ -114,6 +151,11 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 	return &defaultProfile, true, nil
 }
 
+var saveUserProfileStmt = map[string]string{
+	"sqlite":   "insert or replace into user_profile(username, profile_data) values(?, ?)",
+	"postgres": "insert into user_profile(username, profile_data) values ($1,$2) on CONFLICT(username) DO UPDATE set  profile_data = excluded.profile_data",
+}
+
 func (state *RuntimeState) SaveUserProfile(username string, profile *userProfile) error {
 	var gobBuffer bytes.Buffer
 
@@ -127,7 +169,8 @@ func (state *RuntimeState) SaveUserProfile(username string, profile *userProfile
 	if err != nil {
 		return err
 	}
-	stmt, err := tx.Prepare("insert or replace into user_profile(username, profile_data) values(?, ?)")
+	stmtText := saveUserProfileStmt[state.dbType]
+	stmt, err := tx.Prepare(stmtText)
 	if err != nil {
 		return err
 	}
