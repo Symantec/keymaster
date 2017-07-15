@@ -56,10 +56,16 @@ type Oauth2Config struct {
 	//Todo add allowed orgs...
 }
 
+type ProfileStorageConfig struct {
+	StorageUrl          string `yaml:"storage_url"`
+	TLSRootCertFilename string `yaml:"tls_root_cert_filename"`
+}
+
 type AppConfigFile struct {
-	Base   baseConfig
-	Ldap   LdapConfig
-	Oauth2 Oauth2Config
+	Base           baseConfig
+	Ldap           LdapConfig
+	Oauth2         Oauth2Config
+	ProfileStorage ProfileStorageConfig
 }
 
 const defaultRSAKeySize = 3072
