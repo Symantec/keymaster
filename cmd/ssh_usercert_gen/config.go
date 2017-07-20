@@ -92,6 +92,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	runtimeState.authCookie = make(map[string]authInfo)
 	//runtimeState.userProfile = make(map[string]userProfile)
 	runtimeState.pendingOauth2 = make(map[string]pendingAuth2Request)
+	runtimeState.SignerIsReady = make(chan bool, 1)
 
 	//verify config
 	if len(runtimeState.Config.Base.HostIdentity) > 0 {
@@ -158,6 +159,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		// Assignmet of signer MUST be the last operation after
 		// all error checks
 		runtimeState.Signer = signer
+		runtimeState.SignerIsReady <- true
 
 	} else {
 		if runtimeState.ClientCAPool == nil {

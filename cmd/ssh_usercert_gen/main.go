@@ -83,6 +83,7 @@ type RuntimeState struct {
 	KerberosRealm       *string
 	caCertDer           []byte
 	authCookie          map[string]authInfo
+	SignerIsReady       chan bool
 	Mutex               sync.Mutex
 	//userProfile         map[string]userProfile
 	pendingOauth2  map[string]pendingAuth2Request
@@ -633,10 +634,17 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 		log.Printf("Cannot generate CA Der")
 		return
 	}
+	sendMessage := false
+	if state.Signer == nil {
+		sendMessage = true
+	}
 
 	// Assignmet of signer MUST be the last operation after
 	// all error checks
 	state.Signer = signer
+	if sendMessage {
+		state.SignerIsReady <- true
+	}
 
 	// TODO... make success a goroutine
 	w.WriteHeader(200)
@@ -1387,6 +1395,11 @@ func main() {
 		}
 
 	}("done")
+
+	isReady := <-runtimeState.SignerIsReady
+	if isReady != true {
+		panic("got bad singer ready data")
+	}
 
 	serviceSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.HttpAddress,
