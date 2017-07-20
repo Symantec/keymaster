@@ -26,6 +26,7 @@ import (
 
 type baseConfig struct {
 	HttpAddress     string `yaml:"http_address"`
+	AdminAddress    string `yaml:"admin_address"`
 	TLSCertFilename string `yaml:"tls_cert_filename"`
 	TLSKeyFilename  string `yaml:"tls_key_filename"`
 	//RequiredAuthForCert         string   `yaml:"required_auth_for_cert"`
