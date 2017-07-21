@@ -36,6 +36,7 @@ install -d %{buildroot}/usr/lib/systemd/system
 install -p -m 0644 misc/startup/keymaster.service %{buildroot}/usr/lib/systemd/system/keymaster.service
 install -d %{buildroot}/%{_datarootdir}/keymaster/static_files/
 install -p -m 0644 cmd/ssh_usercert_gen/static_files/u2f-api.js  %{buildroot}/%{_datarootdir}/keymaster/static_files/u2f-api.js
+install -p -m 0644 cmd/ssh_usercert_gen/static_files/keymaster-u2f.js  %{buildroot}/%{_datarootdir}/keymaster/static_files/keymaster-u2f.js
 
 %pre
 /usr/bin/getent passwd keymaster || useradd -d /var/lib/keymaster -s /bin/false -U -r  keymaster
