@@ -83,6 +83,7 @@ type RuntimeState struct {
 	KerberosRealm       *string
 	caCertDer           []byte
 	authCookie          map[string]authInfo
+	SignerIsReady       chan bool
 	Mutex               sync.Mutex
 	//userProfile         map[string]userProfile
 	pendingOauth2  map[string]pendingAuth2Request
@@ -633,10 +634,17 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 		log.Printf("Cannot generate CA Der")
 		return
 	}
+	sendMessage := false
+	if state.Signer == nil {
+		sendMessage = true
+	}
 
 	// Assignmet of signer MUST be the last operation after
 	// all error checks
 	state.Signer = signer
+	if sendMessage {
+		state.SignerIsReady <- true
+	}
 
 	// TODO... make success a goroutine
 	w.WriteHeader(200)
@@ -1338,25 +1346,28 @@ func main() {
 		log.Printf("After load verify")
 	}
 
+	serviceMux := http.NewServeMux()
+
 	// Expose the registered metrics via HTTP.
 	http.Handle("/metrics", prometheus.Handler())
 	http.HandleFunc(secretInjectorPath, runtimeState.secretInjectorHandler)
-	http.HandleFunc(certgenPath, runtimeState.certGenHandler)
-	http.HandleFunc(publicPath, runtimeState.publicPathHandler)
-	http.HandleFunc(proto.LoginPath, runtimeState.loginHandler)
-	http.HandleFunc(logoutPath, runtimeState.logoutHandler)
 
-	http.HandleFunc(profilePath, runtimeState.profileHandler)
+	serviceMux.HandleFunc(certgenPath, runtimeState.certGenHandler)
+	serviceMux.HandleFunc(publicPath, runtimeState.publicPathHandler)
+	serviceMux.HandleFunc(proto.LoginPath, runtimeState.loginHandler)
+	serviceMux.HandleFunc(logoutPath, runtimeState.logoutHandler)
+
+	serviceMux.HandleFunc(profilePath, runtimeState.profileHandler)
 
 	staticFilesPath := filepath.Join(runtimeState.Config.Base.SharedDataDirectory, "static_files")
-	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticFilesPath))))
-	http.HandleFunc(u2fRegustisterRequestPath, runtimeState.u2fRegisterRequest)
-	http.HandleFunc(u2fRegisterRequesponsePath, runtimeState.u2fRegisterResponse)
-	http.HandleFunc(u2fSignRequestPath, runtimeState.u2fSignRequest)
-	http.HandleFunc(u2fSignResponsePath, runtimeState.u2fSignResponse)
-	http.HandleFunc(u2fTokenManagementPath, runtimeState.u2fTokenManagerHandler)
-	http.HandleFunc(oauth2LoginBeginPath, runtimeState.oauth2DoRedirectoToProviderHandler)
-	http.HandleFunc(redirectPath, runtimeState.oauth2RedirectPathHandler)
+	serviceMux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticFilesPath))))
+	serviceMux.HandleFunc(u2fRegustisterRequestPath, runtimeState.u2fRegisterRequest)
+	serviceMux.HandleFunc(u2fRegisterRequesponsePath, runtimeState.u2fRegisterResponse)
+	serviceMux.HandleFunc(u2fSignRequestPath, runtimeState.u2fSignRequest)
+	serviceMux.HandleFunc(u2fSignResponsePath, runtimeState.u2fSignResponse)
+	serviceMux.HandleFunc(u2fTokenManagementPath, runtimeState.u2fTokenManagerHandler)
+	serviceMux.HandleFunc(oauth2LoginBeginPath, runtimeState.oauth2DoRedirectoToProviderHandler)
+	serviceMux.HandleFunc(redirectPath, runtimeState.oauth2RedirectPathHandler)
 
 	cfg := &tls.Config{
 		ClientCAs:                runtimeState.ClientCAPool,
@@ -1369,13 +1380,35 @@ func main() {
 			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
-	srv := &http.Server{
+	adminSrv := &http.Server{
+		Addr:         runtimeState.Config.Base.AdminAddress,
+		Handler:      http.DefaultServeMux,
+		TLSConfig:    cfg,
+		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
+	}
+	go func(msg string) {
+		err := adminSrv.ListenAndServeTLS(
+			runtimeState.Config.Base.TLSCertFilename,
+			runtimeState.Config.Base.TLSKeyFilename)
+		if err != nil {
+			panic(err)
+		}
+
+	}("done")
+
+	isReady := <-runtimeState.SignerIsReady
+	if isReady != true {
+		panic("got bad singer ready data")
+	}
+
+	serviceSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.HttpAddress,
+		Handler:      serviceMux,
 		TLSConfig:    cfg,
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 	}
 
-	err = srv.ListenAndServeTLS(
+	err = serviceSrv.ListenAndServeTLS(
 		runtimeState.Config.Base.TLSCertFilename,
 		runtimeState.Config.Base.TLSKeyFilename)
 	if err != nil {
