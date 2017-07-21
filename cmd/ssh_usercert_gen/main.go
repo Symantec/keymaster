@@ -1177,7 +1177,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	}
 	displayData := profilePageTemplateData{Username: authUser,
 		Title:     "Keymaster User Profile",
-		JSSources: []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js"}}
+		JSSources: []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js", "/static/keymaster-u2f.js"}}
 	for i, tokenInfo := range profile.U2fAuthData {
 
 		deviceData := registeredU2FTokenDisplayInfo{
