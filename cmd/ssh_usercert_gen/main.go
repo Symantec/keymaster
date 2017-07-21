@@ -566,6 +566,11 @@ func (state *RuntimeState) postAuthX509CertHandler(w http.ResponseWriter, r *htt
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", cert)
 	log.Printf("Generated x509 Certifcate for %s", targetUser)
+	go func(username string, certType string) {
+		metricsMutex.Lock()
+		defer metricsMutex.Unlock()
+		certGenCounter.WithLabelValues(username, certType).Inc()
+	}(targetUser, "x509")
 }
 
 const secretInjectorPath = "/admin/inject"
