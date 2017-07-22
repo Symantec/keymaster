@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"testing"
+	"time"
 )
 
 /* To generate certs, I used all data here should expire around Jan 1 2037:
@@ -174,6 +175,10 @@ func init() {
 			conn.Close()
 		}
 	}(ln)
+	// On single core systems we needed to ensure that the server is started before
+	// we create other testing goroutines. By sleeping we yield the cpu and allow
+	// ListenAndServe to progress
+	time.Sleep(20 * time.Millisecond)
 }
 
 func TestCheckHtpasswdUserPasswordSuccess(t *testing.T) {

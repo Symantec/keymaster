@@ -83,6 +83,7 @@ type RuntimeState struct {
 	KerberosRealm       *string
 	caCertDer           []byte
 	authCookie          map[string]authInfo
+	SignerIsReady       chan bool
 	Mutex               sync.Mutex
 	//userProfile         map[string]userProfile
 	pendingOauth2  map[string]pendingAuth2Request
@@ -633,10 +634,17 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 		log.Printf("Cannot generate CA Der")
 		return
 	}
+	sendMessage := false
+	if state.Signer == nil {
+		sendMessage = true
+	}
 
 	// Assignmet of signer MUST be the last operation after
 	// all error checks
 	state.Signer = signer
+	if sendMessage {
+		state.SignerIsReady <- true
+	}
 
 	// TODO... make success a goroutine
 	w.WriteHeader(200)
@@ -1341,6 +1349,7 @@ func main() {
 	// Expose the registered metrics via HTTP.
 	http.Handle("/metrics", prometheus.Handler())
 	http.HandleFunc(secretInjectorPath, runtimeState.secretInjectorHandler)
+
 	http.HandleFunc(certgenPath, runtimeState.certGenHandler)
 	http.HandleFunc(publicPath, runtimeState.publicPathHandler)
 	http.HandleFunc(proto.LoginPath, runtimeState.loginHandler)
@@ -1369,13 +1378,33 @@ func main() {
 			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
-	srv := &http.Server{
+	adminSrv := &http.Server{
+		Addr:         runtimeState.Config.Base.AdminAddress,
+		TLSConfig:    cfg,
+		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
+	}
+	go func(msg string) {
+		err := adminSrv.ListenAndServeTLS(
+			runtimeState.Config.Base.TLSCertFilename,
+			runtimeState.Config.Base.TLSKeyFilename)
+		if err != nil {
+			panic(err)
+		}
+
+	}("done")
+
+	isReady := <-runtimeState.SignerIsReady
+	if isReady != true {
+		panic("got bad singer ready data")
+	}
+
+	serviceSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.HttpAddress,
 		TLSConfig:    cfg,
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 	}
 
-	err = srv.ListenAndServeTLS(
+	err = serviceSrv.ListenAndServeTLS(
 		runtimeState.Config.Base.TLSCertFilename,
 		runtimeState.Config.Base.TLSKeyFilename)
 	if err != nil {
