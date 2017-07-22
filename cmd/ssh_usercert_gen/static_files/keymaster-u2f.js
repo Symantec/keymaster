@@ -54,3 +54,9 @@ function checkError(resp) {
       u2f.sign(req.appId, req.challenge, req.registeredKeys, u2fSigned, 30);
     }).fail(serverError);
   }
+
+document.addEventListener('DOMContentLoaded', function () {
+	  document.getElementById('auth_button').addEventListener('click', sign);
+	  document.getElementById('register_button').addEventListener('click', register);
+	  //  main();
+});
