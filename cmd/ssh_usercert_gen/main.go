@@ -270,7 +270,7 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 	state.Mutex.Lock()
 	signerIsNull = (state.Signer == nil)
 	state.Mutex.Unlock()
-	g
+
 	//all common security headers go here
 	w.Header().Set("Strict-Transport-Security", "max-age=31536")
 	w.Header().Set("X-Frame-Options", "DENY")
