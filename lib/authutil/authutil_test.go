@@ -175,7 +175,9 @@ func init() {
 			conn.Close()
 		}
 	}(ln)
-	// Need to add another sleep for yielding to the listener
+	// On single core systems we needed to ensure that the server is started before
+	// we create other testing goroutines. By sleeping we yield the cpu and allow
+	// ListenAndServe to progress
 	time.Sleep(20 * time.Millisecond)
 }
 

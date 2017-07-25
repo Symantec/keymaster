@@ -26,6 +26,7 @@ import (
 
 type baseConfig struct {
 	HttpAddress     string `yaml:"http_address"`
+	AdminAddress    string `yaml:"admin_address"`
 	TLSCertFilename string `yaml:"tls_cert_filename"`
 	TLSKeyFilename  string `yaml:"tls_key_filename"`
 	//RequiredAuthForCert         string   `yaml:"required_auth_for_cert"`
@@ -91,6 +92,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	runtimeState.authCookie = make(map[string]authInfo)
 	//runtimeState.userProfile = make(map[string]userProfile)
 	runtimeState.pendingOauth2 = make(map[string]pendingAuth2Request)
+	runtimeState.SignerIsReady = make(chan bool, 1)
 
 	//verify config
 	if len(runtimeState.Config.Base.HostIdentity) > 0 {
@@ -157,6 +159,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		// Assignmet of signer MUST be the last operation after
 		// all error checks
 		runtimeState.Signer = signer
+		runtimeState.SignerIsReady <- true
 
 	} else {
 		if runtimeState.ClientCAPool == nil {

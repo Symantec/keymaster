@@ -366,6 +366,7 @@ func TestInjectingSecret(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.SSHCARawFileContent = []byte(encryptedTestSignerPrivateKey)
+	state.SignerIsReady = make(chan bool, 1)
 
 	defer os.Remove(passwdFile.Name()) // clean up
 	state.Config.Base.HtpasswdFilename = passwdFile.Name()

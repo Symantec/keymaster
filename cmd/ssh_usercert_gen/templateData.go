@@ -70,8 +70,8 @@ const profileHTML = `<!DOCTYPE html>
     <h2> {{.Username}}</h2>
     <ul>
       <li><a href="/api/v0/logout" >Logout </a></li>
-      <li><a href="javascript:register();">Register token</a></li>
-      <li><a href="javascript:sign();">Authenticate</a></li>
+      <li><a id="register_button" href="#">Register token</a></li>
+      <li><a id="auth_button" href="#">Authenticate</a></li>
     </ul>
     {{if .RegisteredToken -}}
         Your Token(s):
@@ -106,63 +106,6 @@ const profileHTML = `<!DOCTYPE html>
     {{- end}}
     <p>Open Chrome Developer Tools to see debug console logs.</p>
     {{end}}
-    <script>
-  function serverError(data) {
-    console.log(data);
-    alert('Server error code ' + data.status + ': ' + data.responseText);
-  }
-  function checkError(resp) {
-    if (!('errorCode' in resp)) {
-      return false;
-    }
-    if (resp.errorCode === u2f.ErrorCodes['OK']) {
-      return false;
-    }
-    var msg = 'U2F error code ' + resp.errorCode;
-    for (name in u2f.ErrorCodes) {
-      if (u2f.ErrorCodes[name] === resp.errorCode) {
-        msg += ' (' + name + ')';
-      }
-    }
-    if (resp.errorMessage) {
-      msg += ': ' + resp.errorMessage;
-    }
-    console.log(msg);
-    alert(msg);
-    return true;
-  }
-  function u2fRegistered(resp) {
-    console.log(resp);
-    if (checkError(resp)) {
-      return;
-    }
-    $.post('/u2f/RegisterResponse', JSON.stringify(resp)).success(function() {
-      alert('Success');
-      location.reload();
-    }).fail(serverError);
-  }
-  function register() {
-    $.getJSON('/u2f/RegisterRequest').success(function(req) {
-      console.log(req);
-      u2f.register(req.appId, req.registerRequests, req.registeredKeys, u2fRegistered, 30);
-    }).fail(serverError);
-  }
-  function u2fSigned(resp) {
-    console.log(resp);
-    if (checkError(resp)) {
-      return;
-    }
-    $.post('/u2f/SignResponse', JSON.stringify(resp)).success(function() {
-      alert('Success');
-    }).fail(serverError);
-  }
-  function sign() {
-    $.getJSON('/u2f/SignRequest').success(function(req) {
-      console.log(req);
-      u2f.sign(req.appId, req.challenge, req.registeredKeys, u2fSigned, 30);
-    }).fail(serverError);
-  }
-    </script>
   </body>
 </html>
 `
