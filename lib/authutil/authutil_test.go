@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"testing"
+	"time"
 )
 
 /* To generate certs, I used all data here should expire around Jan 1 2037:
@@ -174,6 +175,8 @@ func init() {
 			conn.Close()
 		}
 	}(ln)
+	// Need to add another sleep for yielding to the listener
+	time.Sleep(20 * time.Millisecond)
 }
 
 func TestCheckHtpasswdUserPasswordSuccess(t *testing.T) {
