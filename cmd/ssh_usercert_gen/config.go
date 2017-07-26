@@ -381,11 +381,16 @@ func generateCerts(configDir string, config *baseConfig, rsaKeySize int) error {
 func generateNewConfig(configFilename string) error {
 	reader := bufio.NewReader(os.Stdin)
 	const rsaKeySize = 3072
-	return generateNewConfigInternal(reader, configFilename, rsaKeySize)
+	passphrase, err := getPassphrase()
+	if err != nil {
+		log.Printf("error getting passphrase")
+		return err
+	}
+	return generateNewConfigInternal(reader, configFilename, rsaKeySize, passphrase)
 }
 
 // Generates a simple base config via an interview like process
-func generateNewConfigInternal(reader *bufio.Reader, configFilename string, rsaKeySize int) error {
+func generateNewConfigInternal(reader *bufio.Reader, configFilename string, rsaKeySize int, passphrase []byte) error {
 	var config AppConfigFile
 	//Get base dir
 	baseDir, err := getUserString(reader, "Default base Dir", "/tmp")
@@ -410,8 +415,9 @@ func generateNewConfigInternal(reader *bufio.Reader, configFilename string, rsaK
 	defaultHttpAddress := ":33443"
 	config.Base.HttpAddress, err = getUserString(reader, "HttpAddress", defaultHttpAddress)
 	// Todo check if valid
+	defaultAdminAddress := ":33444"
+	config.Base.AdminAddress, err = getUserString(reader, "AdminAddress", defaultAdminAddress)
 
-	passphrase := []byte("passphrase")
 	config.Base.SSHCAFilename = filepath.Join(configDir, "masterKey.asc")
 	err = generateArmoredEncryptedCAPritaveKey(passphrase, config.Base.SSHCAFilename)
 	if err != nil {
