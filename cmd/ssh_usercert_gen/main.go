@@ -102,6 +102,15 @@ var (
 	generateConfig   = flag.Bool("generateConfig", false, "Generate new valid configuration")
 	u2fAppID         = "https://www.example.com:33443"
 	u2fTrustedFacets = []string{}
+
+	metricsMutex   = &sync.Mutex{}
+	certGenCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "keymaster_certificate_issuance_counter",
+			Help: "Keymaster certificate issuance counter.",
+		},
+		[]string{"username", "type"},
+	)
 )
 
 func getHostIdentity() (string, error) {
@@ -507,7 +516,11 @@ func (state *RuntimeState) postAuthSSHCertHandler(w http.ResponseWriter, r *http
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", cert)
 	log.Printf("Generated SSH Certifcate for %s", targetUser)
-
+	go func(username string, certType string) {
+		metricsMutex.Lock()
+		defer metricsMutex.Unlock()
+		certGenCounter.WithLabelValues(username, certType).Inc()
+	}(targetUser, "ssh")
 }
 
 func (state *RuntimeState) postAuthX509CertHandler(w http.ResponseWriter, r *http.Request, targetUser string, keySigner crypto.Signer) {
@@ -561,6 +574,11 @@ func (state *RuntimeState) postAuthX509CertHandler(w http.ResponseWriter, r *htt
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", cert)
 	log.Printf("Generated x509 Certifcate for %s", targetUser)
+	go func(username string, certType string) {
+		metricsMutex.Lock()
+		defer metricsMutex.Unlock()
+		certGenCounter.WithLabelValues(username, certType).Inc()
+	}(targetUser, "x509")
 }
 
 const secretInjectorPath = "/admin/inject"
@@ -1325,6 +1343,10 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 func Usage() {
 	fmt.Fprintf(os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
 	flag.PrintDefaults()
+}
+
+func init() {
+	prometheus.MustRegister(certGenCounter)
 }
 
 func main() {
