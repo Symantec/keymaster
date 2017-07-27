@@ -423,10 +423,10 @@ func generateNewConfigInternal(reader *bufio.Reader, configFilename string, rsaK
 		return err
 	}
 	// TODO: Add check that directory exists.
-	defaultHttpAddress := ":33443"
+	defaultHttpAddress := ":6920"
 	config.Base.HttpAddress, err = getUserString(reader, "HttpAddress", defaultHttpAddress)
 	// Todo check if valid
-	defaultAdminAddress := ":33444"
+	defaultAdminAddress := ":6921"
 	config.Base.AdminAddress, err = getUserString(reader, "AdminAddress", defaultAdminAddress)
 
 	config.Base.SSHCAFilename = filepath.Join(configDir, "masterKey.asc")
