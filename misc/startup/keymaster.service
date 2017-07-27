@@ -3,6 +3,8 @@ Description=Keymaster cert generation service
 After=network.target
 
 [Service]
+PermissionsStartOnly=true
+ExecStartPre=/usr/sbin/setcap cap_net_bind_service=+ep /usr/sbin/keymaster
 ExecStart=/usr/sbin/keymaster -config /etc/keymaster/server_config.yml
 Restart=always
 RestartSec=20
