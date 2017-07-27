@@ -13,6 +13,7 @@ import (
 	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
@@ -202,6 +203,16 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 
 func generateArmoredEncryptedCAPritaveKey(passphrase []byte, filepath string) error {
 	privateKey, err := rsa.GenerateKey(rand.Reader, defaultRSAKeySize)
+	if err != nil {
+		return err
+	}
+
+	sshPublicKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		return err
+	}
+	publicKeyBytes := ssh.MarshalAuthorizedKey(sshPublicKey)
+	err = ioutil.WriteFile(filepath+".pub", publicKeyBytes, 0644)
 	if err != nil {
 		return err
 	}
