@@ -1,6 +1,13 @@
 # keymaster
 Short term certificate based identity system.
 
+Keymaster is a system which issues short-lived credentials (SSH certs,
+SSL certs, Kerberos tickets, API keys, etc.) to users and automation
+accounts. This system is easy to use, configure and administer.
+
+Please see the
+[design document](https://docs.google.com/document/d/1AW3UROCJqTc3R4MLJXxmPUNS0OFNcsiQJ_Q4j--5tQE/pub) for more information.
+
 ## Contributions
 
 Prior to receiving information from any contributor, Symantec requires
