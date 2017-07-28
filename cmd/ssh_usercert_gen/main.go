@@ -989,7 +989,8 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 	}
 
 	// TODO: use yubikey or get the feitan cert :(
-	u2fConfig := u2f.Config{SkipAttestationVerify: true}
+	u2fConfig := u2f.Config{SkipAttestationVerify: false,
+		RootAttestationCertPool: u2froots}
 
 	reg, err := u2f.Register(regResp, *profile.RegistrationChallenge, &u2fConfig)
 	if err != nil {
