@@ -21,7 +21,8 @@ func TestGenerateNewConfigInternal(t *testing.T) {
 	readerContent := dir + "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"
 	baseReader := strings.NewReader(readerContent)
 	reader := bufio.NewReader(baseReader)
-	err = generateNewConfigInternal(reader, configFilename, 2048)
+	passphrase := []byte("passphrase")
+	err = generateNewConfigInternal(reader, configFilename, 2048, passphrase)
 	if err != nil {
 		t.Fatal(err)
 	}

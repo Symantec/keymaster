@@ -13,6 +13,7 @@ import (
 	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
@@ -209,6 +210,16 @@ func generateArmoredEncryptedCAPritaveKey(passphrase []byte, filepath string) er
 		return err
 	}
 
+	sshPublicKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
+	if err != nil {
+		return err
+	}
+	publicKeyBytes := ssh.MarshalAuthorizedKey(sshPublicKey)
+	err = ioutil.WriteFile(filepath+".pub", publicKeyBytes, 0644)
+	if err != nil {
+		return err
+	}
+
 	encryptionType := "PGP MESSAGE"
 	armoredBuf := new(bytes.Buffer)
 	armoredWriter, err := armor.Encode(armoredBuf, encryptionType, nil)
@@ -384,11 +395,16 @@ func generateCerts(configDir string, config *baseConfig, rsaKeySize int) error {
 func generateNewConfig(configFilename string) error {
 	reader := bufio.NewReader(os.Stdin)
 	const rsaKeySize = 3072
-	return generateNewConfigInternal(reader, configFilename, rsaKeySize)
+	passphrase, err := getPassphrase()
+	if err != nil {
+		log.Printf("error getting passphrase")
+		return err
+	}
+	return generateNewConfigInternal(reader, configFilename, rsaKeySize, passphrase)
 }
 
 // Generates a simple base config via an interview like process
-func generateNewConfigInternal(reader *bufio.Reader, configFilename string, rsaKeySize int) error {
+func generateNewConfigInternal(reader *bufio.Reader, configFilename string, rsaKeySize int, passphrase []byte) error {
 	var config AppConfigFile
 	//Get base dir
 	baseDir, err := getUserString(reader, "Default base Dir", "/tmp")
@@ -410,11 +426,12 @@ func generateNewConfigInternal(reader *bufio.Reader, configFilename string, rsaK
 		return err
 	}
 	// TODO: Add check that directory exists.
-	defaultHttpAddress := ":33443"
+	defaultHttpAddress := ":6920"
 	config.Base.HttpAddress, err = getUserString(reader, "HttpAddress", defaultHttpAddress)
 	// Todo check if valid
+	defaultAdminAddress := ":6921"
+	config.Base.AdminAddress, err = getUserString(reader, "AdminAddress", defaultAdminAddress)
 
-	passphrase := []byte("passphrase")
 	config.Base.SSHCAFilename = filepath.Join(configDir, "masterKey.asc")
 	err = generateArmoredEncryptedCAPritaveKey(passphrase, config.Base.SSHCAFilename)
 	if err != nil {
