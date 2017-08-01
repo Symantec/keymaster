@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	certFile   = flag.String("client", "client.pem", "A PEM eoncoded certificate file.")
+	certFile   = flag.String("cert", "client.pem", "A PEM eoncoded certificate file.")
 	keyFile    = flag.String("key", "key.pem", "A PEM encoded private key file.")
 	targetHost = flag.String("targetHostPort", "www.example.com", "The hostname/port for .")
 )
@@ -42,7 +42,7 @@ func main() {
 	client := &http.Client{Transport: transport}
 
 	// Do GET something
-	resp, err := client.PostForm("https://"+*targetHost+"/form",
+	resp, err := client.PostForm("https://"+*targetHost+"/admin/inject",
 		url.Values{"ssh_ca_password": {string(password[:])}, "id": {"123"}})
 	//resp, err := client.Get("https://goldportugal.local:8443")
 	if err != nil {
