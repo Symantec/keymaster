@@ -18,7 +18,7 @@ var (
 	certFile   = flag.String("cert", "client.pem", "A PEM eoncoded certificate file.")
 	keyFile    = flag.String("key", "key.pem", "A PEM encoded private key file.")
 	targetHost = flag.String("keymasterHostname", "", "The hostname/port for keymaster")
-	targetPort = flag.Int("keymasterPort", 6921, "The port for keymaster control port")
+	targetPort = flag.Int("keymasterPort", 6920, "The port for keymaster control port")
 )
 
 func Usage() {
