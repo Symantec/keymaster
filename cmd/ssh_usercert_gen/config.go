@@ -104,7 +104,10 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		}
 	}
 	// TODO: This assumes httpAddress is just the port..
-	u2fAppID = "https://" + runtimeState.HostIdentity + runtimeState.Config.Base.HttpAddress
+	u2fAppID = "https://" + runtimeState.HostIdentity
+	if runtimeState.Config.Base.HttpAddress != ":443" {
+		u2fAppID = u2fAppID + runtimeState.Config.Base.HttpAddress
+	}
 	u2fTrustedFacets = append(u2fTrustedFacets, u2fAppID)
 
 	if len(runtimeState.Config.Base.KerberosRealm) > 0 {
