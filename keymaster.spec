@@ -1,5 +1,5 @@
 Name:           keymaster
-Version:        0.3.1
+Version:        0.3.2
 Release:        1%{?dist}
 Summary:        Short term access certificate generator and client
 
@@ -31,7 +31,8 @@ make
 %install
 #%make_install
 %{__install} -Dp -m0755 bin/keymaster %{buildroot}%{_sbindir}/keymaster
-%{__install} -Dp -m0755 bin/getcreds %{buildroot}%{_bindir}/getcreds
+%{__install} -Dp -m0755 bin/prodme %{buildroot}%{_bindir}/prodme
+%{__install} -Dp -m0755 bin/keymaster-unlocker %{buildroot}%{_bindir}/keymaster-unlocker
 install -d %{buildroot}/usr/lib/systemd/system
 install -p -m 0644 misc/startup/keymaster.service %{buildroot}/usr/lib/systemd/system/keymaster.service
 install -d %{buildroot}/%{_datarootdir}/keymaster/static_files/
@@ -54,7 +55,8 @@ systemctl daemon-reload
 %files
 #%doc
 %{_sbindir}/keymaster
-%{_bindir}/getcreds
+%{_bindir}/prodme
+%{_bindir}/keymaster-unlocker
 /usr/lib/systemd/system/keymaster.service
 %{_datarootdir}/keymaster/static_files/*
 

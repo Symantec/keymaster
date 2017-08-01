@@ -639,6 +639,7 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 	md, err := openpgp.ReadMessage(armorBlock.Body, nil, prompt, nil)
 	if err != nil {
 		log.Printf("cannot read message")
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Unlocking key")
 		return
 	}
 
