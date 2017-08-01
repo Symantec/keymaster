@@ -10,13 +10,15 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 )
 
 var (
 	Version    = "No version provided"
 	certFile   = flag.String("cert", "client.pem", "A PEM eoncoded certificate file.")
 	keyFile    = flag.String("key", "key.pem", "A PEM encoded private key file.")
-	targetHost = flag.String("targetHostPort", "www.example.com", "The hostname/port for .")
+	targetHost = flag.String("keymasterHostname", "", "The hostname/port for keymaster")
+	targetPort = flag.Int("keymasterPort", 6921, "The port for keymaster control port")
 )
 
 func Usage() {
@@ -26,6 +28,10 @@ func Usage() {
 
 func main() {
 	flag.Parse()
+
+	if len(*targetHost) < 1 {
+		log.Fatal("keymasterHostname paramteter  is required")
+	}
 
 	// Load client cert
 	cert, err := tls.LoadX509KeyPair(*certFile, *keyFile)
@@ -49,8 +55,8 @@ func main() {
 	client := &http.Client{Transport: transport}
 
 	// Do GET something
-	resp, err := client.PostForm("https://"+*targetHost+"/admin/inject",
-		url.Values{"ssh_ca_password": {string(password[:])}, "id": {"123"}})
+	resp, err := client.PostForm("https://"+*targetHost+":"+strconv.Itoa(*targetPort)+"/admin/inject",
+		url.Values{"ssh_ca_password": {string(password[:])}})
 	//resp, err := client.Get("https://goldportugal.local:8443")
 	if err != nil {
 		log.Fatal(err)
