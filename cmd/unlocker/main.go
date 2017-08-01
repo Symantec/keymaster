@@ -9,13 +9,20 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 )
 
 var (
+	Version    = "No version provided"
 	certFile   = flag.String("cert", "client.pem", "A PEM eoncoded certificate file.")
 	keyFile    = flag.String("key", "key.pem", "A PEM encoded private key file.")
 	targetHost = flag.String("targetHostPort", "www.example.com", "The hostname/port for .")
 )
+
+func Usage() {
+	fmt.Fprintf(os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
+	flag.PrintDefaults()
+}
 
 func main() {
 	flag.Parse()
