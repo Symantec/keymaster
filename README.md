@@ -8,38 +8,57 @@ accounts. This system is easy to use, configure and administer.
 Please see the
 [design document](https://docs.google.com/document/d/1AW3UROCJqTc3R4MLJXxmPUNS0OFNcsiQJ_Q4j--5tQE/pub) for more information.
 
+
+## Getting Started
+
+### Prerequisites
+* go >= 1.8 
+* make
+
+### Building
+1. make get-deps
+2. make
+
+This will leave you with three binaries: prodme, keymaster, and unlocker
+
+### Running
+
+#### keymaster (server)
+
+##### Configuring 
+You will need to create a new valid server config. Keymaster facilitates this
+with the option `-generateConfig`. After running the keymaster binary with
+this option you will be left with a valid config with an encrypted master secret 
+and self signed certificates SSL certificates. This config file will also
+be using an apache password file for user authentication.
+
+###### User password backends
+For password backend keymaster currently supports LDAP backends and apache
+password files. For LDAP the `bind_pattern` is a printf string where `%s` is
+the place where the username will be substituted. For example for an 389ds/openldap
+string might be: `"uid=%s,ou=People,dc=example,dc=com`. 
+
+###### User token backend
+For u2f/profile backend keymaster supports SQLite and PostgreSQL. The
+`storage_url` field contains the connection information for the database.
+If no `storage_url` is defined keymaster will use an SQLite database located
+in the configured data directory for keymaster.
+
+En example of a postgresql url is:
+`postgresql://dbusername:dbpassword.example.com/keymasterdbname`
+
+#### prodme (client)
+
+
+
 ## Contributions
 
 Prior to receiving information from any contributor, Symantec requires
 that all contributors complete, sign, and submit Symantec Personal
-Contributor Agreement (SPCA).  The purpose of the SPCA is to clearly
-define the terms under which intellectual property has been
-contributed to the project and thereby allow Symantec to defend the
-project should there be a legal dispute regarding the software at some
-future time. A signed SPCA is required to be on file before an
-individual is given commit privileges to the Symantec open source
-project.  Please note that the privilege to commit to the project is
-conditional and may be revoked by Symantec.
+Contributor Agreement (SPCA).
 
-If you are employed by a corporation, a Symantec Corporate Contributor
-Agreement (SCCA) is also required before you may contribute to the
-project.  If you are employed by a company, you may have signed an
-employment agreement that assigns intellectual property ownership in
-certain of your ideas or code to your company.  We require a SCCA to
-make sure that the intellectual property in your contribution is
-clearly contributed to the Symantec open source project, even if that
-intellectual property had previously been assigned by you.
+Please read [contributions](CONTRIBUTING.md) for details.
 
-Please complete the SPCA and, if required, the SCCA and return to
-Symantec at:
-
-Symantec Corporation
-Legal Department
-Attention:  Product Legal Support Team
-350 Ellis Street
-Mountain View, CA 94043
-
-Please be sure to keep a signed copy for your records.
 
 ## LICENSE
 
