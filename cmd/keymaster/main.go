@@ -1343,6 +1343,17 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	return
 }
 
+const clientConfHandlerPath = "/public/clientConfig"
+const clientConfigText = `base:
+    gen_cert_urls: "%s"
+`
+
+func (state *RuntimeState) serveClientConfHandler(w http.ResponseWriter, r *http.Request) {
+	//w.WriteHeader(200)
+	w.Header().Set("Content-Type", "text/yaml")
+	fmt.Fprintf(w, clientConfigText, u2fAppID)
+}
+
 func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Request) {
 	//redirect to profile
 	if r.URL.Path[:] == "/" {
@@ -1410,6 +1421,7 @@ func main() {
 	serviceMux.HandleFunc(u2fTokenManagementPath, runtimeState.u2fTokenManagerHandler)
 	serviceMux.HandleFunc(oauth2LoginBeginPath, runtimeState.oauth2DoRedirectoToProviderHandler)
 	serviceMux.HandleFunc(redirectPath, runtimeState.oauth2RedirectPathHandler)
+	serviceMux.HandleFunc(clientConfHandlerPath, runtimeState.serveClientConfHandler)
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 
 	cfg := &tls.Config{
