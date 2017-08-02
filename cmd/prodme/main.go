@@ -58,6 +58,7 @@ type AppConfigFile struct {
 var (
 	Version        = "No version provided"
 	configFilename = flag.String("config", "config.yml", "The filename of the configuration")
+	rootCAFilename = flag.String("rootCAFilename", "", "(optional) name for using non OS root CA to verify TLS connections")
 	debug          = flag.Bool("debug", false, "Enable debug messages to console")
 )
 
@@ -492,6 +493,20 @@ func main() {
 	flag.Usage = Usage
 	flag.Parse()
 
+	var rootCAs *x509.CertPool
+	if len(*rootCAFilename) > 1 {
+		caData, err := ioutil.ReadFile(*rootCAFilename)
+		if err != nil {
+			log.Printf("Failed to read caFilename")
+			log.Fatal(err)
+		}
+		rootCAs = x509.NewCertPool()
+		if !rootCAs.AppendCertsFromPEM(caData) {
+			log.Fatal("cannot append file data")
+		}
+
+	}
+
 	config, err := loadVerifyConfigFile(*configFilename)
 	if err != nil {
 		panic(err)
@@ -515,7 +530,7 @@ func main() {
 		log.Fatal(err)
 	}
 	sshCert, x509Cert, err := getCertFromTargetUrls(signer, userName,
-		password, strings.Split(config.Base.Gen_Cert_URLS, ","), nil, false)
+		password, strings.Split(config.Base.Gen_Cert_URLS, ","), rootCAs, false)
 	if err != nil {
 		log.Fatal(err)
 	}
