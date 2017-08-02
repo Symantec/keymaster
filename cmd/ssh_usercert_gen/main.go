@@ -1342,9 +1342,8 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 }
 
 const clientConfHandlerPath = "/public/clientConfig"
-const clientConfigText = `
-base:
-	gen_cert_urls: "%s"
+const clientConfigText = `base:
+    gen_cert_urls: "%s"
 `
 
 func (state *RuntimeState) serveClientConfHandler(w http.ResponseWriter, r *http.Request) {

@@ -57,7 +57,7 @@ type AppConfigFile struct {
 
 var (
 	Version        = "No version provided"
-	configFilename = flag.String("config", "config.yml", "The filename of the configuration")
+	configFilename = flag.String("config", "", "The filename of the configuration")
 	rootCAFilename = flag.String("rootCAFilename", "", "(optional) name for using non OS root CA to verify TLS connections")
 	configHost     = flag.String("configHost", "", "Get a bootstrap config from this host")
 	debug          = flag.Bool("debug", false, "Enable debug messages to console")
