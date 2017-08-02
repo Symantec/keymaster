@@ -9,7 +9,7 @@ VERSION=0.3.2
 #LDFLAGS=-ldflags "-X github.com/ariejan/roll/core.Version=${VERSION} -X github.com/ariejan/roll/core.BuildTime=${BUILD_TIME}"
 
 all:
-	cd ~/go/src; go install -ldflags "-X main.Version=${VERSION}" github.com/Symantec/keymaster/cmd/*
+	cd $(GOPATH)/src; go install -ldflags "-X main.Version=${VERSION}" github.com/Symantec/keymaster/cmd/*
 
 get-deps:
 	go get -t ./...
