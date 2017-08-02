@@ -18,6 +18,8 @@ import (
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
+	"github.com/Symantec/tricorder/go/healthserver"
+	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/tstranex/u2f"
 	"golang.org/x/crypto/openpgp"
@@ -1363,6 +1365,7 @@ func main() {
 	flag.Usage = Usage
 	flag.Parse()
 
+	tricorder.RegisterFlags()
 	circularBuffer := logbuf.New()
 	if circularBuffer == nil {
 		panic("Cannot create circular buffer")
@@ -1388,7 +1391,7 @@ func main() {
 	adminDashboard := newAdminDashboard(circularBuffer)
 	// Expose the registered metrics via HTTP.
 	http.Handle("/", adminDashboard)
-	http.Handle("/metrics", prometheus.Handler())
+	http.Handle("/prometheus_metrics", prometheus.Handler())
 	http.HandleFunc(secretInjectorPath, runtimeState.secretInjectorHandler)
 
 	serviceMux := http.NewServeMux()
@@ -1453,4 +1456,5 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	healthserver.SetReady()
 }
