@@ -14,3 +14,5 @@ before_install:
     - cd ${SYMANTEC_PROJECT_DIR}
 
 install: make get-deps
+
+script: make all test

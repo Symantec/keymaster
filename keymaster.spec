@@ -30,14 +30,14 @@ make
 
 %install
 #%make_install
-%{__install} -Dp -m0755 bin/keymaster %{buildroot}%{_sbindir}/keymaster
-%{__install} -Dp -m0755 bin/prodme %{buildroot}%{_bindir}/prodme
-%{__install} -Dp -m0755 bin/keymaster-unlocker %{buildroot}%{_bindir}/keymaster-unlocker
+%{__install} -Dp -m0755 ~/go/bin/keymaster %{buildroot}%{_sbindir}/keymaster
+%{__install} -Dp -m0755 ~/go/bin/prodme %{buildroot}%{_bindir}/prodme
+%{__install} -Dp -m0755 ~/go/bin/keymaster-unlocker %{buildroot}%{_bindir}/keymaster-unlocker
 install -d %{buildroot}/usr/lib/systemd/system
 install -p -m 0644 misc/startup/keymaster.service %{buildroot}/usr/lib/systemd/system/keymaster.service
 install -d %{buildroot}/%{_datarootdir}/keymaster/static_files/
-install -p -m 0644 cmd/ssh_usercert_gen/static_files/u2f-api.js  %{buildroot}/%{_datarootdir}/keymaster/static_files/u2f-api.js
-install -p -m 0644 cmd/ssh_usercert_gen/static_files/keymaster-u2f.js  %{buildroot}/%{_datarootdir}/keymaster/static_files/keymaster-u2f.js
+install -p -m 0644 cmd/keymaster/static_files/u2f-api.js  %{buildroot}/%{_datarootdir}/keymaster/static_files/u2f-api.js
+install -p -m 0644 cmd/keymaster/static_files/keymaster-u2f.js  %{buildroot}/%{_datarootdir}/keymaster/static_files/keymaster-u2f.js
 
 %pre
 /usr/bin/getent passwd keymaster || useradd -d /var/lib/keymaster -s /bin/false -U -r  keymaster
