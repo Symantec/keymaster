@@ -11,7 +11,7 @@ VERSION=0.3.2
 all:
 	go test -v ./...
 	mkdir -p bin/
-	cd cmd/getcreds; go build  -o ../../bin/prodme  -ldflags "-X main.Version=${VERSION}"
+	cd cmd/prodme; go build  -o ../../bin/prodme  -ldflags "-X main.Version=${VERSION}"
 	cd cmd/ssh_usercert_gen; go build  -o ../../bin/keymaster -ldflags "-X main.Version=${VERSION}"
 	cd cmd/unlocker; go build  -o ../../bin/keymaster-unlocker -ldflags "-X main.Version=${VERSION}"
 
