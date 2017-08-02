@@ -1385,7 +1385,9 @@ func main() {
 		log.Printf("After load verify")
 	}
 
+	adminDashboard := newAdminDashboard(circularBuffer)
 	// Expose the registered metrics via HTTP.
+	http.Handle("/", adminDashboard)
 	http.Handle("/metrics", prometheus.Handler())
 	http.HandleFunc(secretInjectorPath, runtimeState.secretInjectorHandler)
 
