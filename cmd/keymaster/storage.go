@@ -7,7 +7,6 @@ import (
 	"errors"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,7 +18,7 @@ const profileDBFilename = "userProfiles.sqlite3"
 
 func initDB(state *RuntimeState) error {
 	if *debug {
-		log.Printf("storage=%s", state.Config.ProfileStorage.StorageUrl)
+		logger.Printf("storage=%s", state.Config.ProfileStorage.StorageUrl)
 	}
 	storageURL := state.Config.ProfileStorage.StorageUrl
 	if storageURL == "" {
@@ -27,19 +26,19 @@ func initDB(state *RuntimeState) error {
 	}
 	splitString := strings.SplitN(storageURL, ":", 2)
 	if len(splitString) < 1 {
-		log.Printf("invalid string")
+		logger.Printf("invalid string")
 		err := errors.New("Bad storage url string")
 		return err
 	}
 	switch splitString[0] {
 	case "sqlite":
-		log.Printf("doing sqlite")
+		logger.Printf("doing sqlite")
 		return initDBSQlite(state)
 	case "postgresql":
-		log.Printf("doing postgres")
+		logger.Printf("doing postgres")
 		return initDBPostgres(state)
 	default:
-		log.Printf("invalid storage url string")
+		logger.Printf("invalid storage url string")
 		err := errors.New("Bad storage url string")
 		return err
 	}
@@ -60,7 +59,7 @@ func initDBPostgres(state *RuntimeState) (err error) {
 		sqlStmt := `create table if not exists user_profile (id serial not null primary key, username text unique, profile_data bytea);`
 		_, err = state.db.Exec(sqlStmt)
 		if err != nil {
-			log.Printf("%q: %s\n", err, sqlStmt)
+			logger.Printf("%q: %s\n", err, sqlStmt)
 			return err
 		}
 	}
@@ -79,12 +78,12 @@ func initDBSQlite(state *RuntimeState) (err error) {
 		if err != nil {
 			return err
 		}
-		log.Printf("post DB open")
+		logger.Printf("post DB open")
 		// create profile table
 		sqlStmt := `create table user_profile (id integer not null primary key, username text unique, profile_data blob);`
 		_, err = state.db.Exec(sqlStmt)
 		if err != nil {
-			log.Printf("%q: %s\n", err, sqlStmt)
+			logger.Printf("%q: %s\n", err, sqlStmt)
 			return err
 		}
 
@@ -124,8 +123,8 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 	stmtText := loadUserProfileStmt[state.dbType]
 	stmt, err := state.db.Prepare(stmtText)
 	if err != nil {
-		log.Print("Error Preparing statement")
-		log.Fatal(err)
+		logger.Print("Error Preparing statement")
+		logger.Fatal(err)
 	}
 
 	defer stmt.Close()
@@ -133,15 +132,15 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 	err = stmt.QueryRow(username).Scan(&profileBytes)
 	if err != nil {
 		if err.Error() == "sql: no rows in result set" {
-			log.Printf("err='%s'", err)
+			logger.Printf("err='%s'", err)
 			return &defaultProfile, false, nil
 		} else {
-			log.Printf("Problem with db ='%s'", err)
+			logger.Printf("Problem with db ='%s'", err)
 			return nil, false, err
 		}
 
 	}
-	//log.Printf("bytes len=%d", len(profileBytes))
+	//logger.Printf("bytes len=%d", len(profileBytes))
 	//gobReader := bytes.NewReader(fileBytes)
 	gobReader := bytes.NewReader(profileBytes)
 	decoder := gob.NewDecoder(gobReader)
@@ -149,7 +148,7 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 	if err != nil {
 		return nil, false, err
 	}
-	//log.Printf("loaded profile=%+v", defaultProfile)
+	//logger.Printf("loaded profile=%+v", defaultProfile)
 	return &defaultProfile, true, nil
 }
 

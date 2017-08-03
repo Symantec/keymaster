@@ -14,6 +14,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/logbuf"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
@@ -29,7 +30,7 @@ import (
 	"html/template"
 	//"io"
 	"io/ioutil"
-	"log"
+	stdlog "log"
 	//"net"
 	"net/http"
 	//"net/url"
@@ -113,6 +114,7 @@ var (
 		},
 		[]string{"username", "type"},
 	)
+	logger log.Logger
 )
 
 func getHostIdentity() (string, error) {
@@ -166,8 +168,8 @@ func (state *RuntimeState) performStateCleanup(secsBetweenCleanup int) {
 
 		state.Mutex.Unlock()
 		if *debug {
-			log.Printf("Auth Cookie sizes: before:(%d) after (%d)\n", initAuthSize, finalAuthSize)
-			log.Printf("Pending Cookie sizes: before(%d) after(%d)", initPendingSize, finalPendingSize)
+			logger.Printf("Auth Cookie sizes: before:(%d) after (%d)\n", initAuthSize, finalAuthSize)
+			logger.Printf("Pending Cookie sizes: before(%d) after(%d)", initPendingSize, finalPendingSize)
 		}
 		time.Sleep(time.Duration(secsBetweenCleanup) * time.Second)
 	}
@@ -191,12 +193,12 @@ func checkUserPassword(username string, password string, config AppConfigFile) (
 		}
 		u, err := authutil.ParseLDAPURL(ldapUrl)
 		if err != nil {
-			log.Printf("Failed to parse ldapurl '%s'", ldapUrl)
+			logger.Printf("Failed to parse ldapurl '%s'", ldapUrl)
 			continue
 		}
 		vaild, err := authutil.CheckLDAPUserPassword(*u, bindDN, password, timeoutSecs, nil)
 		if err != nil {
-			//log.Printf("Failed to parse %s", ldapUrl)
+			//logger.Printf("Failed to parse %s", ldapUrl)
 			continue
 		}
 		// the ldap exchange was successful (user might be invaid)
@@ -205,7 +207,7 @@ func checkUserPassword(username string, password string, config AppConfigFile) (
 	}
 	if config.Base.HtpasswdFilename != "" {
 		if *debug {
-			log.Printf("I have htpasswed filename")
+			logger.Printf("I have htpasswed filename")
 		}
 		buffer, err := ioutil.ReadFile(config.Base.HtpasswdFilename)
 		if err != nil {
@@ -227,7 +229,7 @@ func getPreferredAcceptType(r *http.Request) string {
 	if ok {
 		for _, acceptValue := range acceptHeader {
 			if strings.Contains(acceptValue, "text/html") {
-				log.Printf("Got it  %+v", acceptValue)
+				logger.Printf("Got it  %+v", acceptValue)
 				preferredAcceptType = "text/html"
 			}
 		}
@@ -239,13 +241,13 @@ func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter, r *http.Req
 	displayData := loginPageTemplateData{Title: "Keymaster Login", ShowOauth2: state.Config.Oauth2.Enabled}
 	t, err := template.New("webpage").Parse(loginFormText)
 	if err != nil {
-		log.Printf("bad template %v", err)
+		logger.Printf("bad template %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return err
 	}
 	err = t.Execute(w, displayData)
 	if err != nil {
-		log.Printf("Failed to execute %v", err)
+		logger.Printf("Failed to execute %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return err
 	}
@@ -291,7 +293,7 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 
 	if signerIsNull {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		log.Printf("Signer has not been unlocked")
+		logger.Printf("Signer has not been unlocked")
 		return true
 	}
 	return false
@@ -371,7 +373,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	//local sanity tests
 	if signerIsNull {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		log.Printf("Signer not loaded")
+		logger.Printf("Signer not loaded")
 		return
 	}
 	/*
@@ -379,7 +381,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, authLevel, err := state.checkAuth(w, r)
 	if err != nil {
-		log.Printf("%v", err)
+		logger.Printf("%v", err)
 
 		return
 	}
@@ -404,31 +406,31 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	targetUser := r.URL.Path[len(certgenPath):]
 	if authUser != targetUser {
 		state.writeFailureResponse(w, r, http.StatusForbidden, "")
-		log.Printf("User %s asking for creds for %s", authUser, targetUser)
+		logger.Printf("User %s asking for creds for %s", authUser, targetUser)
 		return
 	}
 	if *debug {
-		log.Printf("auth succedded for %s", authUser)
+		logger.Printf("auth succedded for %s", authUser)
 	}
 
 	switch r.Method {
 	case "GET":
 		if *debug {
-			log.Printf("Got client GET connection")
+			logger.Printf("Got client GET connection")
 		}
 		err = r.ParseForm()
 		if err != nil {
-			log.Println(err)
+			logger.Println(err)
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
 			return
 		}
 	case "POST":
 		if *debug {
-			log.Printf("Got client POST connection")
+			logger.Printf("Got client POST connection")
 		}
 		err = r.ParseMultipartForm(1e7)
 		if err != nil {
-			log.Println(err)
+			logger.Println(err)
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
 			return
 		}
@@ -441,7 +443,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	if val, ok := r.Form["type"]; ok {
 		certType = val[0]
 	}
-	log.Printf("cert type =%s", certType)
+	logger.Printf("cert type =%s", certType)
 
 	switch certType {
 	case "ssh":
@@ -456,7 +458,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	}
 	//SHOULD have never reached this!
 	state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-	log.Printf("Escape from default paths")
+	logger.Printf("Escape from default paths")
 	return
 
 }
@@ -465,7 +467,7 @@ func (state *RuntimeState) postAuthSSHCertHandler(w http.ResponseWriter, r *http
 	signer, err := ssh.NewSignerFromSigner(keySigner)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		log.Printf("Signer failed to load")
+		logger.Printf("Signer failed to load")
 		return
 	}
 
@@ -480,7 +482,7 @@ func (state *RuntimeState) postAuthSSHCertHandler(w http.ResponseWriter, r *http
 	case "POST":
 		file, _, err := r.FormFile("pubkeyfile")
 		if err != nil {
-			log.Println(err)
+			logger.Println(err)
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing public key file")
 			return
 		}
@@ -491,13 +493,13 @@ func (state *RuntimeState) postAuthSSHCertHandler(w http.ResponseWriter, r *http
 		//validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? .*$", userPubKey)
 		validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? ?.{0,512}\n?$", userPubKey)
 		if err != nil {
-			log.Println(err)
+			logger.Println(err)
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			return
 		}
 		if !validKey {
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid File, bad re")
-			log.Printf("invalid file, bad re")
+			logger.Printf("invalid file, bad re")
 			return
 
 		}
@@ -505,7 +507,7 @@ func (state *RuntimeState) postAuthSSHCertHandler(w http.ResponseWriter, r *http
 		cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			log.Printf("signUserPubkey Err")
+			logger.Printf("signUserPubkey Err")
 			return
 		}
 
@@ -517,7 +519,7 @@ func (state *RuntimeState) postAuthSSHCertHandler(w http.ResponseWriter, r *http
 	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", cert)
-	log.Printf("Generated SSH Certifcate for %s", targetUser)
+	logger.Printf("Generated SSH Certifcate for %s", targetUser)
 	go func(username string, certType string) {
 		metricsMutex.Lock()
 		defer metricsMutex.Unlock()
@@ -531,7 +533,7 @@ func (state *RuntimeState) postAuthX509CertHandler(w http.ResponseWriter, r *htt
 	case "POST":
 		file, _, err := r.FormFile("pubkeyfile")
 		if err != nil {
-			log.Println(err)
+			logger.Println(err)
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing public key file")
 			return
 		}
@@ -542,13 +544,13 @@ func (state *RuntimeState) postAuthX509CertHandler(w http.ResponseWriter, r *htt
 		block, _ := pem.Decode(buf.Bytes())
 		if block == nil || block.Type != "PUBLIC KEY" {
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid File, Unable to decode pem")
-			log.Printf("invalid file, unable to decode pem")
+			logger.Printf("invalid file, unable to decode pem")
 			return
 		}
 		userPub, err := x509.ParsePKIXPublicKey(block.Bytes)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Cannot parse public key")
-			log.Printf("Cannot parse public key")
+			logger.Printf("Cannot parse public key")
 			return
 		}
 		//tate.caCertDer
@@ -556,13 +558,13 @@ func (state *RuntimeState) postAuthX509CertHandler(w http.ResponseWriter, r *htt
 		if err != nil {
 			//state.writeFailureResponse(w, http.StatusBadRequest, "Cannot parse public key")
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			log.Printf("Cannot parse CA Der data")
+			logger.Printf("Cannot parse CA Der data")
 			return
 		}
 		derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert, keySigner, state.KerberosRealm)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			log.Printf("Cannot Generate x509cert")
+			logger.Printf("Cannot Generate x509cert")
 			return
 		}
 		cert = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derCert}))
@@ -575,7 +577,7 @@ func (state *RuntimeState) postAuthX509CertHandler(w http.ResponseWriter, r *htt
 	w.Header().Set("Content-Disposition", `attachment; filename="userCert.pem"`)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", cert)
-	log.Printf("Generated x509 Certifcate for %s", targetUser)
+	logger.Printf("Generated x509 Certifcate for %s", targetUser)
 	go func(username string, certType string) {
 		metricsMutex.Lock()
 		defer metricsMutex.Unlock()
@@ -591,22 +593,22 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 	// Any user with a valid cert can use this handler
 	if r.TLS == nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		log.Printf("We require TLS\n")
+		logger.Printf("We require TLS\n")
 		return
 	}
 
 	if len(r.TLS.VerifiedChains) < 1 {
 		state.writeFailureResponse(w, r, http.StatusForbidden, "")
-		log.Printf("Forbidden\n")
+		logger.Printf("Forbidden\n")
 		return
 	}
 	clientName := r.TLS.VerifiedChains[0][0].Subject.CommonName
-	log.Printf("Got connection from %s", clientName)
+	logger.Printf("Got connection from %s", clientName)
 	r.ParseForm()
 	sshCAPassword, ok := r.Form["ssh_ca_password"]
 	if !ok {
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Post, missing data")
-		log.Printf("missing ssh_ca_password")
+		logger.Printf("missing ssh_ca_password")
 		return
 	}
 	state.Mutex.Lock()
@@ -615,7 +617,7 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 	// TODO.. make network error blocks to goroutines
 	if state.Signer != nil {
 		state.writeFailureResponse(w, r, http.StatusConflict, "Conflict post, signer already unlocked")
-		log.Printf("Signer not null, already unlocked")
+		logger.Printf("Signer not null, already unlocked")
 		return
 	}
 
@@ -623,7 +625,7 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 
 	armorBlock, err := armor.Decode(decbuf)
 	if err != nil {
-		log.Printf("Cannot decode armored file")
+		logger.Printf("Cannot decode armored file")
 		return
 	}
 	password := []byte(sshCAPassword[0])
@@ -640,7 +642,7 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 	}
 	md, err := openpgp.ReadMessage(armorBlock.Body, nil, prompt, nil)
 	if err != nil {
-		log.Printf("cannot read message")
+		logger.Printf("cannot read message")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Unlocking key")
 		return
 	}
@@ -652,14 +654,14 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 
 	signer, err := getSignerFromPEMBytes(plaintextBytes)
 	if err != nil {
-		log.Printf("Cannot parse Priave Key file")
+		logger.Printf("Cannot parse Priave Key file")
 		return
 	}
 
-	log.Printf("About to generate cader %s", clientName)
+	logger.Printf("About to generate cader %s", clientName)
 	state.caCertDer, err = generateCADer(state, signer)
 	if err != nil {
-		log.Printf("Cannot generate CA Der")
+		logger.Printf("Cannot generate CA Der")
 		return
 	}
 	sendMessage := false
@@ -693,7 +695,7 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 	state.Mutex.Unlock()
 	if signerIsNull {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		log.Printf("Signer not loaded")
+		logger.Printf("Signer not loaded")
 		return
 	}
 
@@ -744,26 +746,26 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	switch r.Method {
 	case "GET":
 		if *debug {
-			log.Printf("Got client GET connection")
+			logger.Printf("Got client GET connection")
 		}
 		err := r.ParseForm()
 		if err != nil {
-			log.Println(err)
+			logger.Println(err)
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
 			return
 		}
 	case "POST":
 		if *debug {
-			log.Printf("Got client POST connection")
+			logger.Printf("Got client POST connection")
 		}
 		//err := r.ParseMultipartForm(1e7)
 		err := r.ParseForm()
 		if err != nil {
-			log.Println(err)
+			logger.Println(err)
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
 			return
 		}
-		//log.Printf("req =%+v", r)
+		//logger.Printf("req =%+v", r)
 	default:
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
@@ -776,7 +778,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		if val, ok := r.Form["username"]; ok {
 			if len(val) > 1 {
 				state.writeFailureResponse(w, r, http.StatusBadRequest, "Just one username allowed")
-				log.Printf("Login with multiple usernames")
+				logger.Printf("Login with multiple usernames")
 				return
 			}
 			username = val[0]
@@ -785,7 +787,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		if val, ok := r.Form["password"]; ok {
 			if len(val) > 1 {
 				state.writeFailureResponse(w, r, http.StatusBadRequest, "Just one password allowed")
-				log.Printf("Login with passwords")
+				logger.Printf("Login with passwords")
 				return
 			}
 			password = val[0]
@@ -804,7 +806,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	if !valid {
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-		log.Printf("Invalid login for %s", username)
+		logger.Printf("Invalid login for %s", username)
 		//err := errors.New("Invalid Credentials")
 		return
 	}
@@ -812,7 +814,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	cookieVal, err := genRandomString()
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
-		log.Println(err)
+		logger.Println(err)
 		return
 	}
 
@@ -829,13 +831,13 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 
 	//return user, nil
 
-	//log.Printf("cert type =%s", certType)
+	//logger.Printf("cert type =%s", certType)
 	returnAcceptType := "application/json"
 	acceptHeader, ok := r.Header["Accept"]
 	if ok {
 		for _, acceptValue := range acceptHeader {
 			if strings.Contains(acceptValue, "text/html") {
-				log.Printf("Got it  %+v", acceptValue)
+				logger.Printf("Got it  %+v", acceptValue)
 				returnAcceptType = "text/html"
 			}
 		}
@@ -923,14 +925,14 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, _, err := state.checkAuth(w, r)
 	if err != nil {
-		log.Printf("%v", err)
+		logger.Printf("%v", err)
 
 		return
 	}
 
 	profile, _, err := state.LoadUserProfile(authUser)
 	if err != nil {
-		log.Printf("loading profile error: %v", err)
+		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 
@@ -938,7 +940,7 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 
 	c, err := u2f.NewChallenge(u2fAppID, u2fTrustedFacets)
 	if err != nil {
-		log.Printf("u2f.NewChallenge error: %v", err)
+		logger.Printf("u2f.NewChallenge error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
@@ -946,10 +948,10 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 	registrations := getRegistrationArray(profile.U2fAuthData)
 	req := u2f.NewWebRegisterRequest(c, registrations)
 
-	log.Printf("registerRequest: %+v", req)
+	logger.Printf("registerRequest: %+v", req)
 	err = state.SaveUserProfile(authUser, profile)
 	if err != nil {
-		log.Printf("Saving profile error: %v", err)
+		logger.Printf("Saving profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
@@ -968,7 +970,7 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, _, err := state.checkAuth(w, r)
 	if err != nil {
-		log.Printf("%v", err)
+		logger.Printf("%v", err)
 
 		return
 	}
@@ -981,7 +983,7 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 
 	profile, _, err := state.LoadUserProfile(authUser)
 	if err != nil {
-		log.Printf("loading profile error: %v", err)
+		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
@@ -996,7 +998,7 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 
 	reg, err := u2f.Register(regResp, *profile.RegistrationChallenge, &u2fConfig)
 	if err != nil {
-		log.Printf("u2f.Register error: %v", err)
+		logger.Printf("u2f.Register error: %v", err)
 		http.Error(w, "error verifying response", http.StatusInternalServerError)
 		return
 	}
@@ -1012,12 +1014,12 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 	//registrations = append(registrations, *reg)
 	//counter = 0
 
-	log.Printf("Registration success: %+v", reg)
+	logger.Printf("Registration success: %+v", reg)
 
 	profile.RegistrationChallenge = nil
 	err = state.SaveUserProfile(authUser, profile)
 	if err != nil {
-		log.Printf("Saving profile error: %v", err)
+		logger.Printf("Saving profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
@@ -1036,7 +1038,7 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, _, err := state.checkAuth(w, r)
 	if err != nil {
-		log.Printf("%v", err)
+		logger.Printf("%v", err)
 
 		return
 	}
@@ -1044,7 +1046,7 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	//////////
 	profile, ok, err := state.LoadUserProfile(authUser)
 	if err != nil {
-		log.Printf("loading profile error: %v", err)
+		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
@@ -1062,25 +1064,25 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 
 	c, err := u2f.NewChallenge(u2fAppID, u2fTrustedFacets)
 	if err != nil {
-		log.Printf("u2f.NewChallenge error: %v", err)
+		logger.Printf("u2f.NewChallenge error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
 	profile.U2fAuthChallenge = c
 	req := c.SignRequest(registrations)
 	if *debug {
-		log.Printf("Sign request: %+v", req)
+		logger.Printf("Sign request: %+v", req)
 	}
 
 	err = state.SaveUserProfile(authUser, profile)
 	if err != nil {
-		log.Printf("Saving profile error: %v", err)
+		logger.Printf("Saving profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
 
 	if err := json.NewEncoder(w).Encode(req); err != nil {
-		log.Printf("json encofing error: %v", err)
+		logger.Printf("json encofing error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
@@ -1098,7 +1100,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, _, err := state.checkAuth(w, r)
 	if err != nil {
-		log.Printf("%v", err)
+		logger.Printf("%v", err)
 		return
 	}
 
@@ -1118,11 +1120,11 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	log.Printf("signResponse: %+v", signResp)
+	logger.Printf("signResponse: %+v", signResp)
 
 	profile, ok, err := state.LoadUserProfile(authUser)
 	if err != nil {
-		log.Printf("loading profile error: %v", err)
+		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 
@@ -1152,7 +1154,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 	for i, u2fReg := range profile.U2fAuthData {
 		newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *profile.U2fAuthChallenge, u2fReg.Counter)
 		if authErr == nil {
-			log.Printf("newCounter: %d", newCounter)
+			logger.Printf("newCounter: %d", newCounter)
 			//counter = newCounter
 			u2fReg.Counter = newCounter
 			//profile.U2fAuthData[i].Counter = newCounter
@@ -1173,7 +1175,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 
 			err = state.SaveUserProfile(authUser, profile)
 			if err != nil {
-				log.Printf("Saving profile error: %v", err)
+				logger.Printf("Saving profile error: %v", err)
 				http.Error(w, "error", http.StatusInternalServerError)
 				return
 			}
@@ -1184,7 +1186,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	log.Printf("VerifySignResponse error: %v", err)
+	logger.Printf("VerifySignResponse error: %v", err)
 	http.Error(w, "error verifying response", http.StatusInternalServerError)
 }
 
@@ -1199,14 +1201,14 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, _, err := state.checkAuth(w, r)
 	if err != nil {
-		log.Printf("%v", err)
+		logger.Printf("%v", err)
 
 		return
 	}
 	//find the user token
 	profile, _, err := state.LoadUserProfile(authUser)
 	if err != nil {
-		log.Printf("loading profile error: %v", err)
+		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 
@@ -1224,17 +1226,17 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		displayData.RegisteredToken = append(displayData.RegisteredToken, deviceData)
 	}
 
-	log.Printf("%v", displayData)
+	logger.Printf("%v", displayData)
 
 	t, err := template.New("webpage").Parse(profileHTML)
 	if err != nil {
-		log.Printf("bad template %v", err)
+		logger.Printf("bad template %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
 	err = t.Execute(w, displayData)
 	if err != nil {
-		log.Printf("Failed to execute %v", err)
+		logger.Printf("Failed to execute %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
@@ -1255,31 +1257,31 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, _, err := state.checkAuth(w, r)
 	if err != nil {
-		log.Printf("%v", err)
+		logger.Printf("%v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
 	// TODO: ensure is a valid method (POST)
 	err = r.ParseForm()
 	if err != nil {
-		log.Println(err)
+		logger.Println(err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
 		return
 	}
 	if *debug {
-		log.Printf("Form: %+v", r.Form)
+		logger.Printf("Form: %+v", r.Form)
 	}
 
 	// Check params
 	if r.Form.Get("username") != authUser {
-		log.Printf("bad username authUser=%s requested=%s", authUser, r.Form.Get("username"))
+		logger.Printf("bad username authUser=%s requested=%s", authUser, r.Form.Get("username"))
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}
 
 	tokenIndex, err := strconv.ParseInt(r.Form.Get("index"), 10, 64)
 	if err != nil {
-		log.Printf("tokenindex is not a number")
+		logger.Printf("tokenindex is not a number")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "tokenindex is not a number")
 		return
 	}
@@ -1287,7 +1289,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	//Do a redirect
 	profile, _, err := state.LoadUserProfile(authUser)
 	if err != nil {
-		log.Printf("loading profile error: %v", err)
+		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 
@@ -1297,7 +1299,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	_, ok := profile.U2fAuthData[tokenIndex]
 	if !ok {
 		//if tokenIndex >= len(profile.U2fAuthData) {
-		log.Printf("bad index number")
+		logger.Printf("bad index number")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad index Value")
 		return
 
@@ -1308,7 +1310,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	case "Update":
 		tokenName := r.Form.Get("name")
 		if m, _ := regexp.MatchString("^[a-zA-Z0-9_ ]+$", tokenName); !m {
-			log.Printf("%s", tokenName)
+			logger.Printf("%s", tokenName)
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "invalidtokenName")
 			return
 		}
@@ -1326,7 +1328,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 
 	err = state.SaveUserProfile(authUser, profile)
 	if err != nil {
-		log.Printf("Saving profile error: %v", err)
+		logger.Printf("Saving profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
@@ -1381,7 +1383,7 @@ func main() {
 	if circularBuffer == nil {
 		panic("Cannot create circular buffer")
 	}
-	log.New(circularBuffer, "", log.LstdFlags)
+	logger = stdlog.New(circularBuffer, "", stdlog.LstdFlags)
 
 	if *generateConfig {
 		err := generateNewConfig(*configFilename)
@@ -1396,7 +1398,7 @@ func main() {
 		panic(err)
 	}
 	if *debug || true {
-		log.Printf("After load verify")
+		logger.Printf("After load verify")
 	}
 
 	adminDashboard := newAdminDashboard(circularBuffer)
