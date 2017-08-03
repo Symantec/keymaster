@@ -61,6 +61,7 @@ var (
 	rootCAFilename = flag.String("rootCAFilename", "", "(optional) name for using non OS root CA to verify TLS connections")
 	configHost     = flag.String("configHost", "", "Get a bootstrap config from this host")
 	cliUsername    = flag.String("username", "", "username for keymaster")
+	checkDevices   = flag.Bool("checkDevices", false, "CheckU2F devices in your system")
 	debug          = flag.Bool("debug", false, "Enable debug messages to console")
 )
 
@@ -176,6 +177,32 @@ func doCertRequest(client *http.Client, authCookies []*http.Cookie, url, filedat
 		return nil, err
 	}
 	return ioutil.ReadAll(resp.Body)
+
+}
+
+func checkU2FDevices() {
+	// TODO: move this to initialization code, ans pass the device list to this function?
+	// or maybe pass the token?...
+	devices, err := u2fhid.Devices()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if len(devices) == 0 {
+		log.Fatal("no U2F tokens found")
+	}
+
+	// TODO: transform this into an iteration over all found devices
+	for _, d := range devices {
+		//d := devices[0]
+		log.Printf("manufacturer = %q, product = %q, vid = 0x%04x, pid = 0x%04x", d.Manufacturer, d.Product, d.ProductID, d.VendorID)
+
+		dev, err := u2fhid.Open(d)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer dev.Close()
+	}
+	//t := u2ftoken.NewToken(dev)
 
 }
 
@@ -534,6 +561,11 @@ func Usage() {
 func main() {
 	flag.Usage = Usage
 	flag.Parse()
+
+	if *checkDevices {
+		checkU2FDevices()
+		return
+	}
 
 	var rootCAs *x509.CertPool
 	if len(*rootCAFilename) > 1 {
