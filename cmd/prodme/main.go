@@ -60,6 +60,7 @@ var (
 	configFilename = flag.String("config", filepath.Join(os.Getenv("HOME"), ".keymaster", "prodme_config.yml"), "The filename of the configuration")
 	rootCAFilename = flag.String("rootCAFilename", "", "(optional) name for using non OS root CA to verify TLS connections")
 	configHost     = flag.String("configHost", "", "Get a bootstrap config from this host")
+	cliUsername    = flag.String("username", "", "username for keymaster")
 	debug          = flag.Bool("debug", false, "Enable debug messages to console")
 )
 
@@ -554,6 +555,9 @@ func main() {
 		log.Fatal(err)
 	}
 	userName := usr.Username
+	if *cliUsername != "" {
+		userName = *cliUsername
+	}
 
 	homeDir, err := getUserHomeDir(usr)
 	if err != nil {
