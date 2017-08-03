@@ -70,8 +70,13 @@ const profileHTML = `<!DOCTYPE html>
     <h2> {{.Username}}</h2>
     <ul>
       <li><a href="/api/v0/logout" >Logout </a></li>
-      <li><a id="register_button" href="#">Register token</a></li>
-      <li><a id="auth_button" href="#">Authenticate</a></li>
+      <li>
+         <a id="register_button" href="#">Register token</a>
+         <div id="register_action_text" style="color: blue;background-color: yellow; display: none;"> Please Touch the blinking device to register(insert if not inserted yet) </div>
+      </li>
+      <li><a id="auth_button" href="#">Authenticate</a>
+      <div id="auth_action_text" style="color: blue;background-color: yellow; display: none;"> Please Touch the blinking device to authenticate(insert if not inserted yet) </div>
+      </li>
     </ul>
     {{if .RegisteredToken -}}
         Your Token(s):

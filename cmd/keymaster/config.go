@@ -424,6 +424,10 @@ func generateNewConfigInternal(reader *bufio.Reader, configFilename string, rsaK
 	if err != nil {
 		return err
 	}
+	err = os.MkdirAll(config.Base.DataDirectory, os.ModeDir|0755)
+	if err != nil {
+		return err
+	}
 	// TODO: Add check that directory exists.
 	defaultHttpAddress := ":443"
 	config.Base.HttpAddress, err = getUserString(reader, "HttpAddress", defaultHttpAddress)
