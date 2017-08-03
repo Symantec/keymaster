@@ -6,7 +6,6 @@ import (
 	"golang.org/x/net/context"
 	//"golang.org/x/oauth2"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -21,18 +20,18 @@ func (state *RuntimeState) oauth2DoRedirectoToProviderHandler(w http.ResponseWri
 
 	if state.Config.Oauth2.Config == nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
-		log.Println("asking for oauth2, but it is not defined")
+		logger.Println("asking for oauth2, but it is not defined")
 		return
 	}
 	if !state.Config.Oauth2.Enabled {
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Oauth2 is not enabled in for this system")
-		log.Println("asking for oauth2, but it is not enabled")
+		logger.Println("asking for oauth2, but it is not enabled")
 		return
 	}
 	cookieVal, err := genRandomString()
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
-		log.Println(err)
+		logger.Println(err)
 		return
 	}
 
@@ -42,7 +41,7 @@ func (state *RuntimeState) oauth2DoRedirectoToProviderHandler(w http.ResponseWri
 	stateString, err := genRandomString()
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
-		log.Println(err)
+		logger.Println(err)
 		return
 	}
 
@@ -77,7 +76,7 @@ func httpGet(client *http.Client, url string) ([]byte, error) {
 		return nil, fmt.Errorf(string(body))
 	}
 
-	//log.Printf("HTTP GET %s: %s %s", url, r.Status, string(body))
+	//logger.Printf("HTTP GET %s: %s %s", url, r.Status, string(body))
 
 	return body, nil
 }
@@ -86,12 +85,12 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 
 	if state.Config.Oauth2.Config == nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
-		log.Println("asking for oauth2, but it is not defined")
+		logger.Println("asking for oauth2, but it is not defined")
 		return
 	}
 	if !state.Config.Oauth2.Enabled {
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Oauth2 is not enabled in for this system")
-		log.Println("asking for oauth2, but it is not enabled")
+		logger.Println("asking for oauth2, but it is not enabled")
 		return
 	}
 
@@ -99,12 +98,12 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 	if err != nil {
 		if err == http.ErrNoCookie {
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing setup cookie!")
-			log.Println(err)
+			logger.Println(err)
 			return
 		}
 		// TODO: this is probably a user error? send back to oath2 login path?
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
-		log.Println(err)
+		logger.Println(err)
 		return
 	}
 	index := redirCookie.Value
@@ -114,21 +113,21 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 	if !ok {
 		// clear cookie here!!!!
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid setup cookie!")
-		log.Println(err)
+		logger.Println(err)
 		return
 	}
 
 	if r.URL.Query().Get("state") != pending.state {
-		log.Printf("state does not match")
+		logger.Printf("state does not match")
 		http.Error(w, "state did not match", http.StatusBadRequest)
 		return
 	}
 	//if Debug {
-	//log.Printf("req : %+v", r)
+	//logger.Printf("req : %+v", r)
 	//}
 	oauth2Token, err := state.Config.Oauth2.Config.Exchange(pending.ctx, r.URL.Query().Get("code"))
 	if err != nil {
-		log.Printf("failed to get token: ctx: %+v", pending.ctx)
+		logger.Printf("failed to get token: ctx: %+v", pending.ctx)
 		http.Error(w, "Failed to exchange token: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -136,7 +135,7 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 	//client.Get("...")
 	body, err := httpGet(client, state.Config.Oauth2.UserinfoUrl)
 	if err != nil {
-		log.Printf("fail to fetch %s (%s) ", state.Config.Oauth2.UserinfoUrl, err.Error())
+		logger.Printf("fail to fetch %s (%s) ", state.Config.Oauth2.UserinfoUrl, err.Error())
 		http.Error(w, "Failed to get userinfo from url: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -152,19 +151,19 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 
 	err = json.Unmarshal(body, &data)
 	if err != nil {
-		log.Printf("failed to unmarshall userinfo to fetch %s ", body)
+		logger.Printf("failed to unmarshall userinfo to fetch %s ", body)
 		http.Error(w, "Failed to get unmarshall userinfo: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	//log.Printf("%+v", data)
+	//logger.Printf("%+v", data)
 
 	// Check if name is there..
 	//Make new auth cookie
 	cookieVal, err := genRandomString()
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
-		log.Println(err)
+		logger.Println(err)
 		return
 	}
 

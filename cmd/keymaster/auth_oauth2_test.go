@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
-	"log"
+	stdlog "log"
 	"net/http"
 	"os"
 	"testing"
@@ -13,7 +13,7 @@ import (
 )
 
 func handler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("top of generic handller")
+	logger.Printf("top of generic handller")
 	fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
 }
 
@@ -27,7 +27,7 @@ type oauth2TokenJSON struct {
 const testAccessTokenValue = "1234567890"
 
 func tokenHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("inside tokenHandler")
+	logger.Printf("inside tokenHandler")
 	token := oauth2TokenJSON{
 		AccessToken:  testAccessTokenValue,
 		TokenType:    "Bearer",
@@ -36,7 +36,7 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(token); err != nil {
-		log.Printf("broken stuff")
+		logger.Printf("broken stuff")
 	}
 	//fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
 }
@@ -48,7 +48,7 @@ type oauth2claimsTestJSON struct {
 }
 
 func userinfoHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("isseuserinfo handller")
+	logger.Printf("isseuserinfo handller")
 	userinfo := oauth2claimsTestJSON{
 		Sub:   "username@example.com",
 		Email: "userbane@example.com",
@@ -56,21 +56,22 @@ func userinfoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(userinfo); err != nil {
-		log.Printf("broken stuff")
+		logger.Printf("broken stuff")
 	}
 	//fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
 }
 
 func init() {
+	logger = stdlog.New(os.Stderr, "", stdlog.LstdFlags)
 	http.HandleFunc("/userinfo", userinfoHandler)
 	http.HandleFunc("/token", tokenHandler)
 	http.HandleFunc("/", handler)
-	log.Printf("about to start server")
+	logger.Printf("about to start server")
 	go http.ListenAndServe(":12345", nil)
 	time.Sleep(20 * time.Millisecond)
 	_, err := http.Get("http://localhost:12345")
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 }
 
