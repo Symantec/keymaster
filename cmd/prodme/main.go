@@ -202,7 +202,6 @@ func checkU2FDevices() {
 		}
 		defer dev.Close()
 	}
-	//t := u2ftoken.NewToken(dev)
 
 }
 
@@ -217,10 +216,17 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 	for _, cookie := range authCookies {
 		signRequest.AddCookie(cookie)
 	}
+	if *debug {
+		log.Printf("Authcookies:  %+v", authCookies)
+	}
+
 	signRequestResp, err := client.Do(signRequest) // Client.Get(targetUrl)
 	if err != nil {
 		log.Printf("Failure to sign request req %s", err)
 		return err
+	}
+	if *debug {
+		log.Printf("Get url request did not failed %+v", signRequestResp)
 	}
 
 	defer signRequestResp.Body.Close()
@@ -241,9 +247,12 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 	devices, err := u2fhid.Devices()
 	if err != nil {
 		log.Fatal(err)
+		return err
 	}
 	if len(devices) == 0 {
-		log.Fatal("no U2F tokens found")
+		err = errors.New("no U2F tokens found")
+		log.Println(err)
+		return err
 	}
 
 	// TODO: transform this into an iteration over all found devices
