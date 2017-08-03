@@ -34,12 +34,14 @@ function checkError(resp) {
     }).fail(serverError);
   }
   function register() {
+    document.getElementById('register_action_text').style.display="block";
     $.getJSON('/u2f/RegisterRequest').success(function(req) {
       console.log(req);
       u2f.register(req.appId, req.registerRequests, req.registeredKeys, u2fRegistered, 30);
     }).fail(serverError);
   }
   function u2fSigned(resp) {
+    document.getElementById('auth_action_text').style.display="none";
     console.log(resp);
     if (checkError(resp)) {
       return;
@@ -49,6 +51,7 @@ function checkError(resp) {
     }).fail(serverError);
   }
   function sign() {
+     document.getElementById('auth_action_text').style.display="block";
     $.getJSON('/u2f/SignRequest').success(function(req) {
       console.log(req);
       u2f.sign(req.appId, req.challenge, req.registeredKeys, u2fSigned, 30);
