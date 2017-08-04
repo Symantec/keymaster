@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const maxAgeSecondsRedirCookie = 60
+const maxAgeSecondsRedirCookie = 120
 const redirCookieName = "oauth2_redir"
 
 const oauth2LoginBeginPath = "/auth/oauth2/login"
