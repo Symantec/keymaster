@@ -723,7 +723,7 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 
 const authCookieName = "auth_cookie"
 const randomStringEntropyBytes = 32
-const maxAgeSecondsAuthCookie = 300
+const maxAgeSecondsAuthCookie = 3600
 
 func genRandomString() (string, error) {
 	size := randomStringEntropyBytes
