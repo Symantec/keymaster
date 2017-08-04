@@ -4,9 +4,9 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"github.com/Symantec/Dominator/lib/log/cmdlogger"
 	"github.com/howeyc/gopass"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,21 +28,22 @@ func Usage() {
 
 func main() {
 	flag.Parse()
+	logger := cmdlogger.New()
 
 	if len(*targetHost) < 1 {
-		log.Fatal("keymasterHostname paramteter  is required")
+		logger.Fatal("keymasterHostname paramteter  is required")
 	}
 
 	// Load client cert
 	cert, err := tls.LoadX509KeyPair(*certFile, *keyFile)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	fmt.Printf("Password for unlocking %s: ", *targetHost)
 	password, err := gopass.GetPasswd()
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 		// Handle gopass.ErrInterrupted or getch() read error
 	}
 
@@ -59,14 +60,14 @@ func main() {
 		url.Values{"ssh_ca_password": {string(password[:])}})
 	//resp, err := client.Get("https://goldportugal.local:8443")
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	defer resp.Body.Close()
 
 	// Dump response
 	data, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
-	log.Println(string(data))
+	logger.Println(string(data))
 }
