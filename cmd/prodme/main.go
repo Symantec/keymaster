@@ -232,6 +232,7 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 	defer signRequestResp.Body.Close()
 	if signRequestResp.StatusCode != 200 {
 		log.Printf("got error from call %s, url='%s'\n", signRequestResp.Status, url)
+		err = errors.New("failed respose from sign request")
 		return err
 	}
 
