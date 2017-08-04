@@ -7,9 +7,11 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"github.com/Symantec/Dominator/lib/log/debuglogger"
 	"github.com/Symantec/keymaster/lib/certgen"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"io/ioutil"
+	stdlog "log"
 	"net/http"
 	"os"
 	"os/user"
@@ -141,6 +143,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func init() {
+	logger = debuglogger.New(stdlog.New(os.Stderr, "", stdlog.LstdFlags))
 	tlsConfig, _ := getTLSconfig()
 	//_, _ = tls.Listen("tcp", ":11443", config)
 	srv := &http.Server{

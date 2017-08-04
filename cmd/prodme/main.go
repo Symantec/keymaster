@@ -14,6 +14,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/Dominator/lib/log/cmdlogger"
 
 	// client side (interface with hardware)
 	"github.com/flynn/u2f/u2fhid"
@@ -28,7 +30,6 @@ import (
 	"gopkg.in/yaml.v2"
 	"io"
 	"io/ioutil"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -62,7 +63,8 @@ var (
 	configHost     = flag.String("configHost", "", "Get a bootstrap config from this host")
 	cliUsername    = flag.String("username", "", "username for keymaster")
 	checkDevices   = flag.Bool("checkDevices", false, "CheckU2F devices in your system")
-	debug          = flag.Bool("debug", false, "Enable debug messages to console")
+
+	logger log.DebugLogger
 )
 
 func getUserHomeDir(usr *user.User) (string, error) {
@@ -86,7 +88,7 @@ func genKeyPair(privateKeyPath string) (crypto.Signer, string, error) {
 		pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)}),
 		0600)
 	if err != nil {
-		log.Printf("Failed to save privkey")
+		logger.Printf("Failed to save privkey")
 		return nil, "", err
 	}
 
@@ -167,13 +169,13 @@ func doCertRequest(client *http.Client, authCookies []*http.Cookie, url, filedat
 	}
 	resp, err := client.Do(req) // Client.Get(targetUrl)
 	if err != nil {
-		log.Printf("Failure to do x509 req %s", err)
+		logger.Printf("Failure to do x509 req %s", err)
 		return nil, err
 	}
 
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		log.Printf("got error from call %s, url='%s'\n", resp.Status, url)
+		logger.Printf("got error from call %s, url='%s'\n", resp.Status, url)
 		return nil, err
 	}
 	return ioutil.ReadAll(resp.Body)
@@ -185,20 +187,20 @@ func checkU2FDevices() {
 	// or maybe pass the token?...
 	devices, err := u2fhid.Devices()
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	if len(devices) == 0 {
-		log.Fatal("no U2F tokens found")
+		logger.Fatal("no U2F tokens found")
 	}
 
 	// TODO: transform this into an iteration over all found devices
 	for _, d := range devices {
 		//d := devices[0]
-		log.Printf("manufacturer = %q, product = %q, vid = 0x%04x, pid = 0x%04x", d.Manufacturer, d.Product, d.ProductID, d.VendorID)
+		logger.Printf("manufacturer = %q, product = %q, vid = 0x%04x, pid = 0x%04x", d.Manufacturer, d.Product, d.ProductID, d.VendorID)
 
 		dev, err := u2fhid.Open(d)
 		if err != nil {
-			log.Fatal(err)
+			logger.Fatal(err)
 		}
 		defer dev.Close()
 	}
@@ -206,32 +208,28 @@ func checkU2FDevices() {
 }
 
 func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL string) error {
-	log.Printf("top of doU2fAuthenticate")
+	logger.Printf("top of doU2fAuthenticate")
 	url := baseURL + "/u2f/SignRequest"
 	signRequest, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	// Add the login cookies
 	for _, cookie := range authCookies {
 		signRequest.AddCookie(cookie)
 	}
-	if *debug {
-		log.Printf("Authcookies:  %+v", authCookies)
-	}
+	logger.Debugf(0, "Authcookies:  %+v", authCookies)
 
 	signRequestResp, err := client.Do(signRequest) // Client.Get(targetUrl)
 	if err != nil {
-		log.Printf("Failure to sign request req %s", err)
+		logger.Printf("Failure to sign request req %s", err)
 		return err
 	}
-	if *debug {
-		log.Printf("Get url request did not failed %+v", signRequestResp)
-	}
+	logger.Debugf(0, "Get url request did not failed %+v", signRequestResp)
 
 	defer signRequestResp.Body.Close()
 	if signRequestResp.StatusCode != 200 {
-		log.Printf("got error from call %s, url='%s'\n", signRequestResp.Status, url)
+		logger.Printf("got error from call %s, url='%s'\n", signRequestResp.Status, url)
 		err = errors.New("failed respose from sign request")
 		return err
 	}
@@ -240,46 +238,46 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 	if err := json.NewDecoder(signRequestResp.Body).Decode(&webSignRequest); err != nil {
 		//http.Error(w, "invalid response: "+err.Error(), http.StatusBadRequest)
 		//        return
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	// TODO: move this to initialization code, ans pass the device list to this function?
 	// or maybe pass the token?...
 	devices, err := u2fhid.Devices()
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 		return err
 	}
 	if len(devices) == 0 {
 		err = errors.New("no U2F tokens found")
-		log.Println(err)
+		logger.Println(err)
 		return err
 	}
 
 	// TODO: transform this into an iteration over all found devices
 	d := devices[0]
-	log.Printf("manufacturer = %q, product = %q, vid = 0x%04x, pid = 0x%04x", d.Manufacturer, d.Product, d.ProductID, d.VendorID)
+	logger.Printf("manufacturer = %q, product = %q, vid = 0x%04x, pid = 0x%04x", d.Manufacturer, d.Product, d.ProductID, d.VendorID)
 
 	dev, err := u2fhid.Open(d)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	defer dev.Close()
 	t := u2ftoken.NewToken(dev)
 
-	// This section of version could be if *debug
 	version, err := t.Version()
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
-	log.Println("version:", version)
+	// TODO: Maybe use Debugf()?
+	logger.Println("version:", version)
 
 	///////
 	tokenAuthenticationClientData := u2f.ClientData{Typ: ClientDataAuthenticationTypeValue, Challenge: webSignRequest.Challenge, Origin: webSignRequest.AppID}
 	tokenAuthenticationBuf := new(bytes.Buffer)
 	err = json.NewEncoder(tokenAuthenticationBuf).Encode(tokenAuthenticationClientData)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	reqSignChallenge := sha256.Sum256(tokenAuthenticationBuf.Bytes())
 
@@ -297,7 +295,7 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 	for _, registeredKey := range webSignRequest.RegisteredKeys {
 		decodedHandle, err := base64.RawURLEncoding.DecodeString(registeredKey.KeyHandle)
 		if err != nil {
-			log.Fatal(err)
+			logger.Fatal(err)
 		}
 		keyHandle = decodedHandle
 
@@ -307,7 +305,7 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 			KeyHandle:   keyHandle,
 		}
 
-		//log.Printf("%+v", req)
+		//logger.Printf("%+v", req)
 		if err := t.CheckAuthenticate(req); err == nil {
 			keyIsKnown = true
 			break
@@ -319,7 +317,7 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 	}
 
 	// Now we ask the token to sign/authenticate
-	log.Println("authenticating, provide user presence")
+	logger.Println("authenticating, provide user presence")
 	var rawBytes []byte
 	for {
 		res, err := t.Authenticate(req)
@@ -327,10 +325,10 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 			time.Sleep(200 * time.Millisecond)
 			continue
 		} else if err != nil {
-			log.Fatal(err)
+			logger.Fatal(err)
 		}
 		rawBytes = res.RawResponse
-		log.Printf("counter = %d, signature = %x", res.Counter, res.Signature)
+		logger.Printf("counter = %d, signature = %x", res.Counter, res.Signature)
 		break
 	}
 
@@ -344,7 +342,7 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 	webSignRequestBuf := &bytes.Buffer{}
 	err = json.NewEncoder(webSignRequestBuf).Encode(signRequestResponse)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	url = baseURL + "/u2f/SignResponse"
@@ -355,13 +353,13 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 	}
 	signRequestResp2, err := client.Do(webSignRequest2) // Client.Get(targetUrl)
 	if err != nil {
-		log.Printf("Failure to sign request req %s", err)
+		logger.Printf("Failure to sign request req %s", err)
 		return err
 	}
 
 	defer signRequestResp2.Body.Close()
 	if signRequestResp2.StatusCode != 200 {
-		log.Printf("got error from call %s, url='%s'\n", signRequestResp2.Status, url)
+		logger.Printf("got error from call %s, url='%s'\n", signRequestResp2.Status, url)
 		return err
 	}
 
@@ -422,15 +420,15 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 
 	loginResp, err := client.Do(req) //client.Get(targetUrl)
 	if err != nil {
-		log.Printf("got error from req")
-		log.Println(err)
+		logger.Printf("got error from req")
+		logger.Println(err)
 		// TODO: differentiate between 400 and 500 errors
 		// is OK to fail.. try next
 		return nil, nil, err
 	}
 	defer loginResp.Body.Close()
 	if loginResp.StatusCode != 200 {
-		log.Printf("got error from login call %s", loginResp.Status)
+		logger.Printf("got error from login call %s", loginResp.Status)
 		return nil, nil, err
 	}
 	//Enusre we have at least one cookie
@@ -494,10 +492,10 @@ func getCertFromTargetUrls(signer crypto.Signer, userName string, password []byt
 	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
 
 	for _, baseUrl := range targetUrls {
-		log.Printf("attempting to target '%s' for '%s'\n", baseUrl, userName)
+		logger.Printf("attempting to target '%s' for '%s'\n", baseUrl, userName)
 		sshCert, x509Cert, err = getCertsFromServer(signer, userName, password, baseUrl, tlsConfig, skipu2f)
 		if err != nil {
-			log.Println(err)
+			logger.Println(err)
 			continue
 		}
 		success = true
@@ -505,7 +503,7 @@ func getCertFromTargetUrls(signer crypto.Signer, userName string, password []byt
 
 	}
 	if !success {
-		log.Printf("failed to get creds")
+		logger.Printf("failed to get creds")
 		err := errors.New("Failed to get creds")
 		return nil, nil, err
 	}
@@ -516,7 +514,7 @@ func getCertFromTargetUrls(signer crypto.Signer, userName string, password []byt
 func getUserInfoAndCreds() (usr *user.User, password []byte, err error) {
 	usr, err = user.Current()
 	if err != nil {
-		log.Printf("cannot get current user info")
+		logger.Printf("cannot get current user info")
 		return nil, nil, err
 	}
 	userName := usr.Username
@@ -547,13 +545,13 @@ func getConfigFromHost(configFilename string, hostname string, rootCAs *x509.Cer
 	*/
 	resp, err := client.Get(configUrl)
 	if err != nil {
-		log.Printf("got error from req")
-		log.Println(err)
+		logger.Printf("got error from req")
+		logger.Println(err)
 		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		log.Printf("got error from getconfig call %s", resp)
+		logger.Printf("got error from getconfig call %s", resp)
 		return err
 	}
 	configData, err := ioutil.ReadAll(resp.Body)
@@ -571,6 +569,7 @@ func Usage() {
 func main() {
 	flag.Usage = Usage
 	flag.Parse()
+	logger = cmdlogger.New()
 
 	if *checkDevices {
 		checkU2FDevices()
@@ -581,20 +580,20 @@ func main() {
 	if len(*rootCAFilename) > 1 {
 		caData, err := ioutil.ReadFile(*rootCAFilename)
 		if err != nil {
-			log.Printf("Failed to read caFilename")
-			log.Fatal(err)
+			logger.Printf("Failed to read caFilename")
+			logger.Fatal(err)
 		}
 		rootCAs = x509.NewCertPool()
 		if !rootCAs.AppendCertsFromPEM(caData) {
-			log.Fatal("cannot append file data")
+			logger.Fatal("cannot append file data")
 		}
 
 	}
 
 	usr, err := user.Current()
 	if err != nil {
-		log.Printf("cannot get current user info")
-		log.Fatal(err)
+		logger.Printf("cannot get current user info")
+		logger.Fatal(err)
 	}
 	userName := usr.Username
 	if *cliUsername != "" {
@@ -603,20 +602,20 @@ func main() {
 
 	homeDir, err := getUserHomeDir(usr)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	configPath, _ := filepath.Split(*configFilename)
 
 	err = os.MkdirAll(configPath, 0755)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	if len(*configHost) > 1 {
 		err = getConfigFromHost(*configFilename, *configHost, rootCAs)
 		if err != nil {
-			log.Fatal(err)
+			logger.Fatal(err)
 		}
 	}
 
@@ -626,7 +625,7 @@ func main() {
 	}
 	_, password, err := getUserInfoAndCreds()
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	//sshPath := homeDir + "/.ssh/"
@@ -634,34 +633,32 @@ func main() {
 	privateKeyPath := filepath.Join(homeDir, commonCertPath, FilePrefix)
 	signer, _, err := genKeyPair(privateKeyPath)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	sshCert, x509Cert, err := getCertFromTargetUrls(signer, userName,
 		password, strings.Split(config.Base.Gen_Cert_URLS, ","), rootCAs, false)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	if sshCert == nil || x509Cert == nil {
 		err := errors.New("Could not get cert from any url")
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
-	if *debug {
-		log.Printf("Got Certs from server")
-		// now we write the cert file...
-	}
+	logger.Debugf(0, "Got Certs from server")
+	// now we write the cert file...
 	sshCertPath := privateKeyPath + "-cert.pub"
 	err = ioutil.WriteFile(sshCertPath, sshCert, 0644)
 	if err != nil {
 		err := errors.New("Could not write ssh cert")
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 	x509CertPath := privateKeyPath + "-x509Cert.pem"
 	err = ioutil.WriteFile(x509CertPath, x509Cert, 0644)
 	if err != nil {
 		err := errors.New("Could not write ssh cert")
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
-	log.Printf("Success")
+	logger.Printf("Success")
 
 }
