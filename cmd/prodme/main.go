@@ -102,7 +102,7 @@ func genKeyPair(privateKeyPath string) (crypto.Signer, string, error) {
 func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
 	var config AppConfigFile
 	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
-		err = errors.New("mising config file failure")
+		err = errors.New("No config file: please re-run with -configHost")
 		return config, err
 	}
 	source, err := ioutil.ReadFile(configFilename)
@@ -621,7 +621,7 @@ func main() {
 
 	config, err := loadVerifyConfigFile(*configFilename)
 	if err != nil {
-		panic(err)
+		logger.Fatal(err)
 	}
 	_, password, err := getUserInfoAndCreds()
 	if err != nil {
