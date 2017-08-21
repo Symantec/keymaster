@@ -1,3 +1,6 @@
+# Set GOPATH to a sensible default if not already set.
+GOPATH ?= $(HOME)/go
+
 # This is how we want to name the binary output
 BINARY=keymaster
 
