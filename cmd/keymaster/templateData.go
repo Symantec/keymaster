@@ -109,7 +109,6 @@ const profileHTML = `<!DOCTYPE html>
     {{- else}}
 	You Dont have any registered tokens.
     {{- end}}
-    <p>Open Chrome Developer Tools to see debug console logs.</p>
     {{end}}
   </body>
 </html>

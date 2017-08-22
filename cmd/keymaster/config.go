@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/Symantec/keymaster/lib/vip"
 	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
@@ -62,10 +63,18 @@ type ProfileStorageConfig struct {
 	TLSRootCertFilename string `yaml:"tls_root_cert_filename"`
 }
 
+type SymcVIPConfig struct {
+	Client   *vip.Client
+	Enabled  bool   `yaml:"enabled"`
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
+}
+
 type AppConfigFile struct {
 	Base           baseConfig
 	Ldap           LdapConfig
 	Oauth2         Oauth2Config
+	SymcVIP        SymcVIPConfig
 	ProfileStorage ProfileStorageConfig
 }
 
@@ -189,6 +198,24 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 				TokenURL: runtimeState.Config.Oauth2.TokenUrl},
 			RedirectURL: "https://" + runtimeState.HostIdentity + runtimeState.Config.Base.HttpAddress + redirectPath,
 			Scopes:      strings.Split(runtimeState.Config.Oauth2.Scopes, " ")}
+	}
+	if runtimeState.Config.SymcVIP.Enabled == true {
+		logger.Printf("symantec VIP is enabled")
+		certPem, err := exitsAndCanRead(runtimeState.Config.SymcVIP.CertFile, "VIP certificate file")
+		if err != nil {
+			return runtimeState, err
+		}
+
+		keyPem, err := exitsAndCanRead(runtimeState.Config.SymcVIP.KeyFile, "VIP key file")
+		if err != nil {
+			return runtimeState, err
+		}
+
+		client, err := vip.NewClient(certPem, keyPem)
+		if err != nil {
+			return runtimeState, err
+		}
+		runtimeState.Config.SymcVIP.Client = &client
 	}
 
 	// DB initialization

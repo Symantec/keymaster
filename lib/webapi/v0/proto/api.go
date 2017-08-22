@@ -5,6 +5,7 @@ const LoginPath = "/api/v0/login"
 const (
 	AuthTypePassword = "password"
 	AuthTypeU2F      = "U2F"
+	AuthTypeSymcVIP  = "SymcVIP"
 )
 
 type LoginResponse struct {
