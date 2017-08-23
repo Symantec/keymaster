@@ -393,13 +393,20 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		if certPref == proto.AuthTypePassword {
 			sufficientAuthLevel = true
 		}
+		if certPref == proto.AuthTypeU2F && ((authLevel & AuthTypeU2F) == AuthTypeU2F) {
+			sufficientAuthLevel = true
+		}
+		if certPref == proto.AuthTypeSymcVIP && ((authLevel & AuthTypeSymcVIP) == AuthTypeSymcVIP) {
+			sufficientAuthLevel = true
+		}
 	}
-	// if you have u2f you can get the cert
+	// if you have u2f you can always get the cert
 	if (authLevel & AuthTypeU2F) == AuthTypeU2F {
 		sufficientAuthLevel = true
 	}
 
 	if !sufficientAuthLevel {
+		logger.Printf("Not enough auth level for getting certs")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Not enough auth level for getting certs")
 		return
 	}
@@ -882,6 +889,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 			certBackends = append(certBackends, proto.AuthTypeSymcVIP)
 		}
 	}
+	// logger.Printf("current backends=%+v", certBackends)
 	if len(certBackends) == 0 {
 		certBackends = append(certBackends, proto.AuthTypeU2F)
 	}
@@ -1565,6 +1573,7 @@ func main() {
 	serviceMux.HandleFunc(u2fRegisterRequesponsePath, runtimeState.u2fRegisterResponse)
 	serviceMux.HandleFunc(u2fSignRequestPath, runtimeState.u2fSignRequest)
 	serviceMux.HandleFunc(u2fSignResponsePath, runtimeState.u2fSignResponse)
+	serviceMux.HandleFunc(vipAuthPath, runtimeState.VIPAuthHandler)
 	serviceMux.HandleFunc(u2fTokenManagementPath, runtimeState.u2fTokenManagerHandler)
 	serviceMux.HandleFunc(oauth2LoginBeginPath, runtimeState.oauth2DoRedirectoToProviderHandler)
 	serviceMux.HandleFunc(redirectPath, runtimeState.oauth2RedirectPathHandler)

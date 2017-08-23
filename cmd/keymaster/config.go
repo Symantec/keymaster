@@ -218,6 +218,8 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		runtimeState.Config.SymcVIP.Client = &client
 	}
 
+	//logger.Printf("End of config initialization: %+v", runtimeState)
+
 	// DB initialization
 	err = initDB(&runtimeState)
 	if err != nil {
