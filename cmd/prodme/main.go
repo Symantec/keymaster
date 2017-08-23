@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"crypto"
 	"crypto/rand"
@@ -379,6 +380,79 @@ func getParseURLEnvVariable(name string) (*url.URL, error) {
 	return envUrl, nil
 }
 
+func doVIPAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL string) error {
+	logger.Printf("top of doVIPAuthenticate")
+
+	// Read VIP token from client
+
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter VIP/OTP code: ")
+	otpText, err := reader.ReadString('\n')
+	otpText = strings.TrimSpace(otpText)
+	//fmt.Println(codeText)
+	logger.Debugf(1, "codeText:  '%s'", otpText)
+
+	// TODO: add some client side validation that the codeText is actually a six digit
+	// integer
+
+	VIPLoginURL := baseURL + "/api/v0/vipAuth"
+
+	form := url.Values{}
+	form.Add("OTP", otpText)
+	//form.Add("password", string(password[:]))
+	req, err := http.NewRequest("POST", VIPLoginURL, strings.NewReader(form.Encode()))
+
+	/*
+		url := baseURL + "/u2f/SignRequest"
+		signRequest, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			logger.Fatal(err)
+		}
+	*/
+	// Add the login cookies
+	for _, cookie := range authCookies {
+		req.AddCookie(cookie)
+	}
+	logger.Debugf(0, "Authcookies:  %+v", authCookies)
+
+	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Accept", "application/json")
+
+	loginResp, err := client.Do(req) //client.Get(targetUrl)
+	if err != nil {
+		logger.Printf("got error from req")
+		logger.Println(err)
+		// TODO: differentiate between 400 and 500 errors
+		// is OK to fail.. try next
+		return err
+	}
+	defer loginResp.Body.Close()
+	if loginResp.StatusCode != 200 {
+		logger.Printf("got error from login call %s", loginResp.Status)
+		return err
+	}
+	/*
+		//Enusre we have at least one cookie
+		if len(loginResp.Cookies()) < 1 {
+			err = errors.New("No cookies from login")
+			return err
+		}
+	*/
+
+	loginJSONResponse := proto.LoginResponse{}
+	//body := jsonrr.Result().Body
+	err = json.NewDecoder(loginResp.Body).Decode(&loginJSONResponse)
+	if err != nil {
+		return err
+	}
+	loginResp.Body.Close() //so that we can reuse the channel
+
+	logger.Debugf(1, "This the login response=%v\n", loginJSONResponse)
+
+	return nil
+}
+
 func getHttpClient(tlsConfig *tls.Config) (*http.Client, error) {
 	clientTransport := &http.Transport{
 		TLSClientConfig: tlsConfig,
@@ -445,8 +519,16 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 	}
 	loginResp.Body.Close() //so that we can reuse the channel
 
+	logger.Debugf(1, "This the login response=%v\n", loginJSONResponse)
+
+	allowVIP := false
 	for _, backend := range loginJSONResponse.CertAuthBackend {
 		if backend == proto.AuthTypePassword {
+			skipu2f = true
+		}
+		if backend == proto.AuthTypeSymcVIP {
+			allowVIP = true
+			//remote next statemente later
 			skipu2f = true
 		}
 	}
@@ -458,6 +540,16 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 			return nil, nil, err
 		}
 	}
+	if allowVIP {
+		err = doVIPAuthenticate(client, loginResp.Cookies(), baseUrl)
+		if err != nil {
+
+			return nil, nil, err
+		}
+	}
+
+	logger.Debugf(1, "Authentication Phase complete")
+
 	//now get x509 cert
 	pubKey := signer.Public()
 	derKey, err := x509.MarshalPKIXPublicKey(pubKey)
