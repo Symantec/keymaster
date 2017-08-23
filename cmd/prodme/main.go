@@ -402,13 +402,6 @@ func doVIPAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 	//form.Add("password", string(password[:]))
 	req, err := http.NewRequest("POST", VIPLoginURL, strings.NewReader(form.Encode()))
 
-	/*
-		url := baseURL + "/u2f/SignRequest"
-		signRequest, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			logger.Fatal(err)
-		}
-	*/
 	// Add the login cookies
 	for _, cookie := range authCookies {
 		req.AddCookie(cookie)
@@ -432,13 +425,6 @@ func doVIPAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 		logger.Printf("got error from login call %s", loginResp.Status)
 		return err
 	}
-	/*
-		//Enusre we have at least one cookie
-		if len(loginResp.Cookies()) < 1 {
-			err = errors.New("No cookies from login")
-			return err
-		}
-	*/
 
 	loginJSONResponse := proto.LoginResponse{}
 	//body := jsonrr.Result().Body
@@ -473,7 +459,7 @@ func getHttpClient(tlsConfig *tls.Config) (*http.Client, error) {
 	return client, nil
 }
 
-func getCertsFromServer(signer crypto.Signer, userName string, password []byte, baseUrl string, tlsConfig *tls.Config, skipu2f bool) (sshCert []byte, x509Cert []byte, err error) {
+func getCertsFromServer(signer crypto.Signer, userName string, password []byte, baseUrl string, tlsConfig *tls.Config, skip2fa bool) (sshCert []byte, x509Cert []byte, err error) {
 	//First Do Login
 	client, err := getHttpClient(tlsConfig)
 	if err != nil {
@@ -522,30 +508,55 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 	logger.Debugf(1, "This the login response=%v\n", loginJSONResponse)
 
 	allowVIP := false
+	allowU2F := false
 	for _, backend := range loginJSONResponse.CertAuthBackend {
 		if backend == proto.AuthTypePassword {
-			skipu2f = true
+			skip2fa = true
 		}
 		if backend == proto.AuthTypeSymcVIP {
 			allowVIP = true
 			//remote next statemente later
-			skipu2f = true
+			//skipu2f = true
+		}
+		if backend == proto.AuthTypeU2F {
+			allowU2F = true
 		}
 	}
 	// upgrade to u2f
-	if !skipu2f {
-		err = doU2FAuthenticate(client, loginResp.Cookies(), baseUrl)
-		if err != nil {
+	successful2fa := false
+	if !skip2fa {
+		if allowU2F {
+			devices, err := u2fhid.Devices()
+			if err != nil {
+				logger.Fatal(err)
+				return nil, nil, err
+			}
+			if len(devices) > 0 {
 
+				err = doU2FAuthenticate(client, loginResp.Cookies(), baseUrl)
+				if err != nil {
+
+					return nil, nil, err
+				}
+				successful2fa = true
+			}
+		}
+
+		if allowVIP && !successful2fa {
+			err = doVIPAuthenticate(client, loginResp.Cookies(), baseUrl)
+			if err != nil {
+
+				return nil, nil, err
+			}
+			successful2fa = true
+		}
+
+		if !successful2fa {
+			err = errors.New("2FA failure")
+			logger.Println(err)
 			return nil, nil, err
 		}
-	}
-	if allowVIP {
-		err = doVIPAuthenticate(client, loginResp.Cookies(), baseUrl)
-		if err != nil {
 
-			return nil, nil, err
-		}
 	}
 
 	logger.Debugf(1, "Authentication Phase complete")
