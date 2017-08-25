@@ -5,7 +5,7 @@ GOPATH ?= $(HOME)/go
 BINARY=keymaster
 
 # These are the values we want to pass for Version and BuildTime
-VERSION=0.3.3
+VERSION=0.4.0
 #BUILD_TIME=`date +%FT%T%z`
 
 # Setup the -ldflags option for go build here, interpolate the variable values

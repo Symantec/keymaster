@@ -1,5 +1,5 @@
 Name:           keymaster
-Version:        0.3.3
+Version:        0.4.0
 Release:        1%{?dist}
 Summary:        Short term access certificate generator and client
 
@@ -30,14 +30,14 @@ make
 
 %install
 #%make_install
-%{__install} -Dp -m0755 ~/go/bin/keymaster %{buildroot}%{_sbindir}/keymaster
-%{__install} -Dp -m0755 ~/go/bin/prodme %{buildroot}%{_bindir}/prodme
+%{__install} -Dp -m0755 ~/go/bin/keymasterd %{buildroot}%{_sbindir}/keymasterd
+%{__install} -Dp -m0755 ~/go/bin/keymaster %{buildroot}%{_bindir}/keymaster
 %{__install} -Dp -m0755 ~/go/bin/keymaster-unlocker %{buildroot}%{_bindir}/keymaster-unlocker
 install -d %{buildroot}/usr/lib/systemd/system
 install -p -m 0644 misc/startup/keymaster.service %{buildroot}/usr/lib/systemd/system/keymaster.service
-install -d %{buildroot}/%{_datarootdir}/keymaster/static_files/
-install -p -m 0644 cmd/keymaster/static_files/u2f-api.js  %{buildroot}/%{_datarootdir}/keymaster/static_files/u2f-api.js
-install -p -m 0644 cmd/keymaster/static_files/keymaster-u2f.js  %{buildroot}/%{_datarootdir}/keymaster/static_files/keymaster-u2f.js
+install -d %{buildroot}/%{_datarootdir}/keymasterd/static_files/
+install -p -m 0644 cmd/keymasterd/static_files/u2f-api.js  %{buildroot}/%{_datarootdir}/keymasterd/static_files/u2f-api.js
+install -p -m 0644 cmd/keymasterd/static_files/keymaster-u2f.js  %{buildroot}/%{_datarootdir}/keymasterd/static_files/keymaster-u2f.js
 
 %pre
 /usr/bin/getent passwd keymaster || useradd -d /var/lib/keymaster -s /bin/false -U -r  keymaster
@@ -54,11 +54,11 @@ systemctl daemon-reload
 
 %files
 #%doc
-%{_sbindir}/keymaster
-%{_bindir}/prodme
+%{_sbindir}/keymasterd
+%{_bindir}/keymaster
 %{_bindir}/keymaster-unlocker
 /usr/lib/systemd/system/keymaster.service
-%{_datarootdir}/keymaster/static_files/*
+%{_datarootdir}/keymasterd/static_files/*
 
 %changelog
 
