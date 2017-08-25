@@ -48,6 +48,7 @@ const (
 	AuthTypePassword = 1 << iota
 	AuthTypeFederated
 	AuthTypeU2F
+	AuthTypeSymantecVIP
 )
 
 type authInfo struct {
@@ -392,13 +393,20 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		if certPref == proto.AuthTypePassword {
 			sufficientAuthLevel = true
 		}
+		if certPref == proto.AuthTypeU2F && ((authLevel & AuthTypeU2F) == AuthTypeU2F) {
+			sufficientAuthLevel = true
+		}
+		if certPref == proto.AuthTypeSymantecVIP && ((authLevel & AuthTypeSymantecVIP) == AuthTypeSymantecVIP) {
+			sufficientAuthLevel = true
+		}
 	}
-	// if you have u2f you can get the cert
+	// if you have u2f you can always get the cert
 	if (authLevel & AuthTypeU2F) == AuthTypeU2F {
 		sufficientAuthLevel = true
 	}
 
 	if !sufficientAuthLevel {
+		logger.Printf("Not enough auth level for getting certs")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Not enough auth level for getting certs")
 		return
 	}
@@ -721,6 +729,22 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+func (state *RuntimeState) userHasU2FTokens(username string) (bool, error) {
+	profile, ok, err := state.LoadUserProfile(username)
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, nil
+	}
+	registrations := getRegistrationArray(profile.U2fAuthData)
+	if len(registrations) < 1 {
+		return false, nil
+	}
+	return true, nil
+
+}
+
 const authCookieName = "auth_cookie"
 const randomStringEntropyBytes = 32
 const maxAgeSecondsAuthCookie = 3600
@@ -810,6 +834,15 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		//err := errors.New("Invalid Credentials")
 		return
 	}
+
+	// AUTHN has passed
+	userHasU2FTokens, err := state.userHasU2FTokens(username)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
+		logger.Println(err)
+		return
+	}
+
 	//
 	cookieVal, err := genRandomString()
 	if err != nil {
@@ -849,10 +882,14 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		if certPref == proto.AuthTypePassword {
 			certBackends = append(certBackends, proto.AuthTypePassword)
 		}
-		if certPref == proto.AuthTypeU2F {
+		if certPref == proto.AuthTypeU2F && userHasU2FTokens {
 			certBackends = append(certBackends, proto.AuthTypeU2F)
 		}
+		if certPref == proto.AuthTypeSymantecVIP && state.Config.SymantecVIP.Enabled {
+			certBackends = append(certBackends, proto.AuthTypeSymantecVIP)
+		}
 	}
+	// logger.Printf("current backends=%+v", certBackends)
 	if len(certBackends) == 0 {
 		certBackends = append(certBackends, proto.AuthTypeU2F)
 	}
@@ -900,6 +937,122 @@ func (state *RuntimeState) logoutHandler(w http.ResponseWriter, r *http.Request)
 	}
 	//redirect to login
 	http.Redirect(w, r, profilePath, 302)
+}
+
+///
+const vipAuthPath = "/api/v0/vipAuth"
+
+func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request) {
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
+
+	//Check for valid method here?
+	switch r.Method {
+	case "GET":
+		if *debug {
+			logger.Printf("Got client GET connection")
+		}
+		err := r.ParseForm()
+		if err != nil {
+			logger.Println(err)
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+			return
+		}
+	case "POST":
+		if *debug {
+			logger.Printf("Got client POST connection")
+		}
+		err := r.ParseForm()
+		if err != nil {
+			logger.Println(err)
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+			return
+		}
+	default:
+		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		return
+	}
+	//authUser, authType, err := state.checkAuth(w, r)
+	authUser, _, err := state.checkAuth(w, r)
+	if err != nil {
+		logger.Printf("%v", err)
+
+		return
+	}
+
+	var OTPString string
+	if val, ok := r.Form["OTP"]; ok {
+		if len(val) > 1 {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Just one OTP Value allowed")
+			logger.Printf("Login with multiple OTP Values")
+			return
+		}
+		OTPString = val[0]
+	}
+	otpValue, err := strconv.Atoi(OTPString)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing OTP value")
+	}
+	valid, err := state.Config.SymantecVIP.Client.ValidateUserOTP(authUser, otpValue)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
+		return
+	}
+	if !valid {
+		// TODO if client is html then do a redirect back to vipLoginPage
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		logger.Printf("Invalid OTP value login for %s", authUser)
+		return
+
+	}
+	// If successful I need to update the cookie
+	var authCookie *http.Cookie
+	for _, cookie := range r.Cookies() {
+		if cookie.Name != authCookieName {
+			continue
+		}
+		authCookie = cookie
+	}
+	if authCookie == nil {
+		logger.Printf("Autch Cookie NOT found!")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
+		return
+
+	}
+	// update cookie if found, this should be also a critical section
+	state.Mutex.Lock()
+	info, ok := state.authCookie[authCookie.Value]
+	if ok {
+		info.AuthType = info.AuthType | AuthTypeSymantecVIP
+		state.authCookie[authCookie.Value] = info
+	}
+	state.Mutex.Unlock()
+	// Now we send to the appropiate place
+	returnAcceptType := "application/json"
+	acceptHeader, ok := r.Header["Accept"]
+	if ok {
+		for _, acceptValue := range acceptHeader {
+			if strings.Contains(acceptValue, "text/html") {
+				logger.Printf("Got it  %+v", acceptValue)
+				returnAcceptType = "text/html"
+			}
+		}
+	}
+
+	// TODO: The cert backend should depend also on per user preferences.
+	loginResponse := proto.LoginResponse{Message: "success"} //CertAuthBackend: certBackends
+	switch returnAcceptType {
+	case "text/html":
+		http.Redirect(w, r, profilePath, 302)
+	default:
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(loginResponse)
+		//fmt.Fprintf(w, "Success!")
+	}
+	return
 }
 
 ////////////////////////////
@@ -1167,7 +1320,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 				state.Mutex.Lock()
 				info, ok := state.authCookie[authCookie.Value]
 				if ok {
-					info.AuthType = AuthTypeU2F
+					info.AuthType = info.AuthType | AuthTypeU2F
 					state.authCookie[authCookie.Value] = info
 				}
 				state.Mutex.Unlock()
@@ -1420,6 +1573,7 @@ func main() {
 	serviceMux.HandleFunc(u2fRegisterRequesponsePath, runtimeState.u2fRegisterResponse)
 	serviceMux.HandleFunc(u2fSignRequestPath, runtimeState.u2fSignRequest)
 	serviceMux.HandleFunc(u2fSignResponsePath, runtimeState.u2fSignResponse)
+	serviceMux.HandleFunc(vipAuthPath, runtimeState.VIPAuthHandler)
 	serviceMux.HandleFunc(u2fTokenManagementPath, runtimeState.u2fTokenManagerHandler)
 	serviceMux.HandleFunc(oauth2LoginBeginPath, runtimeState.oauth2DoRedirectoToProviderHandler)
 	serviceMux.HandleFunc(redirectPath, runtimeState.oauth2RedirectPathHandler)

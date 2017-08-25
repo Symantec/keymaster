@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"crypto"
 	"crypto/rand"
@@ -379,6 +380,65 @@ func getParseURLEnvVariable(name string) (*url.URL, error) {
 	return envUrl, nil
 }
 
+func doVIPAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL string) error {
+	logger.Printf("top of doVIPAuthenticate")
+
+	// Read VIP token from client
+
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter VIP/OTP code: ")
+	otpText, err := reader.ReadString('\n')
+	otpText = strings.TrimSpace(otpText)
+	//fmt.Println(codeText)
+	logger.Debugf(1, "codeText:  '%s'", otpText)
+
+	// TODO: add some client side validation that the codeText is actually a six digit
+	// integer
+
+	VIPLoginURL := baseURL + "/api/v0/vipAuth"
+
+	form := url.Values{}
+	form.Add("OTP", otpText)
+	//form.Add("password", string(password[:]))
+	req, err := http.NewRequest("POST", VIPLoginURL, strings.NewReader(form.Encode()))
+
+	// Add the login cookies
+	for _, cookie := range authCookies {
+		req.AddCookie(cookie)
+	}
+	logger.Debugf(0, "Authcookies:  %+v", authCookies)
+
+	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Accept", "application/json")
+
+	loginResp, err := client.Do(req) //client.Get(targetUrl)
+	if err != nil {
+		logger.Printf("got error from req")
+		logger.Println(err)
+		// TODO: differentiate between 400 and 500 errors
+		// is OK to fail.. try next
+		return err
+	}
+	defer loginResp.Body.Close()
+	if loginResp.StatusCode != 200 {
+		logger.Printf("got error from login call %s", loginResp.Status)
+		return err
+	}
+
+	loginJSONResponse := proto.LoginResponse{}
+	//body := jsonrr.Result().Body
+	err = json.NewDecoder(loginResp.Body).Decode(&loginJSONResponse)
+	if err != nil {
+		return err
+	}
+	loginResp.Body.Close() //so that we can reuse the channel
+
+	logger.Debugf(1, "This the login response=%v\n", loginJSONResponse)
+
+	return nil
+}
+
 func getHttpClient(tlsConfig *tls.Config) (*http.Client, error) {
 	clientTransport := &http.Transport{
 		TLSClientConfig: tlsConfig,
@@ -399,7 +459,7 @@ func getHttpClient(tlsConfig *tls.Config) (*http.Client, error) {
 	return client, nil
 }
 
-func getCertsFromServer(signer crypto.Signer, userName string, password []byte, baseUrl string, tlsConfig *tls.Config, skipu2f bool) (sshCert []byte, x509Cert []byte, err error) {
+func getCertsFromServer(signer crypto.Signer, userName string, password []byte, baseUrl string, tlsConfig *tls.Config, skip2fa bool) (sshCert []byte, x509Cert []byte, err error) {
 	//First Do Login
 	client, err := getHttpClient(tlsConfig)
 	if err != nil {
@@ -445,19 +505,62 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 	}
 	loginResp.Body.Close() //so that we can reuse the channel
 
+	logger.Debugf(1, "This the login response=%v\n", loginJSONResponse)
+
+	allowVIP := false
+	allowU2F := false
 	for _, backend := range loginJSONResponse.CertAuthBackend {
 		if backend == proto.AuthTypePassword {
-			skipu2f = true
+			skip2fa = true
+		}
+		if backend == proto.AuthTypeSymantecVIP {
+			allowVIP = true
+			//remote next statemente later
+			//skipu2f = true
+		}
+		if backend == proto.AuthTypeU2F {
+			allowU2F = true
 		}
 	}
 	// upgrade to u2f
-	if !skipu2f {
-		err = doU2FAuthenticate(client, loginResp.Cookies(), baseUrl)
-		if err != nil {
+	successful2fa := false
+	if !skip2fa {
+		if allowU2F {
+			devices, err := u2fhid.Devices()
+			if err != nil {
+				logger.Fatal(err)
+				return nil, nil, err
+			}
+			if len(devices) > 0 {
 
+				err = doU2FAuthenticate(client, loginResp.Cookies(), baseUrl)
+				if err != nil {
+
+					return nil, nil, err
+				}
+				successful2fa = true
+			}
+		}
+
+		if allowVIP && !successful2fa {
+			err = doVIPAuthenticate(client, loginResp.Cookies(), baseUrl)
+			if err != nil {
+
+				return nil, nil, err
+			}
+			successful2fa = true
+		}
+
+		if !successful2fa {
+			err = errors.New("2FA failure")
+			logger.Println(err)
 			return nil, nil, err
 		}
+
 	}
+
+	logger.Debugf(1, "Authentication Phase complete")
+
 	//now get x509 cert
 	pubKey := signer.Public()
 	derKey, err := x509.MarshalPKIXPublicKey(pubKey)
