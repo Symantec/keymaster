@@ -48,7 +48,7 @@ const (
 	AuthTypePassword = 1 << iota
 	AuthTypeFederated
 	AuthTypeU2F
-	AuthTypeSymcVIP
+	AuthTypeSymantecVIP
 )
 
 type authInfo struct {
@@ -396,7 +396,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		if certPref == proto.AuthTypeU2F && ((authLevel & AuthTypeU2F) == AuthTypeU2F) {
 			sufficientAuthLevel = true
 		}
-		if certPref == proto.AuthTypeSymcVIP && ((authLevel & AuthTypeSymcVIP) == AuthTypeSymcVIP) {
+		if certPref == proto.AuthTypeSymantecVIP && ((authLevel & AuthTypeSymantecVIP) == AuthTypeSymantecVIP) {
 			sufficientAuthLevel = true
 		}
 	}
@@ -885,8 +885,8 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		if certPref == proto.AuthTypeU2F && userHasU2FTokens {
 			certBackends = append(certBackends, proto.AuthTypeU2F)
 		}
-		if certPref == proto.AuthTypeSymcVIP && state.Config.SymcVIP.Enabled {
-			certBackends = append(certBackends, proto.AuthTypeSymcVIP)
+		if certPref == proto.AuthTypeSymantecVIP && state.Config.SymantecVIP.Enabled {
+			certBackends = append(certBackends, proto.AuthTypeSymantecVIP)
 		}
 	}
 	// logger.Printf("current backends=%+v", certBackends)
@@ -995,7 +995,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		logger.Println(err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing OTP value")
 	}
-	valid, err := state.Config.SymcVIP.Client.ValidateUserOTP(authUser, otpValue)
+	valid, err := state.Config.SymantecVIP.Client.ValidateUserOTP(authUser, otpValue)
 	if err != nil {
 		logger.Println(err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
@@ -1026,7 +1026,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	state.Mutex.Lock()
 	info, ok := state.authCookie[authCookie.Value]
 	if ok {
-		info.AuthType = info.AuthType | AuthTypeSymcVIP
+		info.AuthType = info.AuthType | AuthTypeSymantecVIP
 		state.authCookie[authCookie.Value] = info
 	}
 	state.Mutex.Unlock()

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
+	"time"
 )
 
 const rootCAPem = `-----BEGIN CERTIFICATE-----
@@ -155,7 +156,7 @@ func init() {
 	}
 	http.HandleFunc("/", handler)
 	go srv.ListenAndServeTLS("", "")
-	//http.Serve(ln, nil)
+	time.Sleep(20 * time.Millisecond)
 }
 
 func TestVerifySingleTokenFail(t *testing.T) {

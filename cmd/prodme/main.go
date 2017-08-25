@@ -513,7 +513,7 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 		if backend == proto.AuthTypePassword {
 			skip2fa = true
 		}
-		if backend == proto.AuthTypeSymcVIP {
+		if backend == proto.AuthTypeSymantecVIP {
 			allowVIP = true
 			//remote next statemente later
 			//skipu2f = true

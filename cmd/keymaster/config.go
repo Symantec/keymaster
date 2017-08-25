@@ -63,7 +63,7 @@ type ProfileStorageConfig struct {
 	TLSRootCertFilename string `yaml:"tls_root_cert_filename"`
 }
 
-type SymcVIPConfig struct {
+type SymantecVIPConfig struct {
 	Client   *vip.Client
 	Enabled  bool   `yaml:"enabled"`
 	CertFile string `yaml:"cert_file"`
@@ -74,7 +74,7 @@ type AppConfigFile struct {
 	Base           baseConfig
 	Ldap           LdapConfig
 	Oauth2         Oauth2Config
-	SymcVIP        SymcVIPConfig
+	SymantecVIP    SymantecVIPConfig
 	ProfileStorage ProfileStorageConfig
 }
 
@@ -199,14 +199,14 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			RedirectURL: "https://" + runtimeState.HostIdentity + runtimeState.Config.Base.HttpAddress + redirectPath,
 			Scopes:      strings.Split(runtimeState.Config.Oauth2.Scopes, " ")}
 	}
-	if runtimeState.Config.SymcVIP.Enabled == true {
+	if runtimeState.Config.SymantecVIP.Enabled == true {
 		logger.Printf("symantec VIP is enabled")
-		certPem, err := exitsAndCanRead(runtimeState.Config.SymcVIP.CertFile, "VIP certificate file")
+		certPem, err := exitsAndCanRead(runtimeState.Config.SymantecVIP.CertFile, "VIP certificate file")
 		if err != nil {
 			return runtimeState, err
 		}
 
-		keyPem, err := exitsAndCanRead(runtimeState.Config.SymcVIP.KeyFile, "VIP key file")
+		keyPem, err := exitsAndCanRead(runtimeState.Config.SymantecVIP.KeyFile, "VIP key file")
 		if err != nil {
 			return runtimeState, err
 		}
@@ -215,7 +215,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		if err != nil {
 			return runtimeState, err
 		}
-		runtimeState.Config.SymcVIP.Client = &client
+		runtimeState.Config.SymantecVIP.Client = &client
 	}
 
 	//logger.Printf("End of config initialization: %+v", runtimeState)
