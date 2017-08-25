@@ -507,6 +507,11 @@ func TestLoginAPIBasicAuth(t *testing.T) {
 	defer os.Remove(passwdFile.Name()) // clean up
 	state.Config.Base.HtpasswdFilename = passwdFile.Name()
 
+	err = initDB(&state)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	req, err := http.NewRequest("GET", "/api/v0/login", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -555,6 +560,11 @@ func TestLoginAPIFormAuth(t *testing.T) {
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
 	state.Config.Base.HtpasswdFilename = passwdFile.Name()
+
+	err = initDB(&state)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	form := url.Values{}
 	form.Add("username", validUsernameConst)
