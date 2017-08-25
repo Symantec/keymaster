@@ -1,797 +1,367 @@
 package main
 
 import (
-	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
-	//"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"github.com/Symantec/Dominator/lib/log/debuglogger"
+	"github.com/Symantec/keymaster/lib/certgen"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
-	"io"
 	"io/ioutil"
-	"mime/multipart"
+	stdlog "log"
 	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"os"
-	"strconv"
-	"strings"
+	"os/user"
 	"testing"
-	"time"
 )
 
-// copied from lib/certgen/cergen_test.go
-const testSignerPrivateKey = `-----BEGIN RSA PRIVATE KEY-----
-MIIEpQIBAAKCAQEAv2J464KoYbODMIbtkTV58g6/0QTdUIYgOwnzPdaMNVtCOxTi
-QDIWEbzqv1HEP9hfzuaSKHUHs/91e4Jj2qZghSwPHLG7TKzu+/CRK9sa9jvoGEVx
-g6yjibPndTGuLVptZCcOIcHEXViP4iraI6dybiGDlmeF92WQJdI7l4Esg4W4Wp17
-JFWNHbylKoFB0fe2b4q5pzaXMBwNue4BKKvua51NBctRy4LZYwiGvVJplEbjBU7v
-wCAS0X4m72y2JvKog9/HfGKo2rZ9se0wFe9mMkjj0wuKkDh91pOzsBZ/0PW0zHci
-2q9yJVxF0b41e9+raXa8kvRjxF7EEAuUr9Ov2wIDAQABAoIBAQCPmP4rjyRx8jQr
-9AFKY7p00XZBCYpZAdorEiMtMc6PtkJyfA/qpOoEMyBbnqlGUj5Iyp29t1mpR7LJ
-kiMECrP/F/jaycxEErlZ1b3HDyYivP4/P9OVPbKS/qZbO4R5yRCtBdTHpVCFzY5f
-31E/UUM9uO23q0NMRisrBZvq6GQS5bPIbV/JHJIj1Xd65pZQKQMlRKdXnQGWANV6
-4i6Yjcy8v/hqI4wxiwxGlAC26+d1Ow4sdHsMiRmA31vhJNMktdVfT3emyiIlLwoi
-Oolbak9CpV2bvtN6iL0Hy4ek0TZp7QPzp7MT4Bhcf8jj9ykxL51SplJoOh2xVwfF
-U4aaf1mJAoGBAPKP3an+LFPl8+Re8kVJay7JQrNOIzuoDsDbfhVQMJ9KuodGBz8U
-YaUeK8iYZFRuYB/OuIqoDiFnlcdC441+M9VRMhuKwq1rLUOz92esyfiwn8CNzEnT
-bJKDPvLocGtpRrN+2iqy+/ySk0IX7NUtsB2/8KXLXImY3ecTafjjqv4dAoGBAMn8
-yM03RuBOTXsxWRjPIGBniH0mZG+7KdEbBGmhvhoZ8+uneXJvNL+0xswnf6S4r1tm
-mEWM1PldE0tPbRID148Mm2H+tCv7IwtpXSRTKEb175Xkj+pIcFtBC1bkGdNv8DJW
-BdkKVnDD2h6rND1IOHatBNjW+CO+2R3aZPUxBGRXAoGAfWu0QzTg+NS7QodxoC/x
-UvTQH2S0xSEF1+TmkeCv832xa0bjclN4lec+3m8l2Z5k5619MHzrKYylHq5QeRYb
-eR6N2T3rob38XriMobfviz7Qq8DmM/o1dqCUiQd1MaTy4NcjudZog1XK/O7gD+6a
-1RctOJ0pkSBRBS29qusVvGUCgYEAtvsDRbUvxf/pfRKlbi4lXHAuW4GuNvHM3hul
-kbPurWKZcAAVqy9HD+xKs6OMpMKSSTDV/RupzAUfd3gKjOliG7sGAG5m9fjaNHpM
-4J1cvXwKgTW/kjPxZRm1lg+pvbuIU3FOduJAkIM8U9Aw0NteG1R+MZn8zRUVR1AT
-aXPwUJ0CgYEA6Fpq8/MFJyzpcvlxkZSfZOVFmkDbE3+UYkB0WAR0X7sTdN74nrTf
-RnmMXhcdJ7cCPL6LJpN82h62XrLVwl7zEBXnVfhSsXil1yYHHI5sGXbUFRzaNXNl
-KgeanQGV/sG+nd/67uvHhZbifHVDY/ifsNBnYrlpu6q3p+zhQydfkLE=
------END RSA PRIVATE KEY-----`
+const rootCAPem = `-----BEGIN CERTIFICATE-----
+MIIE1jCCAr4CAQowDQYJKoZIhvcNAQELBQAwMTELMAkGA1UEBhMCVVMxEDAOBgNV
+BAoMB1Rlc3RPcmcxEDAOBgNVBAsMB1Rlc3QgQ0EwHhcNMTcwMTA1MTc0NzQ1WhcN
+MzYxMjMxMTc0NzQ1WjAxMQswCQYDVQQGEwJVUzEQMA4GA1UECgwHVGVzdE9yZzEQ
+MA4GA1UECwwHVGVzdCBDQTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIB
+AK178Hyl2iJ8l4k/iHWgACtkLLa4n6sJo6DB8s1t98ILgU5ykT30jslWPH/QJvfL
+/OAvgDcq2+ScwZThGFMxotBKnoufy88wAV/8SAwdy6rbAatW6v6K8+dgPEcka2jf
+aqOby27+vrglQePQjjUMZoqr4qAizCUwCGZQUPhfSorBUcyWupKVZe8kDmD395yT
+yRf3z5rJAMFzJmNOv/6ZOA2Scv14xZWTezBlr3E2zBCr0iYpYsqh5dG2ube9DYyX
+0fXfrfaa8jstlu9jrYltxRmlCBAdoFB1N7eN6V/CsKc9nKc4dFkNDJng1Z4dpPYW
+v+HzYI4UBsnkYFtpt5VV3M+Ys/FE1ARE4ah4R69FK+eBKCkpRUszbm/fjnt/QvDX
+pCBcpa8vddgAgFKz9kvpO3lfA+jBb2euzX1lOL3ETooE0sEtFPK81P2M62BxsoIa
+ztAWOQlLQotDtY156YaUoREXCjLkpiitEhpn9+nlMAPlA9X2iVQWIgpkAepbu+rU
+ouODruaOoxc67GyTXUT7NIj3IE3PxPn5LBta+SOJ1DsUcC7aBG/x10/ifYLq/H4J
+JxnHhac+S5aKxeCBTzT84JKltbYiqhhoGVaXYp6AwbOkqUMYyhEKelcvtdKc7fKF
++0DRAymVdGzV+nhwxGqwgarlXzZwsWkSj/A0+J7l2Ty9AgMBAAEwDQYJKoZIhvcN
+AQELBQADggIBAKsYxpXFY4dyarnvMjAmX6EXcwqDfOJXgQdnX7QMzYlygMb+m2h1
+Nuk4HTMlmQtkLba6JQd5NQw42RBYl1ef0PwwJoVlznht7Hec9wEopa5pyzyerSPT
+nblh1TRKVffLQ1SyTO6yPgdn8rct5n2M0tW+nW7SZuWkzsc6swVEfJyTykXbMYHg
+aSap7oMUr0MaffQjihzwk585fY8GvPeqdrer/k7d6MD05NWkqeXaMitI4hNWTyTu
+7yjppKcGRVaNHmhk4867Jz6RZzxWbZBQe7tqaqmdqKLvz8/7j/VFjBTO2NebE0FV
+LxKcpv6QklH0UWqzWBn8LDZRYz6D1PglGjgh8ERHOTKJW0BRdIlzljZwND2f5lSx
+0HBSJYqTU38iBCHkxf8hYdiPI8Jw2CCt4l+hCwQhtIWgCrENSIa1sT9j3TPy+zwq
+2GHf9xTpjV1pVEyuFPf1bllPUeOFXprJiq2J4rnE/fqyabO0uSX35ucdG+YGVyMa
+BkwaEPvqvwremmh+xLYye6scQ+A/Wn9fN/8VN0W22t37O2VQNgsTANyIZwKZlxJc
+fSkkhF5M7t/rWTtO0MXnCuIDJu3QJneRvOSBlvIabkVGEt9tZQCzK9wiJqsBkLSy
+FCdYqoFk7gKsLkv51iMd+oItlEBuSEJSs1N+F5knShYfJdpHYDY+84ul
+-----END CERTIFICATE-----`
 
-// same as above but symmtrically gpg encrypted with password
-// "password"
-const encryptedTestSignerPrivateKey = `-----BEGIN PGP MESSAGE-----
-Version: GnuPG v2.0.22 (GNU/Linux)
+const localhostCertPem = `-----BEGIN CERTIFICATE-----
+MIIDvTCCAaUCBQLd4CbMMA0GCSqGSIb3DQEBCwUAMDExCzAJBgNVBAYTAlVTMRAw
+DgYDVQQKDAdUZXN0T3JnMRAwDgYDVQQLDAdUZXN0IENBMB4XDTE3MDEwNTE3NTQw
+NVoXDTM2MTIzMTE3NTQwNVowFDESMBAGA1UEAwwJbG9jYWxob3N0MIIBIjANBgkq
+hkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3w9PziLdiuYkq4sxVEQkq0HIq6Ad/51o
+k98AG87DqbG4hcPcbP/ItEHv4NdYZOtagY5twzb+sjcDC4plubQ9ewMKsGeBlDG4
+xxkaMYJeqx8usmiT+fisiI6B+tM38ahxtYqcyCp3ou+WrSEuRb+70UXnztR8RT4R
+ISkpq0wuj1Qcmxp9GkyA6aH4gwlj7EocqhIUCF2LxS8U0u2xvbCxHVSQFf4VxrrW
+ZwoHaI8GWAZb/IAe9gxoau5rtJ90gpesO5AVx1VPX+WhpSCmVGPnJdknMXC6mjDJ
+rMUW0KX8/dX7OdXAtSdDLzm6Yd4cI2DTnGVfckGIzsIYlGhBwxIUGwIDAQABMA0G
+CSqGSIb3DQEBCwUAA4ICAQAlendYr/Xrh2h9tWRNB7kCS8OSaJqsaLP7nDWlwbj/
+93QRB51qg2BHUy+tCzXAChq9HnaVcOLrDa0V3Amx5J6LauIBTnRBlHQGaw9Tu4Bo
+UqMusHKM9/brNTDRUq8eafJhdfsXWs+cwKj9+Zh1UX0gc8yzgJSLCfkJgeuf62vP
+tLAiJAxanxwT2hqtHnuVLu/UUmfx4n0IOALE8tARcLwZkKfmbsXiIY0ZIb/kwCuF
+APYy4bmjRXfA9CKnHcfwOxYNqsAPad/MLme9bSBtOuY75VY3UDeno6Uz5PZL4163
+8q+MedT6yinEtGaEllnpWMHa4NC0w+Klpk28fONEIxfqjCvlugRkIlCS3T9qfS9R
+vhqwn1V+13JRYxLwMtVpXPdfQbBy7PG9VaQAyRsMrIGsG8esHx+OUMKP3hvh07gs
+Lhmjn8SWaFpazldaNRcbOKazxHcwY+yL21VEL5CdA8GcjXEls3YaCuw54QBPJaoB
+Yg4ybiaio7h8od1Nydf3mbQ9gmMruLpGHw7RKAGxBD6Ukt0uPAMKOgaL9H2YOSzB
+SsYyE/ONrTbxpHZPQG1SszKuKUzGsPEwlMTwt8NHVTixKy/ttMA7NhN8KAYJrJQw
+Z65R0mZFpYSL31jrfV4Q4mhFj6/Cr8rgmH++82FWfg88gf4lPk6/iDZtHvMMBUXy
+Pg==
+-----END CERTIFICATE-----`
 
-jA0EAwMCcbfT9PQ87i/ZyeqXE353E4hV/gIydHlfgw7G7ybSniVuLGR8C9WpBx0o
-znCGTj4qL2HKgw3wHsahK3LtMioiVmRwnzcfOW+RJxpPZL04NIb+dlkIOodZ5ci2
-vqkhe23TdTHTz4XhScWe+0K+LxXeNWn5FjuApMxGnQpCbHtxnd5hTiMTTRKualZG
-CPDnqy6ngXkFe5bu5nP6jsqTiWe/qZceng6MYKGHwZRZrBT1oZoL0JYXiBFVz/31
-QiZA+24eTRiWcru/1d3HTc34NnHm9MTCH855Y9WtSsQq7y9Lu34NLqEuxdvhYtN9
-a6jn4WASuXQgiA7kiOfH3F/9wVlnmXCgi9pvrSsiIhe3ve7NwhRva5fwj4c9BbiD
-ZhwyvUC9743owKG6djk06k9cCVooIJnRwmtILKmizRqoJifepkyoJyNtKbJO3MMA
-UV2D6MTqH6p29Jdud6VzmVvC6ka3GbHmrsV/I7axqwRV9cA8HwOl+i/7ZqX+ehKG
-3DAySJwE3v5NrV2XRk5DUhFrfgHIziFJaa6JOO2M4wBVn9n+hhX0a3czGdM1dnA/
-5ncVjJ4M+n4KmEkHAxGrIfM3+egv4arClBo5Y91ltwZLdmh5iKPOUN4x9hpA/ICy
-2qSW80qVR5KNgW8vn4CW8MSjTHPMa6Upds42lKUJDYeXkEqGCpvt9izdEjTnnCrq
-mRJoGO1N9Oz4ih8JRXaAVCbNbUteZmYREfGfbd8L01Zj6JQCm40G2i/5b0C79yXA
-F1RtTaLSHg1guL243SMfTc+83FQ3epAJnJNaYLVKzCrIfd1Ez+bX9N99Zcik64Rx
-kIGLOm1ys/bYerONpMSvRDQYYp6uHKUL7Fp1WajCVGR5L0GyHvirvA73R5mMdS/Q
-8tWelKu2V6bAhSKElSHHnmToWTiJS98V/hW8RIT9kkqSdecX87UisH7WOZR/JIql
-uo1ezuSO0L6gKLKUCzIqK49ppbVXGHkLYP5/a4qBwGU8v89SihLoA4obQuN/eV0n
-VaPC3FXN2P1OM4q981tDxDcrDtZ31Z3uz+N8CZPaalQJLzCY2OKUsvembQuFD2l6
-S9f6IWGZXhYq8BRw0+VEcnAf8oG0AWlAycAAkAaLxOj53dJLP8sK9q0M+M+yimCB
-72hZg4HFgVzXsDcmYtkjlvOiOrXBUDXwzLbEDZuzCYposdWnnam2TMzj6d+psOvJ
-WYyl70ZLZUs4RHIq4MB9fZyd1Oo3S/IvVbbfyaFVmvGIaGdZJ1pYFYK2USpfhrKj
-ucfnXtWr9UHnSEiof9dLAtwYo2jLvs58+142gzJH7L3DYpI9kmQtf0i+gEyZ+fgN
-3CRFCAP8ancFcgFeCXiFYUlPZz0pnEK8jSP7OVhEEICWwHSlD8qauT35xPeL2zf3
-HWHTf9Fm+hd9AMWz6izgUbFIw4iLVmvp4FYc0C8SWUyUBasU2DKsjJH8Q1/Vy78h
-hf80/+FrB8U3ETJV/T2dGFuFwOmSeaMNGOlK2OBM+Ch4lE1xiWPcp/yXzhLU/J92
-vWYfnWNomDDFGad4eR8JPAT7sHJ20t8ihGMOKkfQDHt64F4pE0a3h35Tw9xxZpL0
-bNcwEKLlQzbXItC0sqiQrgDNZZI8ZDEmL9FK42IKhoH7cL2siTDKDU0KmxJcbSKJ
-B6TBdSkIkx6wGwrmAgtQ7D3A1PdFVDOdgQ72qWXzcDBAa5+ev9XefLdfmcbe726o
-H75JiRm3pbOn5cE5lux680VJLITirQRFwR1/8lYfTLBisX44VIdmFRcFQDXrRqBU
-WUGURkRA8g==
-=ym0B
------END PGP MESSAGE-----`
+const localhostKeyPem = `-----BEGIN PRIVATE KEY-----
+MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDfD0/OIt2K5iSr
+izFURCSrQciroB3/nWiT3wAbzsOpsbiFw9xs/8i0Qe/g11hk61qBjm3DNv6yNwML
+imW5tD17AwqwZ4GUMbjHGRoxgl6rHy6yaJP5+KyIjoH60zfxqHG1ipzIKnei75at
+IS5Fv7vRRefO1HxFPhEhKSmrTC6PVBybGn0aTIDpofiDCWPsShyqEhQIXYvFLxTS
+7bG9sLEdVJAV/hXGutZnCgdojwZYBlv8gB72DGhq7mu0n3SCl6w7kBXHVU9f5aGl
+IKZUY+cl2ScxcLqaMMmsxRbQpfz91fs51cC1J0MvObph3hwjYNOcZV9yQYjOwhiU
+aEHDEhQbAgMBAAECggEBALK97lFclvLK4O+lpm3D/S5OlKMSt3cxh6+WrtuZoCjH
+BPoLrQKbJRVtEO+3IFoeTnQq0cHwu7/LXWFOEZ3x1KJSGaqqBqfeABdrAhZSRdIS
+NrU4H/vbTUZQC9AWmWnIdPXokSHFBgFGxBMP16iEr9hOkCapFrvVtJxCA+YEMfsf
+CKK9azdS/6aA4LxFKFuf7EwZz3uD5BqQXM/1vrAjmmATzE5yoJUsUPwJNwTlwTLs
+53tOoZAIhYiWMXL1USXcKm3z8IJq8SgfgOUsK9X6IEEIga/IMwimPl966RlJyIsR
+U4RzqG+cP5D2bC9n1M3aBUmUGcvWV7E3nVg+bbuNYIECgYEA76lfyMCbnnBzqagx
+UpNR6PXn53RQicQktt+wFFexknf01ZmX+Tn3slSVtsms2xJRtUeNmljPKa7CIMWi
+CaBLA2fsUjkPB0EQk6v8MzJeEJOpfFPWC+miKZhnV17rNkuuCwUdPFIz7g66/HU5
+/W4gzrUkttw597cpOkOoiUrd16sCgYEA7kQzBa0ille35TlicqSQqeLQrTSga7b2
+U0NjSwu0szCGw2LNV87H6Fhxw+MqIQM5VDTPb3bp9T0Uv2n0moENbGO5dD4ZGuNC
+mA+AmKNeUBx81Jx4DumGxaU3eATkg6KlNKNccHtXF64k8blM9Y6q6ncCtr4UVz3H
+ekSGNXx/hVECgYBf+o7XkPtBmntXqHoIPeOBzmlPMi/G3HxvmGml2/DLXar5mAda
+0jI2gtVqXJ4TJeT/GmbFN2fPo6MvCLb57+3asVXdH+i62P3QhgH8ZuFw9hHcLp78
+Kla9HcHVJbhBCFHtK+EndSxC3DdaP4A31FDjN3w6lzvHztx97vah9Q+e/QKBgQCk
+8Y+EuXO9MmJ7DDvL84K2KO+fSFRZ3SIvR/JgDG1+svRIJIjU5bBcd4XiPst2aR3x
+3lFP77lM7YkEbdxIbViWlX7YKvkENRlv3SOAB3CN8vqz0NIIOL/06Ug6DOEJA7ps
+cz7WG3ySRxsKP+Y4BBjsEZFOYs4ACyOhz/g85L/+0QKBgQCjjTLjcSNg+fBZRXHC
+YwzyBA/WXBPve5qo17Bt91knZ4m+xOVmRcswNG2U0eFrm+nNlk84Kj3TMRAv8Stx
+GuCdIOQpn0IWClccTMjwc0AhJStSckNdSUQcsRl6LRnRHa3oCIs3hxnkiEHYch6e
+dcxWzhBDbzeIV9SvcTwLx/ghQg==
+-----END PRIVATE KEY-----`
 
-const testUserSSHPublicKey = `ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDI09fpMWTeYw7/EO/+FywS/sghNXdTeTWxX7K2N17owsQJX8s76LGVIdVeYrWg4QSmYlpf6EVSCpx/fbCazrsG7FJVTRhExzFbRT9asmvzS+viXSbSvnavhOz/paihyaMsVPKVv24vF6MOs8DgfwehcKCPjKoIPnlYXZaZcy05KOcZmsvYu2kNOP6sSjDFF+ru+T+DLp3DUGw+MPr45IuR7iDnhXhklqyUn0d7ou0rOHXz9GdHIzpr+DAoQGmTDkpbQEo067Rjfu406gYL8pVFD1F7asCjU39llQCcU/HGyPym5fa29Nubw0dzZZXGZUVFalxo02YMM7P9I6ZjeCsv camilo_viecco1@mon-sre-dev.ash2.symcpe.net`
+const simpleValidConfigFile = `base:
+    gen_cert_urls: "https://localhost:33443/"
+`
 
-// The next was extracted from the testUserPrivateKey above : openssl rsa -in userkey.pem -pubout
-const testUserPEMPublicKey = `-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyNPX6TFk3mMO/xDv/hcs
-Ev7IITV3U3k1sV+ytjde6MLECV/LO+ixlSHVXmK1oOEEpmJaX+hFUgqcf32wms67
-BuxSVU0YRMcxW0U/WrJr80vr4l0m0r52r4Ts/6WoocmjLFTylb9uLxejDrPA4H8H
-oXCgj4yqCD55WF2WmXMtOSjnGZrL2LtpDTj+rEowxRfq7vk/gy6dw1BsPjD6+OSL
-ke4g54V4ZJaslJ9He6LtKzh18/RnRyM6a/gwKEBpkw5KW0BKNOu0Y37uNOoGC/KV
-RQ9Re2rAo1N/ZZUAnFPxxsj8puX2tvTbm8NHc2WVxmVFRWpcaNNmDDOz/SOmY3gr
-LwIDAQAB
------END PUBLIC KEY-----`
+const invalidConfigFileNoGenUrls = `base:
+    `
 
-// This DB has user 'username' with password 'password'
-const userdbContent = `username:$2y$05$D4qQmZbWYqfgtGtez2EGdOkcNne40EdEznOqMvZegQypT8Jdz42Jy`
+const testUserPublicKey = `ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDI09fpMWTeYw7/EO/+FywS/sghNXdTeTWxX7K2N17owsQJX8s76LGVIdVeYrWg4QSmYlpf6EVSCpx/fbCazrsG7FJVTRhExzFbRT9asmvzS+viXSbSvnavhOz/paihyaMsVPKVv24vF6MOs8DgfwehcKCPjKoIPnlYXZaZcy05KOcZmsvYu2kNOP6sSjDFF+ru+T+DLp3DUGw+MPr45IuR7iDnhXhklqyUn0d7ou0rOHXz9GdHIzpr+DAoQGmTDkpbQEo067Rjfu406gYL8pVFD1F7asCjU39llQCcU/HGyPym5fa29Nubw0dzZZXGZUVFalxo02YMM7P9I6ZjeCsv cviecco@example.com`
 
-type loginTestVector struct {
-	Username *string
-	Password *string
+func getTLSconfig() (*tls.Config, error) {
+	cert, err := tls.X509KeyPair([]byte(localhostCertPem), []byte(localhostKeyPem))
+	if err != nil {
+		return &tls.Config{}, err
+	}
+
+	return &tls.Config{
+		MinVersion:   tls.VersionTLS11,
+		MaxVersion:   tls.VersionTLS12,
+		Certificates: []tls.Certificate{cert},
+		ServerName:   "localhost",
+	}, nil
 }
 
-var validUsernameConst = "username"
-var validPasswordConst = "password"
-var emptyStringConst = ""
+const localHttpsTarget = "https://localhost:22443/"
 
-var loginFailValues = []loginTestVector{
-	loginTestVector{Username: &validUsernameConst, Password: &validUsernameConst}, //bad password
-	loginTestVector{Username: &validPasswordConst, Password: &validPasswordConst}, //bad username
-	loginTestVector{Username: &validUsernameConst, Password: &emptyStringConst},
-	loginTestVector{Username: &emptyStringConst, Password: &validPasswordConst},
-	loginTestVector{Username: nil, Password: &validPasswordConst},
-	loginTestVector{Username: &validUsernameConst, Password: nil},
+var testAllowedCertBackends = []string{proto.AuthTypePassword, proto.AuthTypeU2F}
+
+func handler(w http.ResponseWriter, r *http.Request) {
+	authCookie := http.Cookie{Name: "somename", Value: "somevalue"}
+	http.SetCookie(w, &authCookie)
+	switch r.URL.Path {
+	case proto.LoginPath:
+		loginResponse := proto.LoginResponse{Message: "success",
+			CertAuthBackend: testAllowedCertBackends}
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(loginResponse)
+
+	default:
+		fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
+	}
 }
 
-func createKeyBodyRequest(method, urlStr, filedata string) (*http.Request, error) {
-	//create attachment....
-	bodyBuf := &bytes.Buffer{}
-	bodyWriter := multipart.NewWriter(bodyBuf)
-
-	//
-	fileWriter, err := bodyWriter.CreateFormFile("pubkeyfile", "somefilename.pub")
-	if err != nil {
-		fmt.Println("error writing to buffer")
-		//t.Fatal(err)
-		return nil, err
+func init() {
+	logger = debuglogger.New(stdlog.New(os.Stderr, "", stdlog.LstdFlags))
+	tlsConfig, _ := getTLSconfig()
+	//_, _ = tls.Listen("tcp", ":11443", config)
+	srv := &http.Server{
+		Addr:      ":22443",
+		TLSConfig: tlsConfig,
 	}
-	fh := strings.NewReader(filedata)
-
-	//iocopy
-	_, err = io.Copy(fileWriter, fh)
-	if err != nil {
-		//t.Fatal(err)
-		return nil, err
-	}
-
-	contentType := bodyWriter.FormDataContentType()
-	bodyWriter.Close()
-
-	// Create a request to pass to our handler. We don't have any query parameters for now, so we'll
-	// pass 'nil' as the third parameter.
-	req, err := http.NewRequest(method, urlStr, bodyBuf)
-	if err != nil {
-		//t.Fatal(err)
-		return nil, err
-	}
-	req.Header.Set("Content-Type", contentType)
-
-	return req, nil
+	http.HandleFunc("/", handler)
+	go srv.ListenAndServeTLS("", "")
+	//http.Serve(ln, nil)
 }
 
-func createBasicAuthRequstWithKeyBody(method, urlStr, username, password, filedata string) (*http.Request, error) {
-
-	req, err := createKeyBodyRequest(method, urlStr, filedata)
+func TestGenKeyPairSuccess(t *testing.T) {
+	tmpfile, err := ioutil.TempFile("", "test_genKeyPair_")
 	if err != nil {
-		return nil, err
+		t.Fatal(err)
 	}
-	req.SetBasicAuth(username, password)
-	return req, nil
+
+	defer os.Remove(tmpfile.Name()) // clean up
+
+	_, _, err = genKeyPair(tmpfile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileBytes, err := ioutil.ReadFile(tmpfile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = certgen.GetSignerFromPEMBytes(fileBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//TODO: verify written signer matches our signer.
 }
 
-func setupPasswdFile() (f *os.File, err error) {
-	tmpfile, err := ioutil.TempFile("", "userdb_test")
+func TestGenKeyPairFailNoPerms(t *testing.T) {
+	_, _, err := genKeyPair("/proc/something")
+	if err == nil {
+		t.Logf("Should have failed")
+		t.Fatal(err)
+	}
+}
+
+func TestGetUserHomeDirSuccess(t *testing.T) {
+	usr, err := user.Current()
+	if err != nil {
+		t.Logf("cannot get current user info")
+		t.Fatal(err)
+	}
+	homeDir, err := getUserHomeDir(usr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(homeDir) < 1 {
+		t.Fatal("invalid homedir")
+
+	}
+}
+
+func createTempFileWithStringContent(prefix string, content string) (f *os.File, err error) {
+	f, err = ioutil.TempFile("", prefix)
 	if err != nil {
 		return nil, err
 	}
-	//from this moment on.. we need to remove the tmpfile only on error conditions
 
-	if _, err := tmpfile.Write([]byte(userdbContent)); err != nil {
-		os.Remove(tmpfile.Name())
+	if _, err = f.Write([]byte(content)); err != nil {
+		os.Remove(f.Name())
 		return nil, err
 	}
+	return f, nil
+}
+
+func TestLoadVerifyConfigFileSuccess(t *testing.T) {
+	tmpfile, err := createTempFileWithStringContent("test_LoadVerifyConfig", simpleValidConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer os.Remove(tmpfile.Name()) // clean up
+
 	if err := tmpfile.Close(); err != nil {
-		os.Remove(tmpfile.Name())
-		return nil, err
+		t.Fatal(err)
 	}
-	return tmpfile, nil
+	_, err = loadVerifyConfigFile(tmpfile.Name())
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	// TODO: validate loaded file contents
 }
 
-//
-func setupValidRuntimeStateSigner() (*RuntimeState, *os.File, error) {
-	var state RuntimeState
-	//load signer
-	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
-	if err != nil {
-		//log.Printf("Cannot parse Priave Key file")
-		return nil, nil, err
-	}
-	state.Signer = signer
-
-	//for x509
-	state.caCertDer, err = generateCADer(&state, signer)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	passwdFile, err := setupPasswdFile()
-	if err != nil {
-		return nil, nil, err
-	}
-	state.Config.Base.HtpasswdFilename = passwdFile.Name()
-
-	state.authCookie = make(map[string]authInfo)
-
-	return &state, passwdFile, nil
-}
-
-func TestSuccessFullSigningSSH(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+func TestLoadVerifyConfigFileFailNotYAML(t *testing.T) {
+	tmpfile, err := createTempFileWithStringContent("test_LoadVerifyConfigFail_", "Some random string")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(passwdFile.Name()) // clean up
-
-	// Get request
-	req, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username", "username", "password", testUserSSHPublicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
-	if err != nil {
+	defer os.Remove(tmpfile.Name()) // clean up
+	if err := tmpfile.Close(); err != nil {
 		t.Fatal(err)
 	}
 
-	// now we check using login auth + cookies
-	// For now just inject cookie into space
-
-	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username", testUserSSHPublicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", AuthType: AuthTypeU2F, ExpiresAt: time.Now().Add(120 * time.Second)}
-	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
-	cookieReq.AddCookie(&authCookie)
-
-	_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusOK)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// TODO check for the contents of the successful response...
-}
-
-func TestSuccessFullSigningX509(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(passwdFile.Name()) // clean up
-
-	// Get request
-	req, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username?type=x509", "username", "password", testUserPEMPublicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// TODO: Check the response body is what we expect.
-
-	//And also test with cookies
-	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", AuthType: AuthTypeU2F, ExpiresAt: time.Now().Add(120 * time.Second)}
-	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
-	cookieReq.AddCookie(&authCookie)
-
-	_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusOK)
-	if err != nil {
-		t.Fatal(err)
+	_, err = loadVerifyConfigFile(tmpfile.Name())
+	if err == nil {
+		t.Fatal("Should have failed not a YAML file")
 	}
 }
 
-func TestFailSingingExpiredCookie(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
+func TestLoadVerifyConfigFileFailNoGenCertUrls(t *testing.T) {
+	tmpfile, err := createTempFileWithStringContent("test_LoadVerifyConfigFail_", invalidConfigFileNoGenUrls)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(passwdFile.Name()) // clean up
-
-	//Fist we ensure OK is working
-	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey)
-	if err != nil {
+	defer os.Remove(tmpfile.Name()) // clean up
+	if err := tmpfile.Close(); err != nil {
 		t.Fatal(err)
 	}
 
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{
-		Username:  "username",
-		AuthType:  AuthTypeU2F,
-		ExpiresAt: time.Now().Add(120 * time.Second)}
-	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
-	cookieReq.AddCookie(&authCookie)
-
-	_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusOK)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Now expire the cookie and retry
-	state.authCookie[cookieVal] = authInfo{Username: "username", AuthType: AuthTypeU2F, ExpiresAt: time.Now().Add(-120 * time.Second)}
-	_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusUnauthorized)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// TODO check that body is actually empty
-}
-
-func TestFailSingingUnexpectedCookie(t *testing.T) {
-	state, passwdFile, err := setupValidRuntimeStateSigner()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(passwdFile.Name()) // clean up
-
-	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
-	authCookie := http.Cookie{Name: authCookieName, Value: "nonmatchingvalue"}
-	cookieReq.AddCookie(&authCookie)
-
-	// Now expire the cookie and retry
-	_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusUnauthorized)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// TODO check that body is actually empty
-}
-
-func checkRequestHandlerCode(req *http.Request, handlerFunc http.HandlerFunc, expectedStatus int) (*httptest.ResponseRecorder, error) {
-	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(handlerFunc)
-
-	handler.ServeHTTP(rr, req)
-	if status := rr.Code; status != expectedStatus {
-		errStr := fmt.Sprintf("handler returned wrong status code: got %v want %v",
-			status, expectedStatus)
-		err := errors.New(errStr)
-		return nil, err
-	}
-	return rr, nil
-}
-
-func TestInjectingSecret(t *testing.T) {
-	var state RuntimeState
-	passwdFile, err := setupPasswdFile()
-	if err != nil {
-		t.Fatal(err)
-	}
-	state.SSHCARawFileContent = []byte(encryptedTestSignerPrivateKey)
-	state.SignerIsReady = make(chan bool, 1)
-
-	defer os.Remove(passwdFile.Name()) // clean up
-	state.Config.Base.HtpasswdFilename = passwdFile.Name()
-
-	state.authCookie = make(map[string]authInfo)
-	// Make certgen Request
-	//Fist we ensure OK is working
-	certGenReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{
-		Username:  "username",
-		AuthType:  AuthTypeU2F,
-		ExpiresAt: time.Now().Add(120 * time.Second)}
-	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
-	certGenReq.AddCookie(&authCookie)
-
-	//certGenReq, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username", "username", "password", testUserSSHPublicKey)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = checkRequestHandlerCode(certGenReq, state.certGenHandler, http.StatusInternalServerError)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Now we make the inject Request
-	injectSecretRequest, err := http.NewRequest("POST", "/admin/inject", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var connectionState tls.ConnectionState
-	injectSecretRequest.TLS = &connectionState
-
-	_, err = checkRequestHandlerCode(injectSecretRequest, state.secretInjectorHandler, http.StatusForbidden)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// now lets pretend that a tls connection with valid certs exists and try again
-	var subjectCert x509.Certificate
-	subjectCert.Subject.CommonName = "foo"
-	peerCertList := []*x509.Certificate{&subjectCert}
-	connectionState.VerifiedChains = append(connectionState.VerifiedChains, peerCertList)
-	injectSecretRequest.TLS = &connectionState
-
-	q := injectSecretRequest.URL.Query()
-	q.Add("ssh_ca_password", "password")
-	injectSecretRequest.URL.RawQuery = q.Encode()
-
-	_, err = checkRequestHandlerCode(injectSecretRequest, state.secretInjectorHandler, http.StatusOK)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if state.Signer == nil {
-		t.Errorf("The signer should now be loaded")
-	}
-	_, err = checkRequestHandlerCode(certGenReq, state.certGenHandler, http.StatusOK)
-	if err != nil {
-		t.Fatal(err)
+	_, err = loadVerifyConfigFile(tmpfile.Name())
+	if err == nil {
+		t.Fatal("Should have failed no genurls in config")
 	}
 }
 
-func TestPublicHandleLoginForm(t *testing.T) {
-	var state RuntimeState
-	//load signer
-	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
-	if err != nil {
-		//log.Printf("Cannot parse Priave Key file")
-		//return runtimeState, err
-		t.Fatal(err)
+func TestLoadVerifyConfigFileFailNoSuchFile(t *testing.T) {
+	_, err := loadVerifyConfigFile("NonExistentFile")
+	if err == nil {
+		t.Fatal("Success on loading Nonexistent File!")
 	}
-	state.Signer = signer
-	urlList := []string{"/public/loginForm", "/public/x509ca"}
-	for _, url := range urlList {
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			t.Fatal(err)
-			//return nil, err
-		}
-		_, err = checkRequestHandlerCode(req, state.publicPathHandler, http.StatusOK)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	req, err := http.NewRequest("GET", "/public/foo", nil)
-	_, err = checkRequestHandlerCode(req, state.publicPathHandler, http.StatusNotFound)
-	if err != nil {
-		t.Fatal(err)
-	}
+
 }
 
-// returns true if it has a valid cookie that is found on the runtimestate...
-// probably can be replaced by something calling checkAuth once that understands the login
-// form.
-func checkValidLoginResponse(resp *http.Response, state *RuntimeState, username string) bool {
-	//get cookies
-	var authCookie *http.Cookie
-	for _, cookie := range resp.Cookies() {
-		if cookie.Name != authCookieName {
-			continue
-		}
-		authCookie = cookie
-	}
-	if authCookie == nil {
-		return false
-	}
-	info, ok := state.authCookie[authCookie.Value]
+func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
+	certPool := x509.NewCertPool()
+	ok := certPool.AppendCertsFromPEM([]byte(rootCAPem))
 	if !ok {
-		return false
+		t.Fatal("cannot add certs to certpool")
 	}
-	if info.Username != username {
-		return false
-	}
-	// TODO: add check for expiration.
-	return true
-
-}
-
-func TestLoginAPIBasicAuth(t *testing.T) {
-	var state RuntimeState
-	//load signer
-	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
+	privateKey, err := rsa.GenerateKey(rand.Reader, RSAKeySize)
 	if err != nil {
 		t.Fatal(err)
 	}
-	state.Signer = signer
-	state.authCookie = make(map[string]authInfo)
-
-	passwdFile, err := setupPasswdFile()
+	skipu2f := true
+	_, _, err = getCertFromTargetUrls(privateKey, "username", []byte("password"), []string{localHttpsTarget}, certPool, skipu2f) //(cert []byte, err error)
 	if err != nil {
 		t.Fatal(err)
-	}
-	defer os.Remove(passwdFile.Name()) // clean up
-	state.Config.Base.HtpasswdFilename = passwdFile.Name()
-
-	err = initDB(&state)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	req, err := http.NewRequest("GET", "/api/v0/login", nil)
-	if err != nil {
-		t.Fatal(err)
-		//return nil, err
-	}
-	req.SetBasicAuth(validUsernameConst, validPasswordConst)
-	rr, err := checkRequestHandlerCode(req, state.loginHandler, http.StatusOK)
-	if err != nil {
-		t.Fatal(err)
-	}
-	//TODO: check for existence of login cookie!
-	if !checkValidLoginResponse(rr.Result(), &state, validUsernameConst) {
-		t.Fatal(err)
-	}
-
-	//now we check for failed auth
-	for _, testVector := range loginFailValues {
-		//there are no nil values in basic auth
-		if testVector.Password == nil {
-			continue
-		}
-		if testVector.Username == nil {
-			continue
-		}
-		req.SetBasicAuth(*testVector.Username, *testVector.Password)
-		_, err = checkRequestHandlerCode(req, state.loginHandler, http.StatusUnauthorized)
-		if err != nil {
-			t.Fatal(err)
-		}
 	}
 }
 
-func TestLoginAPIFormAuth(t *testing.T) {
-	var state RuntimeState
-	//load signer
-	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
+func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, RSAKeySize)
 	if err != nil {
 		t.Fatal(err)
 	}
-	state.Signer = signer
-	state.authCookie = make(map[string]authInfo)
-
-	passwdFile, err := setupPasswdFile()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(passwdFile.Name()) // clean up
-	state.Config.Base.HtpasswdFilename = passwdFile.Name()
-
-	err = initDB(&state)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	form := url.Values{}
-	form.Add("username", validUsernameConst)
-	form.Add("password", validPasswordConst)
-
-	req, err := http.NewRequest("POST", proto.LoginPath, strings.NewReader(form.Encode()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	// TODO: add thest with multipart/form-data support and test
-	//req.Header.Add("Content-Type", "multipart/form-data")
-	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
-	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-
-	rr, err := checkRequestHandlerCode(req, state.loginHandler, http.StatusOK)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// TODO: check for existence of login cookie!
-	if !checkValidLoginResponse(rr.Result(), &state, validUsernameConst) {
-		t.Fatal(err)
-	}
-
-	// test with form AND with json return
-	req.Header.Add("Accept", "application/json")
-	jsonrr, err := checkRequestHandlerCode(req, state.loginHandler, http.StatusOK)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !checkValidLoginResponse(jsonrr.Result(), &state, validUsernameConst) {
-		t.Fatal(err)
-	}
-	loginResponse := proto.LoginResponse{}
-	body := jsonrr.Result().Body
-	err = json.NewDecoder(body).Decode(&loginResponse)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("loginResponse='%+v'", loginResponse)
-
-	// now we check for failed auth
-	for _, testVector := range loginFailValues {
-		form := url.Values{}
-		if testVector.Password != nil {
-			form.Add("password", *testVector.Password)
-		}
-		if testVector.Username != nil {
-			form.Add("username", *testVector.Username)
-		}
-		req, err := http.NewRequest("POST", proto.LoginPath, strings.NewReader(form.Encode()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
-		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-		t.Logf("form='%s'", form.Encode())
-		//req.SetBasicAuth(*testVector.Username, *testVector.Password)
-		_, err = checkRequestHandlerCode(req, state.loginHandler, http.StatusUnauthorized)
-		if err != nil {
-			t.Fatal(err)
-		}
+	skipu2f := true
+	_, _, err = getCertFromTargetUrls(privateKey, "username", []byte("password"), []string{localHttpsTarget}, nil, skipu2f)
+	if err == nil {
+		t.Fatal("Should have failed to connect untrusted CA")
 	}
 }
 
-func TestProfileHandlerTemplate(t *testing.T) {
-	var state RuntimeState
-	//load signer
-	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
+func TestGetParseURLEnvVariable(t *testing.T) {
+	testName := "TEST_ENV_KEYMASTER_11111"
+	os.Setenv(testName, "http://localhost:12345")
+	val, err := getParseURLEnvVariable(testName)
 	if err != nil {
 		t.Fatal(err)
 	}
-	state.Signer = signer
-	state.authCookie = make(map[string]authInfo)
-
-	dir, err := ioutil.TempDir("", "example")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir) // clean up
-	state.Config.Base.DataDirectory = dir
-	err = initDB(&state)
-	if err != nil {
-		t.Fatal(err)
+	if val == nil {
+		t.Fatal("Should have found value")
 	}
 
-	req, err := http.NewRequest("GET", "/profile/", nil)
-	if err != nil {
-		t.Fatal(err)
-		//return nil, err
-	}
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
-	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
-	req.AddCookie(&authCookie)
+	//Not a URL
+	/*
+		os.Setenv(testName, "")
+		if err == nil {
+			t.Fatal("should have failed to parse")
+		}
+	*/
 
-	_, err = checkRequestHandlerCode(req, state.profileHandler, http.StatusOK)
-	if err != nil {
-		t.Fatal(err)
+	//Unexistent
+	val, err = getParseURLEnvVariable("Foobar")
+	if val != nil {
+		t.Fatal("SHOULD not have found anything ")
 	}
-	//TODO: verify HTML output
+	//
+
 }
 
-func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
-	var state RuntimeState
-	//load signer
-	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
+// ------------WARN-------- Next name copied from https://github.com/howeyc/gopass/blob/master/pass_test.go for using
+//  gopass checks
+func TestPipe(t *testing.T) {
+	_, err := pipeToStdin("password\n")
+	_, password, err := getUserInfoAndCreds()
 	if err != nil {
 		t.Fatal(err)
 	}
-	state.Signer = signer
-	state.authCookie = make(map[string]authInfo)
-
-	dir, err := ioutil.TempDir("", "example")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir) // clean up
-	state.Config.Base.DataDirectory = dir
-
-	err = initDB(&state)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
-	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
-
-	const newName = "New"
-	const oldName = "Old"
-
-	profile := &userProfile{}
-	profile.U2fAuthData = make(map[int64]*u2fAuthData)
-	profile.U2fAuthData[0] = &u2fAuthData{Name: oldName}
-	err = state.SaveUserProfile("username", profile)
-	if err != nil {
-		t.Fatal(err)
+	if string(password) != "password" {
+		t.Fatal("password Does NOT match")
 	}
 
-	form := url.Values{}
-	form.Add("username", "username")
-	//form.Add("password", validPasswordConst)
-	form.Add("index", "0")
-	form.Add("name", newName)
-	form.Add("action", "Update")
-
-	req, err := http.NewRequest("POST", u2fTokenManagementPath, strings.NewReader(form.Encode()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.AddCookie(&authCookie)
-	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
-	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-	val, err := checkRequestHandlerCode(req, state.u2fTokenManagerHandler, http.StatusOK)
-	if err != nil {
-		t.Log(val)
-		t.Fatal(err)
-	}
-	// Todo... check against the FS.
-	profile, _, err = state.LoadUserProfile("username")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if profile.U2fAuthData[0].Name != newName {
-		t.Fatal("update not successul")
-	}
 }
 
-func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
-	var state RuntimeState
-	//load signer
-	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
+// ------------WARN--------------
+// THE next two functions are litierly copied from: https://github.com/howeyc/gopass/blob/master/pass_test.go
+// pipeToStdin pipes the given string onto os.Stdin by replacing it with an
+// os.Pipe.  The write end of the pipe is closed so that EOF is read after the
+// final byte.
+func pipeToStdin(s string) (int, error) {
+	pipeReader, pipeWriter, err := os.Pipe()
 	if err != nil {
-		t.Fatal(err)
+		fmt.Println("Error getting os pipes:", err)
+		os.Exit(1)
 	}
-	state.Signer = signer
-	state.authCookie = make(map[string]authInfo)
+	os.Stdin = pipeReader
+	w, err := pipeWriter.WriteString(s)
+	pipeWriter.Close()
+	return w, err
+}
 
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
-	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
-
-	dir, err := ioutil.TempDir("", "example")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir) // clean up
-	state.Config.Base.DataDirectory = dir
-	err = initDB(&state)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	profile := &userProfile{}
-	profile.U2fAuthData = make(map[int64]*u2fAuthData)
-	profile.U2fAuthData[0] = &u2fAuthData{Name: "name1", Enabled: false}
-	profile.U2fAuthData[1] = &u2fAuthData{Name: "name2", Enabled: false}
-
-	err = state.SaveUserProfile("username", profile)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	form := url.Values{}
-	form.Add("username", "username")
-	//form.Add("password", validPasswordConst)
-	form.Add("index", "0")
-	form.Add("action", "Delete")
-
-	req, err := http.NewRequest("POST", u2fTokenManagementPath, strings.NewReader(form.Encode()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.AddCookie(&authCookie)
-	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
-	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-	val, err := checkRequestHandlerCode(req, state.u2fTokenManagerHandler, http.StatusOK)
-	if err != nil {
-		t.Log(val)
-		t.Fatal(err)
-	}
-	// Todo... check against the FS.
-	profile, _, err = state.LoadUserProfile("username")
-	if err != nil {
-		t.Fatal(err)
-	}
-	//if len(state.userProfile["username"].U2fAuthData) != 1 {
-	if len(profile.U2fAuthData) != 1 {
-		t.Fatal("update not successul")
-	}
+func pipeBytesToStdin(b []byte) (int, error) {
+	return pipeToStdin(string(b))
 }
