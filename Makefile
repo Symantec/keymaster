@@ -11,7 +11,7 @@ VERSION=0.4.0
 # Setup the -ldflags option for go build here, interpolate the variable values
 #LDFLAGS=-ldflags "-X github.com/ariejan/roll/core.Version=${VERSION} -X github.com/ariejan/roll/core.BuildTime=${BUILD_TIME}"
 
-all:
+all:	init-config-host
 	cd $(GOPATH)/src; go install -ldflags "-X main.Version=${VERSION}" github.com/Symantec/keymaster/cmd/*
 
 get-deps:
@@ -20,6 +20,9 @@ get-deps:
 clean:
 	rm -f bin/*
 	rm -f keymaster-*.tar.gz
+
+init-config-host:
+	@test -f cmd/keymaster/config_host.go || cp -p templates/config_host.go cmd/keymaster/config_host.go
 
 ${BINARY}-${VERSION}.tar.gz:
 	mkdir ${BINARY}-${VERSION}
