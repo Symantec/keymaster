@@ -22,7 +22,7 @@ clean:
 	rm -f keymaster-*.tar.gz
 
 init-config-host:
-	@test -f cmd/keymaster/config_host.go || cp -p templates/config_host.go cmd/keymaster/config_host.go
+	@test -f cmd/keymaster/config_host.go || cp -p templates/config_host_go cmd/keymaster/config_host.go
 
 ${BINARY}-${VERSION}.tar.gz:
 	mkdir ${BINARY}-${VERSION}
