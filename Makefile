@@ -14,7 +14,7 @@ VERSION=0.4.0
 all:	init-config-host
 	cd $(GOPATH)/src; go install -ldflags "-X main.Version=${VERSION}" github.com/Symantec/keymaster/cmd/*
 
-get-deps:
+get-deps:	init-config-host
 	go get -t ./...
 
 clean:
@@ -38,5 +38,5 @@ rpm:	${BINARY}-${VERSION}.tar.gz
 
 tar:	${BINARY}-${VERSION}.tar.gz
 
-test:
+test:	init-config-host
 	go test -v ./...
