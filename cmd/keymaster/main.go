@@ -715,6 +715,7 @@ func main() {
 		logger.Fatal(err)
 	}
 
+	_ = defaultConfigHost // Temporary reference to force dependency.
 	if len(*configHost) > 1 {
 		err = getConfigFromHost(*configFilename, *configHost, rootCAs)
 		if err != nil {
