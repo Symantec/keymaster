@@ -59,7 +59,7 @@ type AppConfigFile struct {
 
 var (
 	Version        = "No version provided"
-	configFilename = flag.String("config", filepath.Join(os.Getenv("HOME"), ".keymaster", "prodme_config.yml"), "The filename of the configuration")
+	configFilename = flag.String("config", filepath.Join(os.Getenv("HOME"), ".keymaster", "client_config.yml"), "The filename of the configuration")
 	rootCAFilename = flag.String("rootCAFilename", "", "(optional) name for using non OS root CA to verify TLS connections")
 	configHost     = flag.String("configHost", "", "Get a bootstrap config from this host")
 	cliUsername    = flag.String("username", "", "username for keymaster")
@@ -715,11 +715,17 @@ func main() {
 		logger.Fatal(err)
 	}
 
-	_ = defaultConfigHost // Temporary reference to force dependency.
 	if len(*configHost) > 1 {
 		err = getConfigFromHost(*configFilename, *configHost, rootCAs)
 		if err != nil {
 			logger.Fatal(err)
+		}
+	} else if len(defaultConfigHost) > 1 { // if there is a configHost AND there is NO config file, create one
+		if _, err := os.Stat(*configFilename); os.IsNotExist(err) {
+			err = getConfigFromHost(*configFilename, defaultConfigHost, rootCAs)
+			if err != nil {
+				logger.Fatal(err)
+			}
 		}
 	}
 
@@ -735,6 +741,12 @@ func main() {
 	//sshPath := homeDir + "/.ssh/"
 	commonCertPath := "/.ssh/"
 	privateKeyPath := filepath.Join(homeDir, commonCertPath, FilePrefix)
+	sshConfigPath, _ := filepath.Split(privateKeyPath)
+	err = os.MkdirAll(sshConfigPath, 0700)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
 	signer, _, err := genKeyPair(privateKeyPath)
 	if err != nil {
 		logger.Fatal(err)
