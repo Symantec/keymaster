@@ -615,21 +615,14 @@ func getCertFromTargetUrls(signer crypto.Signer, userName string, password []byt
 	return sshCert, x509Cert, nil
 }
 
-func getUserInfoAndCreds() (usr *user.User, password []byte, err error) {
-	usr, err = user.Current()
-	if err != nil {
-		logger.Printf("cannot get current user info")
-		return nil, nil, err
-	}
-	userName := usr.Username
-
+func getUserCreds(userName string) (password []byte, err error) {
 	fmt.Printf("Password for %s: ", userName)
 	password, err = gopass.GetPasswd()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 		// Handle gopass.ErrInterrupted or getch() read error
 	}
-	return usr, password, nil
+	return password, nil
 }
 
 const hostConfigPath = "/public/clientConfig"
@@ -734,7 +727,7 @@ func main() {
 	if err != nil {
 		logger.Fatal(err)
 	}
-	_, password, err := getUserInfoAndCreds()
+	password, err := getUserCreds(userName)
 	if err != nil {
 		logger.Fatal(err)
 	}

@@ -335,7 +335,7 @@ func TestGetParseURLEnvVariable(t *testing.T) {
 //  gopass checks
 func TestPipe(t *testing.T) {
 	_, err := pipeToStdin("password\n")
-	_, password, err := getUserInfoAndCreds()
+	password, err := getUserCreds("userame")
 	if err != nil {
 		t.Fatal(err)
 	}
