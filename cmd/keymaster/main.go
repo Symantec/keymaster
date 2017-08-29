@@ -35,6 +35,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strconv"
@@ -733,8 +734,7 @@ func main() {
 	}
 
 	//sshPath := homeDir + "/.ssh/"
-	commonCertPath := "/.ssh/"
-	privateKeyPath := filepath.Join(homeDir, commonCertPath, FilePrefix)
+	privateKeyPath := filepath.Join(homeDir, DefaultKeysLocation, FilePrefix)
 	signer, _, err := genKeyPair(privateKeyPath)
 	if err != nil {
 		logger.Fatal(err)
@@ -764,5 +764,9 @@ func main() {
 	}
 
 	logger.Printf("Success")
-
+	if _, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
+		// TODO(rgooch): Parse certificate to get actual lifetime.
+		cmd := exec.Command("ssh-add", "-t", "20h", privateKeyPath)
+		cmd.Run()
+	}
 }
