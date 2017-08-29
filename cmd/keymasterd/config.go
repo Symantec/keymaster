@@ -39,6 +39,7 @@ type baseConfig struct {
 	DataDirectory               string   `yaml:"data_directory"`
 	SharedDataDirectory         string   `yaml:"shared_data_directory"`
 	AllowedAuthBackendsForCerts []string `yaml:"allowed_auth_backends_for_certs"`
+	AllowedAuthBackendsForUI    []string `yaml:"allowed_auth_backends_for_ui"`
 }
 
 type LdapConfig struct {

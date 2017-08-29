@@ -656,7 +656,10 @@ func TestProfileHandlerTemplate(t *testing.T) {
 		//return nil, err
 	}
 	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{
+		Username:  "username",
+		ExpiresAt: time.Now().Add(120 * time.Second),
+		AuthType:  AuthTypeAny}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	req.AddCookie(&authCookie)
 
@@ -689,7 +692,10 @@ func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{
+		Username:  "username",
+		ExpiresAt: time.Now().Add(120 * time.Second),
+		AuthType:  AuthTypeAny}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 
 	const newName = "New"
@@ -743,7 +749,8 @@ func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
 	state.authCookie = make(map[string]authInfo)
 
 	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{Username: "username",
+		ExpiresAt: time.Now().Add(120 * time.Second), AuthType: AuthTypeAny}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 
 	dir, err := ioutil.TempDir("", "example")

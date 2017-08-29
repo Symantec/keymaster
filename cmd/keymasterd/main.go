@@ -51,6 +51,8 @@ const (
 	AuthTypeSymantecVIP
 )
 
+const AuthTypeAny = 0xFFFF
+
 type authInfo struct {
 	ExpiresAt time.Time
 	Username  string
@@ -318,7 +320,7 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 }
 
 // Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
-func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (string, int, error) {
+func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, requiredAuthType int) (string, int, error) {
 	// We first check for cookies
 	var authCookie *http.Cookie
 	for _, cookie := range r.Cookies() {
@@ -328,6 +330,13 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 		authCookie = cookie
 	}
 	if authCookie == nil {
+
+		if (AuthTypePassword & requiredAuthType) == 0 {
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+			err := errors.New("Insufficeint Auth Level passwd")
+			return "", AuthTypeNone, err
+		}
+
 		//For now try also http basic (to be deprecated)
 		user, pass, ok := r.BasicAuth()
 		if !ok {
@@ -371,6 +380,11 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 		return "", AuthTypeNone, err
 
 	}
+	if (info.AuthType & requiredAuthType) == 0 {
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		err := errors.New("Insufficeint Auth Level other")
+		return "", AuthTypeNone, err
+	}
 	return info.Username, info.AuthType, nil
 }
 
@@ -397,7 +411,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, authLevel, err := state.checkAuth(w, r)
+	authUser, authLevel, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Printf("%v", err)
 
@@ -990,8 +1004,8 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
 	}
-	//authUser, authType, err := state.checkAuth(w, r)
-	authUser, _, err := state.checkAuth(w, r)
+	//authUser, authType, err := state.checkAuth(w, r, AuthTypeAny)
+	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Printf("%v", err)
 
@@ -1093,7 +1107,7 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r)
+	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Printf("%v", err)
 
@@ -1138,7 +1152,7 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r)
+	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Printf("%v", err)
 
@@ -1206,7 +1220,7 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r)
+	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Printf("%v", err)
 
@@ -1268,7 +1282,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r)
+	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Printf("%v", err)
 		return
@@ -1369,7 +1383,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r)
+	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Printf("%v", err)
 
@@ -1425,7 +1439,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r)
+	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Printf("%v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
