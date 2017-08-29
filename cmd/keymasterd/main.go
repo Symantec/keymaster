@@ -238,6 +238,23 @@ func getPreferredAcceptType(r *http.Request) string {
 	return preferredAcceptType
 }
 
+func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.Request) error {
+	displayData := secondFactorAuthTemplateData{Title: "Keymaster 2FA Auth"}
+	t, err := template.New("webpage").Parse(secondFactorAuthFormText)
+	if err != nil {
+		logger.Printf("bad template %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return err
+	}
+	err = t.Execute(w, displayData)
+	if err != nil {
+		logger.Printf("Failed to execute %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return err
+	}
+	return nil
+}
+
 func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter, r *http.Request) error {
 	displayData := loginPageTemplateData{Title: "Keymaster Login", ShowOauth2: state.Config.Oauth2.Enabled}
 	t, err := template.New("webpage").Parse(loginFormText)

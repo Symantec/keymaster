@@ -35,6 +35,30 @@ const loginFormText = `
 </html>
 `
 
+type secondFactorAuthTemplateData struct {
+	Title     string
+	JSSources []string
+}
+
+const secondFactorAuthFormText = `
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <title>{{.Title}}</title>
+        <style>body{margin:1em auto;max-width:80em;padding:0 .62em;font-family: sans-serif;}h1,h2,h3{line-height:1.2;}@media print{body{max-width:none}}</style>
+    </head>
+    <body>
+        <h2> Keymaster 2FA Login </h2>
+        <h3> Enter your OTP token</h3>
+        <form enctype="application/x-www-form-urlencoded" action="/api/v0/vipAuth" method="post">
+            <p>OTP/VIP token Value: <INPUT TYPE="text" NAME="OTP" SIZE=18></p>
+            <p><input type="submit" value="Submit" /></p>
+        </form>
+    </body>
+</html>
+`
+
 type registeredU2FTokenDisplayInfo struct {
 	RegistrationDate time.Time
 	DeviceData       string
