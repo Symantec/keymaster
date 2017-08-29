@@ -50,8 +50,8 @@ const FilePrefix = "keymaster"
 const ClientDataAuthenticationTypeValue = "navigator.id.getAssertion"
 
 type baseConfig struct {
-	Gen_Cert_URLS string
-	//UserAuth          string
+	Gen_Cert_URLS string `yaml:"gen_cert_urls"`
+	Username      string `yaml:"username"`
 }
 
 type AppConfigFile struct {
@@ -693,9 +693,6 @@ func main() {
 		logger.Fatal(err)
 	}
 	userName := usr.Username
-	if *cliUsername != "" {
-		userName = *cliUsername
-	}
 
 	homeDir, err := getUserHomeDir(usr)
 	if err != nil {
@@ -726,6 +723,14 @@ func main() {
 	config, err := loadVerifyConfigFile(*configFilename)
 	if err != nil {
 		logger.Fatal(err)
+	}
+
+	if len(config.Base.Username) > 0 {
+		userName = config.Base.Username
+	}
+	// command line always wins over pref or config
+	if *cliUsername != "" {
+		userName = *cliUsername
 	}
 	password, err := getUserCreds(userName)
 	if err != nil {
