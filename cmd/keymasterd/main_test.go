@@ -645,6 +645,7 @@ func TestProfileHandlerTemplate(t *testing.T) {
 	}
 	defer os.RemoveAll(dir) // clean up
 	state.Config.Base.DataDirectory = dir
+	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
 	err = initDB(&state)
 	if err != nil {
 		t.Fatal(err)
@@ -686,7 +687,7 @@ func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
 	}
 	defer os.RemoveAll(dir) // clean up
 	state.Config.Base.DataDirectory = dir
-
+	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
 	err = initDB(&state)
 	if err != nil {
 		t.Fatal(err)
@@ -759,6 +760,7 @@ func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
 	}
 	defer os.RemoveAll(dir) // clean up
 	state.Config.Base.DataDirectory = dir
+	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
 	err = initDB(&state)
 	if err != nil {
 		t.Fatal(err)

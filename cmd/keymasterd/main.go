@@ -289,8 +289,36 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter, r *http.R
 	case http.StatusUnauthorized:
 		switch returnAcceptType {
 		case "text/html":
-			// TODO: change by a message followed by an HTTP redirection
+			var authCookie *http.Cookie
+			for _, cookie := range r.Cookies() {
+				if cookie.Name != authCookieName {
+					continue
+				}
+				authCookie = cookie
+			}
+			if authCookie == nil {
+				// TODO: change by a message followed by an HTTP redirection
+				state.writeHTMLLoginPage(w, r)
+				return
+			}
+			state.Mutex.Lock()
+			info, ok := state.authCookie[authCookie.Value]
+			state.Mutex.Unlock()
+			if !ok {
+				state.writeHTMLLoginPage(w, r)
+				return
+			}
+			if info.ExpiresAt.Before(time.Now()) {
+				state.writeHTMLLoginPage(w, r)
+				return
+			}
+			if (info.AuthType & AuthTypePassword) == AuthTypePassword {
+				state.writeHTML2FAAuthPage(w, r)
+				return
+			}
 			state.writeHTMLLoginPage(w, r)
+			return
+
 		default:
 			w.Write([]byte(publicErrorText))
 		}
@@ -1056,19 +1084,42 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		logger.Println(err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing OTP value")
 	}
+
 	valid, err := state.Config.SymantecVIP.Client.ValidateUserOTP(authUser, otpValue)
 	if err != nil {
 		logger.Println(err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
 		return
 	}
+
+	// Now we send to the appropiate place
+	returnAcceptType := "application/json"
+	acceptHeader, ok := r.Header["Accept"]
+	if ok {
+		for _, acceptValue := range acceptHeader {
+			if strings.Contains(acceptValue, "text/html") {
+				logger.Printf("Got it  %+v", acceptValue)
+				returnAcceptType = "text/html"
+			}
+		}
+	}
+
 	if !valid {
-		// TODO if client is html then do a redirect back to vipLoginPage
-		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		logger.Printf("Invalid OTP value login for %s", authUser)
+		// TODO if client is html then do a redirect back to vipLoginPage
+		switch returnAcceptType {
+		case "text/html":
+			w.WriteHeader(401)
+			state.writeHTML2FAAuthPage(w, r)
+		default:
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		}
 		return
 
 	}
+
+	// OTP check has been successful
+
 	// If successful I need to update the cookie
 	var authCookie *http.Cookie
 	for _, cookie := range r.Cookies() {
@@ -1091,17 +1142,6 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		state.authCookie[authCookie.Value] = info
 	}
 	state.Mutex.Unlock()
-	// Now we send to the appropiate place
-	returnAcceptType := "application/json"
-	acceptHeader, ok := r.Header["Accept"]
-	if ok {
-		for _, acceptValue := range acceptHeader {
-			if strings.Contains(acceptValue, "text/html") {
-				logger.Printf("Got it  %+v", acceptValue)
-				returnAcceptType = "text/html"
-			}
-		}
-	}
 
 	// TODO: The cert backend should depend also on per user preferences.
 	loginResponse := proto.LoginResponse{Message: "success"} //CertAuthBackend: certBackends
