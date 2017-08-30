@@ -38,6 +38,7 @@ const loginFormText = `
 type secondFactorAuthTemplateData struct {
 	Title     string
 	JSSources []string
+	ShowOTP   bool
 }
 
 const secondFactorAuthFormText = `
@@ -54,23 +55,23 @@ const secondFactorAuthFormText = `
         <style>body{margin:1em auto;max-width:80em;padding:0 .62em;font-family: sans-serif;}h1,h2,h3{line-height:1.2;}@media print{body{max-width:none}}</style>
     </head>
     <body>
-        <h2> Keymaster 2FA Login </h2>
-        <h3> Enter your OTP token</h3>
+        <h2> Keymaster second factor Auth </h2>
+	{{if .ShowOTP}}
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/vipAuth" method="post">
-            <p>OTP/VIP token Value: <INPUT TYPE="text" NAME="OTP" SIZE=18></p>
-            <p><input type="submit" value="Submit" /></p>
+            <p>
+	    Enter VIP token value: <INPUT TYPE="text" NAME="OTP" SIZE=18>
+            <input type="submit" value="Submit" />
+	    </p>
         </form>
 	<p>
-	   <a id="register_button"  style="display:none;" href="#">.</a>
-           <div id="register_action_text" style="color: blue;background-color: yellow; display: none;"> Please Touch the blinking device to register(insert if not inserted yet) </div>
-        </p>
-        <ul>
-	   <li>
-	       <a id="auth_button" href="#">Authenticate</a>
+	<h4>Or</h4>
+	</p>
+	{{end}}
+	<p>
+	       <a id="auth_button" href="#">Click here to authenticate using U2F</a>
                <div id="auth_action_text" style="color: blue;background-color: yellow; display: none;"> Please Touch the blinking device to authenticate(insert if not inserted yet) </div>
-	   </li>
-         </ul>
-    </body>
+         </p>
+	 </body>
 </html>
 `
 

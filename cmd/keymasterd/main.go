@@ -243,7 +243,8 @@ func getPreferredAcceptType(r *http.Request) string {
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.Request) error {
 	displayData := secondFactorAuthTemplateData{
 		Title:     "Keymaster 2FA Auth",
-		JSSources: []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js", "/static/webui-2fa-u2f.js"}}
+		JSSources: []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js", "/static/webui-2fa-u2f.js"},
+		ShowOTP:   state.Config.SymantecVIP.Enabled}
 
 	t, err := template.New("webpage").Parse(secondFactorAuthFormText)
 	if err != nil {
@@ -1091,29 +1092,10 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
 		return
 	}
-
-	// Now we send to the appropiate place
-	returnAcceptType := "application/json"
-	acceptHeader, ok := r.Header["Accept"]
-	if ok {
-		for _, acceptValue := range acceptHeader {
-			if strings.Contains(acceptValue, "text/html") {
-				logger.Printf("Got it  %+v", acceptValue)
-				returnAcceptType = "text/html"
-			}
-		}
-	}
-
 	if !valid {
 		logger.Printf("Invalid OTP value login for %s", authUser)
 		// TODO if client is html then do a redirect back to vipLoginPage
-		switch returnAcceptType {
-		case "text/html":
-			w.WriteHeader(401)
-			state.writeHTML2FAAuthPage(w, r)
-		default:
-			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-		}
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 
 	}
@@ -1142,6 +1124,18 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		state.authCookie[authCookie.Value] = info
 	}
 	state.Mutex.Unlock()
+
+	// Now we send to the appropiate place
+	returnAcceptType := "application/json"
+	acceptHeader, ok := r.Header["Accept"]
+	if ok {
+		for _, acceptValue := range acceptHeader {
+			if strings.Contains(acceptValue, "text/html") {
+				logger.Printf("Got it  %+v", acceptValue)
+				returnAcceptType = "text/html"
+			}
+		}
+	}
 
 	// TODO: The cert backend should depend also on per user preferences.
 	loginResponse := proto.LoginResponse{Message: "success"} //CertAuthBackend: certBackends

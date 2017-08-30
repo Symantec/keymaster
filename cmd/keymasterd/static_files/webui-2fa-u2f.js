@@ -60,7 +60,10 @@ function checkError(resp) {
   }
 
 document.addEventListener('DOMContentLoaded', function () {
-	  document.getElementById('auth_button').addEventListener('click', sign);
+	  //document.getElementById('auth_button').addEventListener('click', sign);
+	  //alert("pre");
+	  sign();
+	  //alert("post");
 	  //document.getElementById('register_button').addEventListener('click', register);
 	  //  main();
 });
