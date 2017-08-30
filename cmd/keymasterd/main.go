@@ -241,7 +241,10 @@ func getPreferredAcceptType(r *http.Request) string {
 }
 
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.Request) error {
-	displayData := secondFactorAuthTemplateData{Title: "Keymaster 2FA Auth"}
+	displayData := secondFactorAuthTemplateData{
+		Title:     "Keymaster 2FA Auth",
+		JSSources: []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js", "/static/webui-2fa-u2f.js"}}
+
 	t, err := template.New("webpage").Parse(secondFactorAuthFormText)
 	if err != nil {
 		logger.Printf("bad template %v", err)
@@ -382,10 +385,30 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 	}
 	if (info.AuthType & requiredAuthType) == 0 {
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-		err := errors.New("Insufficeint Auth Level other")
-		return "", AuthTypeNone, err
+		err := errors.New("Insufficeint Auth Level")
+		return "", info.AuthType, err
 	}
 	return info.Username, info.AuthType, nil
+}
+
+func (state *RuntimeState) getRequiredWebUIAuthLevel() int {
+	AuthLevel := 0
+	for _, webUIPref := range state.Config.Base.AllowedAuthBackendsForWebUI {
+		if webUIPref == proto.AuthTypePassword {
+			AuthLevel = AuthLevel | AuthTypePassword
+		}
+		if webUIPref == proto.AuthTypeFederated {
+			AuthLevel = AuthLevel | AuthTypeFederated
+		}
+		if webUIPref == proto.AuthTypeU2F {
+			AuthLevel = AuthLevel | AuthTypeU2F
+		}
+
+		if webUIPref == proto.AuthTypeSymantecVIP {
+			AuthLevel = AuthLevel | AuthTypeSymantecVIP
+		}
+	}
+	return AuthLevel
 }
 
 const certgenPath = "/certgen/"
@@ -867,6 +890,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// AUTHN has passed
+	//logger.Printf("Valid passwd AUTH login for %s", username)
 	userHasU2FTokens, err := state.userHasU2FTokens(username)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
@@ -930,7 +954,13 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		CertAuthBackend: certBackends}
 	switch returnAcceptType {
 	case "text/html":
-		http.Redirect(w, r, profilePath, 302)
+		requiredAuth := state.getRequiredWebUIAuthLevel()
+		if (requiredAuth & AuthTypePassword) != 0 {
+			http.Redirect(w, r, profilePath, 302)
+		} else {
+			//Go 2FA
+			state.writeHTML2FAAuthPage(w, r)
+		}
 	default:
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(loginResponse)
@@ -1107,7 +1137,7 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
+	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("%v", err)
 
@@ -1152,7 +1182,7 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
+	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("%v", err)
 
@@ -1383,7 +1413,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
+	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("%v", err)
 
@@ -1439,7 +1469,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
+	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("%v", err)
 		http.Error(w, "error", http.StatusInternalServerError)

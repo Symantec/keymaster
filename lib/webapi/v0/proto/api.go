@@ -4,6 +4,7 @@ const LoginPath = "/api/v0/login"
 
 const (
 	AuthTypePassword    = "password"
+	AuthTypeFederated   = "federated"
 	AuthTypeU2F         = "U2F"
 	AuthTypeSymantecVIP = "SymantecVIP"
 )
