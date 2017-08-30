@@ -50,8 +50,8 @@ const FilePrefix = "keymaster"
 const ClientDataAuthenticationTypeValue = "navigator.id.getAssertion"
 
 type baseConfig struct {
-	Gen_Cert_URLS string
-	//UserAuth          string
+	Gen_Cert_URLS string `yaml:"gen_cert_urls"`
+	Username      string `yaml:"username"`
 }
 
 type AppConfigFile struct {
@@ -615,21 +615,14 @@ func getCertFromTargetUrls(signer crypto.Signer, userName string, password []byt
 	return sshCert, x509Cert, nil
 }
 
-func getUserInfoAndCreds() (usr *user.User, password []byte, err error) {
-	usr, err = user.Current()
-	if err != nil {
-		logger.Printf("cannot get current user info")
-		return nil, nil, err
-	}
-	userName := usr.Username
-
+func getUserCreds(userName string) (password []byte, err error) {
 	fmt.Printf("Password for %s: ", userName)
 	password, err = gopass.GetPasswd()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 		// Handle gopass.ErrInterrupted or getch() read error
 	}
-	return usr, password, nil
+	return password, nil
 }
 
 const hostConfigPath = "/public/clientConfig"
@@ -700,9 +693,6 @@ func main() {
 		logger.Fatal(err)
 	}
 	userName := usr.Username
-	if *cliUsername != "" {
-		userName = *cliUsername
-	}
 
 	homeDir, err := getUserHomeDir(usr)
 	if err != nil {
@@ -734,7 +724,15 @@ func main() {
 	if err != nil {
 		logger.Fatal(err)
 	}
-	_, password, err := getUserInfoAndCreds()
+
+	if len(config.Base.Username) > 0 {
+		userName = config.Base.Username
+	}
+	// command line always wins over pref or config
+	if *cliUsername != "" {
+		userName = *cliUsername
+	}
+	password, err := getUserCreds(userName)
 	if err != nil {
 		logger.Fatal(err)
 	}
