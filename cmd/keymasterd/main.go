@@ -14,7 +14,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/Dominator/lib/log/debuglogger"
 	"github.com/Symantec/Dominator/lib/logbuf"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
@@ -50,6 +50,8 @@ const (
 	AuthTypeU2F
 	AuthTypeSymantecVIP
 )
+
+const AuthTypeAny = 0xFFFF
 
 type authInfo struct {
 	ExpiresAt time.Time
@@ -115,7 +117,7 @@ var (
 		},
 		[]string{"username", "type"},
 	)
-	logger log.Logger
+	logger *debuglogger.Logger //log.DebugLogger
 )
 
 func getHostIdentity() (string, error) {
@@ -199,7 +201,7 @@ func checkUserPassword(username string, password string, config AppConfigFile) (
 		}
 		vaild, err := authutil.CheckLDAPUserPassword(*u, bindDN, password, timeoutSecs, nil)
 		if err != nil {
-			//logger.Printf("Failed to parse %s", ldapUrl)
+			logger.Debugf(1, "Error checking LDAP user password url= %s", ldapUrl)
 			continue
 		}
 		// the ldap exchange was successful (user might be invaid)
@@ -238,6 +240,27 @@ func getPreferredAcceptType(r *http.Request) string {
 	return preferredAcceptType
 }
 
+func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.Request) error {
+	displayData := secondFactorAuthTemplateData{
+		Title:     "Keymaster 2FA Auth",
+		JSSources: []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js", "/static/webui-2fa-u2f.js"},
+		ShowOTP:   state.Config.SymantecVIP.Enabled}
+
+	t, err := template.New("webpage").Parse(secondFactorAuthFormText)
+	if err != nil {
+		logger.Printf("bad template %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return err
+	}
+	err = t.Execute(w, displayData)
+	if err != nil {
+		logger.Printf("Failed to execute %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return err
+	}
+	return nil
+}
+
 func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter, r *http.Request) error {
 	displayData := loginPageTemplateData{Title: "Keymaster Login", ShowOauth2: state.Config.Oauth2.Enabled}
 	t, err := template.New("webpage").Parse(loginFormText)
@@ -267,8 +290,36 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter, r *http.R
 	case http.StatusUnauthorized:
 		switch returnAcceptType {
 		case "text/html":
-			// TODO: change by a message followed by an HTTP redirection
+			var authCookie *http.Cookie
+			for _, cookie := range r.Cookies() {
+				if cookie.Name != authCookieName {
+					continue
+				}
+				authCookie = cookie
+			}
+			if authCookie == nil {
+				// TODO: change by a message followed by an HTTP redirection
+				state.writeHTMLLoginPage(w, r)
+				return
+			}
+			state.Mutex.Lock()
+			info, ok := state.authCookie[authCookie.Value]
+			state.Mutex.Unlock()
+			if !ok {
+				state.writeHTMLLoginPage(w, r)
+				return
+			}
+			if info.ExpiresAt.Before(time.Now()) {
+				state.writeHTMLLoginPage(w, r)
+				return
+			}
+			if (info.AuthType & AuthTypePassword) == AuthTypePassword {
+				state.writeHTML2FAAuthPage(w, r)
+				return
+			}
 			state.writeHTMLLoginPage(w, r)
+			return
+
 		default:
 			w.Write([]byte(publicErrorText))
 		}
@@ -301,7 +352,7 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 }
 
 // Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
-func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (string, int, error) {
+func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, requiredAuthType int) (string, int, error) {
 	// We first check for cookies
 	var authCookie *http.Cookie
 	for _, cookie := range r.Cookies() {
@@ -311,6 +362,13 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 		authCookie = cookie
 	}
 	if authCookie == nil {
+
+		if (AuthTypePassword & requiredAuthType) == 0 {
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+			err := errors.New("Insufficeint Auth Level passwd")
+			return "", AuthTypeNone, err
+		}
+
 		//For now try also http basic (to be deprecated)
 		user, pass, ok := r.BasicAuth()
 		if !ok {
@@ -354,7 +412,32 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request) (st
 		return "", AuthTypeNone, err
 
 	}
+	if (info.AuthType & requiredAuthType) == 0 {
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		err := errors.New("Insufficeint Auth Level")
+		return "", info.AuthType, err
+	}
 	return info.Username, info.AuthType, nil
+}
+
+func (state *RuntimeState) getRequiredWebUIAuthLevel() int {
+	AuthLevel := 0
+	for _, webUIPref := range state.Config.Base.AllowedAuthBackendsForWebUI {
+		if webUIPref == proto.AuthTypePassword {
+			AuthLevel |= AuthTypePassword
+		}
+		if webUIPref == proto.AuthTypeFederated {
+			AuthLevel |= AuthTypeFederated
+		}
+		if webUIPref == proto.AuthTypeU2F {
+			AuthLevel |= AuthTypeU2F
+		}
+
+		if webUIPref == proto.AuthTypeSymantecVIP {
+			AuthLevel |= AuthTypeSymantecVIP
+		}
+	}
+	return AuthLevel
 }
 
 const certgenPath = "/certgen/"
@@ -380,7 +463,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, authLevel, err := state.checkAuth(w, r)
+	authUser, authLevel, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Printf("%v", err)
 
@@ -789,7 +872,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
 			return
 		}
-		//logger.Printf("req =%+v", r)
+		logger.Debugf(2, "req =%+v", r)
 	default:
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
@@ -836,6 +919,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// AUTHN has passed
+	logger.Debug(1, "Valid passwd AUTH login for %s", username)
 	userHasU2FTokens, err := state.userHasU2FTokens(username)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
@@ -862,9 +946,6 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	//use handler with original request.
 	http.SetCookie(w, &authCookie)
 
-	//return user, nil
-
-	//logger.Printf("cert type =%s", certType)
 	returnAcceptType := "application/json"
 	acceptHeader, ok := r.Header["Accept"]
 	if ok {
@@ -899,7 +980,13 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		CertAuthBackend: certBackends}
 	switch returnAcceptType {
 	case "text/html":
-		http.Redirect(w, r, profilePath, 302)
+		requiredAuth := state.getRequiredWebUIAuthLevel()
+		if (requiredAuth & AuthTypePassword) != 0 {
+			http.Redirect(w, r, profilePath, 302)
+		} else {
+			//Go 2FA
+			state.writeHTML2FAAuthPage(w, r)
+		}
 	default:
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(loginResponse)
@@ -973,8 +1060,8 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
 	}
-	//authUser, authType, err := state.checkAuth(w, r)
-	authUser, _, err := state.checkAuth(w, r)
+	//authUser, authType, err := state.checkAuth(w, r, AuthTypeAny)
+	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Printf("%v", err)
 
@@ -995,6 +1082,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		logger.Println(err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing OTP value")
 	}
+
 	valid, err := state.Config.SymantecVIP.Client.ValidateUserOTP(authUser, otpValue)
 	if err != nil {
 		logger.Println(err)
@@ -1002,13 +1090,16 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if !valid {
+		logger.Printf("Invalid OTP value login for %s", authUser)
 		// TODO if client is html then do a redirect back to vipLoginPage
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-		logger.Printf("Invalid OTP value login for %s", authUser)
 		return
 
 	}
-	// If successful I need to update the cookie
+
+	// OTP check was  successful
+
+	// Now we  need to update the cookie
 	var authCookie *http.Cookie
 	for _, cookie := range r.Cookies() {
 		if cookie.Name != authCookieName {
@@ -1030,6 +1121,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		state.authCookie[authCookie.Value] = info
 	}
 	state.Mutex.Unlock()
+
 	// Now we send to the appropiate place
 	returnAcceptType := "application/json"
 	acceptHeader, ok := r.Header["Accept"]
@@ -1076,7 +1168,7 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r)
+	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("%v", err)
 
@@ -1121,7 +1213,7 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r)
+	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("%v", err)
 
@@ -1189,7 +1281,7 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r)
+	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Printf("%v", err)
 
@@ -1251,7 +1343,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r)
+	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Printf("%v", err)
 		return
@@ -1352,7 +1444,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r)
+	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("%v", err)
 
@@ -1408,7 +1500,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r)
+	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("%v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1536,7 +1628,13 @@ func main() {
 	if circularBuffer == nil {
 		panic("Cannot create circular buffer")
 	}
-	logger = stdlog.New(circularBuffer, "", stdlog.LstdFlags)
+	stdlogger := stdlog.New(circularBuffer, "", stdlog.LstdFlags)
+
+	logger = debuglogger.New(stdlogger)
+	if *debug {
+		//logger.Debug(1, "test")
+		logger.SetLevel(3)
+	}
 
 	if *generateConfig {
 		err := generateNewConfig(*configFilename)

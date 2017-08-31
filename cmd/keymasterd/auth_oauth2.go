@@ -76,7 +76,7 @@ func httpGet(client *http.Client, url string) ([]byte, error) {
 		return nil, fmt.Errorf(string(body))
 	}
 
-	//logger.Printf("HTTP GET %s: %s %s", url, r.Status, string(body))
+	logger.Debugf(8, "HTTP GET %s: %s %s", url, r.Status, string(body))
 
 	return body, nil
 }

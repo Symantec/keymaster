@@ -645,6 +645,7 @@ func TestProfileHandlerTemplate(t *testing.T) {
 	}
 	defer os.RemoveAll(dir) // clean up
 	state.Config.Base.DataDirectory = dir
+	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
 	err = initDB(&state)
 	if err != nil {
 		t.Fatal(err)
@@ -656,7 +657,10 @@ func TestProfileHandlerTemplate(t *testing.T) {
 		//return nil, err
 	}
 	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{
+		Username:  "username",
+		ExpiresAt: time.Now().Add(120 * time.Second),
+		AuthType:  AuthTypeAny}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	req.AddCookie(&authCookie)
 
@@ -683,13 +687,16 @@ func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
 	}
 	defer os.RemoveAll(dir) // clean up
 	state.Config.Base.DataDirectory = dir
-
+	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
 	err = initDB(&state)
 	if err != nil {
 		t.Fatal(err)
 	}
 	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{
+		Username:  "username",
+		ExpiresAt: time.Now().Add(120 * time.Second),
+		AuthType:  AuthTypeAny}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 
 	const newName = "New"
@@ -743,7 +750,8 @@ func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
 	state.authCookie = make(map[string]authInfo)
 
 	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	state.authCookie[cookieVal] = authInfo{Username: "username",
+		ExpiresAt: time.Now().Add(120 * time.Second), AuthType: AuthTypeAny}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 
 	dir, err := ioutil.TempDir("", "example")
@@ -752,6 +760,7 @@ func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
 	}
 	defer os.RemoveAll(dir) // clean up
 	state.Config.Base.DataDirectory = dir
+	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
 	err = initDB(&state)
 	if err != nil {
 		t.Fatal(err)

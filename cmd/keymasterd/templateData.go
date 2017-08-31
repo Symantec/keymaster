@@ -35,6 +35,45 @@ const loginFormText = `
 </html>
 `
 
+type secondFactorAuthTemplateData struct {
+	Title     string
+	JSSources []string
+	ShowOTP   bool
+}
+
+const secondFactorAuthFormText = `
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <title>{{.Title}}</title>
+        {{if .JSSources -}}
+        {{- range .JSSources }}
+        <script type="text/javascript" src="{{.}}"></script>
+        {{- end}}
+        {{- end}}
+        <style>body{margin:1em auto;max-width:80em;padding:0 .62em;font-family: sans-serif;}h1,h2,h3{line-height:1.2;}@media print{body{max-width:none}}</style>
+    </head>
+    <body>
+        <h2> Keymaster second factor Authenticaion </h2>
+	{{if .ShowOTP}}
+        <form enctype="application/x-www-form-urlencoded" action="/api/v0/vipAuth" method="post">
+            <p>
+	    Enter VIP token value: <INPUT TYPE="text" NAME="OTP" SIZE=18>
+            <input type="submit" value="Submit" />
+	    </p>
+        </form>
+	<p>
+	<h4>Or</h4>
+	</p>
+	{{end}}
+	<p>
+               <div id="auth_action_text" > Authenticate by touching a blinking registered U2F device (insert if not inserted yet)</div>
+         </p>
+	 </body>
+</html>
+`
+
 type registeredU2FTokenDisplayInfo struct {
 	RegistrationDate time.Time
 	DeviceData       string
@@ -79,7 +118,7 @@ const profileHTML = `<!DOCTYPE html>
       </li>
     </ul>
     {{if .RegisteredToken -}}
-        Your Token(s):
+        Your U2F Token(s):
         <table>
 	    <tr>
 	    <th>Name</th>
