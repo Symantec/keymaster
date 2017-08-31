@@ -219,7 +219,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		runtimeState.Config.SymantecVIP.Client = &client
 	}
 
-	//logger.Printf("End of config initialization: %+v", runtimeState)
+	logger.Debugf(1, "End of config initialization: %+v", runtimeState)
 
 	// DB initialization
 	err = initDB(&runtimeState)
@@ -486,7 +486,7 @@ func generateNewConfigInternal(reader *bufio.Reader, configFilename string, rsaK
 	}
 	config.Base.HtpasswdFilename = httpPassFilename
 
-	//logger.Printf("%+v", config)
+	logger.Debugf(1, "%+v", config)
 	configText, err := yaml.Marshal(&config)
 	if err != nil {
 		return err

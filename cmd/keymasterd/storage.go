@@ -140,7 +140,7 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 		}
 
 	}
-	//logger.Printf("bytes len=%d", len(profileBytes))
+	logger.Debugf(10, "profile bytes len=%d", len(profileBytes))
 	//gobReader := bytes.NewReader(fileBytes)
 	gobReader := bytes.NewReader(profileBytes)
 	decoder := gob.NewDecoder(gobReader)
@@ -148,7 +148,7 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 	if err != nil {
 		return nil, false, err
 	}
-	//logger.Printf("loaded profile=%+v", defaultProfile)
+	logger.Debugf(1, "loaded profile=%+v", defaultProfile)
 	return &defaultProfile, true, nil
 }
 

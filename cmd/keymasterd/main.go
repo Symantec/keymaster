@@ -14,7 +14,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/Dominator/lib/log/debuglogger"
 	"github.com/Symantec/Dominator/lib/logbuf"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
@@ -117,7 +117,7 @@ var (
 		},
 		[]string{"username", "type"},
 	)
-	logger log.Logger
+	logger *debuglogger.Logger //log.DebugLogger
 )
 
 func getHostIdentity() (string, error) {
@@ -201,7 +201,7 @@ func checkUserPassword(username string, password string, config AppConfigFile) (
 		}
 		vaild, err := authutil.CheckLDAPUserPassword(*u, bindDN, password, timeoutSecs, nil)
 		if err != nil {
-			//logger.Printf("Failed to parse %s", ldapUrl)
+			logger.Debugf(1, "Error checking LDAP user password url= %s", ldapUrl)
 			continue
 		}
 		// the ldap exchange was successful (user might be invaid)
@@ -424,17 +424,17 @@ func (state *RuntimeState) getRequiredWebUIAuthLevel() int {
 	AuthLevel := 0
 	for _, webUIPref := range state.Config.Base.AllowedAuthBackendsForWebUI {
 		if webUIPref == proto.AuthTypePassword {
-			AuthLevel = AuthLevel | AuthTypePassword
+			AuthLevel |= AuthTypePassword
 		}
 		if webUIPref == proto.AuthTypeFederated {
-			AuthLevel = AuthLevel | AuthTypeFederated
+			AuthLevel |= AuthTypeFederated
 		}
 		if webUIPref == proto.AuthTypeU2F {
-			AuthLevel = AuthLevel | AuthTypeU2F
+			AuthLevel |= AuthTypeU2F
 		}
 
 		if webUIPref == proto.AuthTypeSymantecVIP {
-			AuthLevel = AuthLevel | AuthTypeSymantecVIP
+			AuthLevel |= AuthTypeSymantecVIP
 		}
 	}
 	return AuthLevel
@@ -872,7 +872,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
 			return
 		}
-		//logger.Printf("req =%+v", r)
+		logger.Debugf(2, "req =%+v", r)
 	default:
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
 		return
@@ -919,7 +919,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// AUTHN has passed
-	//logger.Printf("Valid passwd AUTH login for %s", username)
+	logger.Debug(1, "Valid passwd AUTH login for %s", username)
 	userHasU2FTokens, err := state.userHasU2FTokens(username)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
@@ -946,9 +946,6 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	//use handler with original request.
 	http.SetCookie(w, &authCookie)
 
-	//return user, nil
-
-	//logger.Printf("cert type =%s", certType)
 	returnAcceptType := "application/json"
 	acceptHeader, ok := r.Header["Accept"]
 	if ok {
@@ -1100,9 +1097,9 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 
 	}
 
-	// OTP check has been successful
+	// OTP check was  successful
 
-	// If successful I need to update the cookie
+	// Now we  need to update the cookie
 	var authCookie *http.Cookie
 	for _, cookie := range r.Cookies() {
 		if cookie.Name != authCookieName {
@@ -1631,7 +1628,13 @@ func main() {
 	if circularBuffer == nil {
 		panic("Cannot create circular buffer")
 	}
-	logger = stdlog.New(circularBuffer, "", stdlog.LstdFlags)
+	stdlogger := stdlog.New(circularBuffer, "", stdlog.LstdFlags)
+
+	logger = debuglogger.New(stdlogger)
+	if *debug {
+		//logger.Debug(1, "test")
+		logger.SetLevel(3)
+	}
 
 	if *generateConfig {
 		err := generateNewConfig(*configFilename)

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/Symantec/Dominator/lib/log/debuglogger"
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
 	stdlog "log"
@@ -62,7 +63,9 @@ func userinfoHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func init() {
-	logger = stdlog.New(os.Stderr, "", stdlog.LstdFlags)
+	//logger = stdlog.New(os.Stderr, "", stdlog.LstdFlags)
+	slogger := stdlog.New(os.Stderr, "", stdlog.LstdFlags)
+	logger = debuglogger.New(slogger)
 	http.HandleFunc("/userinfo", userinfoHandler)
 	http.HandleFunc("/token", tokenHandler)
 	http.HandleFunc("/", handler)
