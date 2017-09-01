@@ -163,7 +163,7 @@ func TestGenKeyPairSuccess(t *testing.T) {
 
 	defer os.Remove(tmpfile.Name()) // clean up
 
-	_, _, err = genKeyPair(tmpfile.Name())
+	_, _, err = genKeyPair(tmpfile.Name(), "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestGenKeyPairSuccess(t *testing.T) {
 }
 
 func TestGenKeyPairFailNoPerms(t *testing.T) {
-	_, _, err := genKeyPair("/proc/something")
+	_, _, err := genKeyPair("/proc/something", "test")
 	if err == nil {
 		t.Logf("Should have failed")
 		t.Fatal(err)

@@ -109,7 +109,7 @@ func genKeyPair(privateKeyPath string, identity string) (crypto.Signer, string, 
 	if err != nil {
 		return nil, "", err
 	}
-	return privateKey, pubKeyPath, ioutil.WriteFile(pubKeyPath, pubKeyBufffer.Bytes(), 0644)
+	return privateKey, pubKeyPath, ioutil.WriteFile(pubKeyPath, pubKeyBuffer.Bytes(), 0644)
 }
 func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
 	var config AppConfigFile
@@ -756,6 +756,8 @@ func main() {
 	if err != nil {
 		logger.Fatal(err)
 	}
+	defer os.Remove(tempPrivateKeyPath)
+	defer os.Remove(tempPublicKeyPath)
 
 	password, err := getUserCreds(userName)
 	if err != nil {
