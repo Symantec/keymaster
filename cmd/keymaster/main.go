@@ -98,10 +98,10 @@ func genKeyPair(privateKeyPath string, identity string) (crypto.Signer, string, 
 	if err != nil {
 		return nil, "", err
 	}
-	basePubBytes := ssh.MarshalAuthorizedKey(pub)
-	basePubBytes = bytes.TrimRight(basePubBytes, "\r\n")
+	marshaledPubKeyBytes := ssh.MarshalAuthorizedKey(pub)
+	marshaledPubKeyBytes = bytes.TrimRight(marshaledPubKeyBytes, "\r\n")
 	comment := " " + identity + "\n"
-	pubKeyBytes := append(basePubBytes, []byte(comment)...)
+	pubKeyBytes := append(marshaledPubKeyBytes, []byte(comment)...)
 	return privateKey, pubKeyPath, ioutil.WriteFile(pubKeyPath, pubKeyBytes, 0644)
 }
 func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
