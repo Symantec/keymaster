@@ -76,12 +76,11 @@ func getUserHomeDir(usr *user.User) (string, error) {
 
 // generateKeyPair uses internal golang functions to be portable
 // mostly comes from: http://stackoverflow.com/questions/21151714/go-generate-an-ssh-public-key
-func genKeyPair(privateKeyPath string) (crypto.Signer, string, error) {
+func genKeyPair(privateKeyPath string, identity string) (crypto.Signer, string, error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, RSAKeySize)
 	if err != nil {
 		return nil, "", err
 	}
-
 	// privateKeyPath := BasePath + prefix
 	pubKeyPath := privateKeyPath + ".pub"
 
@@ -99,7 +98,18 @@ func genKeyPair(privateKeyPath string) (crypto.Signer, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	return privateKey, pubKeyPath, ioutil.WriteFile(pubKeyPath, ssh.MarshalAuthorizedKey(pub), 0644)
+	marshaledPubKeyBytes := ssh.MarshalAuthorizedKey(pub)
+	marshaledPubKeyBytes = bytes.TrimRight(marshaledPubKeyBytes, "\r\n")
+	var pubKeyBuffer bytes.Buffer
+	_, err = pubKeyBuffer.Write(marshaledPubKeyBytes)
+	if err != nil {
+		return nil, "", err
+	}
+	_, err = pubKeyBuffer.Write([]byte(" " + identity + "\n"))
+	if err != nil {
+		return nil, "", err
+	}
+	return privateKey, pubKeyPath, ioutil.WriteFile(pubKeyPath, pubKeyBuffer.Bytes(), 0644)
 }
 func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
 	var config AppConfigFile
@@ -732,10 +742,6 @@ func main() {
 	if *cliUsername != "" {
 		userName = *cliUsername
 	}
-	password, err := getUserCreds(userName)
-	if err != nil {
-		logger.Fatal(err)
-	}
 
 	//sshPath := homeDir + "/.ssh/"
 	privateKeyPath := filepath.Join(homeDir, DefaultKeysLocation, FilePrefix)
@@ -745,10 +751,19 @@ func main() {
 		logger.Fatal(err)
 	}
 
-	signer, _, err := genKeyPair(privateKeyPath)
+	tempPrivateKeyPath := filepath.Join(homeDir, DefaultKeysLocation, "keymaster-temp")
+	signer, tempPublicKeyPath, err := genKeyPair(tempPrivateKeyPath, userName+"@keymaster")
 	if err != nil {
 		logger.Fatal(err)
 	}
+	defer os.Remove(tempPrivateKeyPath)
+	defer os.Remove(tempPublicKeyPath)
+
+	password, err := getUserCreds(userName)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
 	sshCert, x509Cert, err := getCertFromTargetUrls(signer, userName,
 		password, strings.Split(config.Base.Gen_Cert_URLS, ","), rootCAs, false)
 	if err != nil {
@@ -759,6 +774,19 @@ func main() {
 		logger.Fatal(err)
 	}
 	logger.Debugf(0, "Got Certs from server")
+	//rename files to expected paths
+	err = os.Rename(tempPrivateKeyPath, privateKeyPath)
+	if err != nil {
+		err := errors.New("Could not rename private Key")
+		logger.Fatal(err)
+	}
+
+	err = os.Rename(tempPublicKeyPath, privateKeyPath+".pub")
+	if err != nil {
+		err := errors.New("Could not rename public Key")
+		logger.Fatal(err)
+	}
+
 	// now we write the cert file...
 	sshCertPath := privateKeyPath + "-cert.pub"
 	err = ioutil.WriteFile(sshCertPath, sshCert, 0644)
