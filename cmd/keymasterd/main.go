@@ -1554,7 +1554,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	switch actionName {
 	case "Update":
 		tokenName := r.Form.Get("name")
-		if m, _ := regexp.MatchString("^[a-zA-Z0-9_ ]+$", tokenName); !m {
+		if m, _ := regexp.MatchString("^[-/.a-zA-Z0-9_ ]+$", tokenName); !m {
 			logger.Printf("%s", tokenName)
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "invalidtokenName")
 			return

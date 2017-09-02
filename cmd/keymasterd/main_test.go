@@ -699,7 +699,7 @@ func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
 		AuthType:  AuthTypeAny}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 
-	const newName = "New"
+	const newName = "New./-X"
 	const oldName = "Old"
 
 	profile := &userProfile{}
