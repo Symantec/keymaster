@@ -14,6 +14,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/serverlogger"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
@@ -115,7 +116,7 @@ var (
 		},
 		[]string{"username", "type"},
 	)
-	logger *serverlogger.Logger // log.DebugLogger and html.HtmlWriter.
+	logger log.DebugLogger
 )
 
 func getHostIdentity() (string, error) {
@@ -1622,7 +1623,8 @@ func main() {
 	flag.Parse()
 
 	tricorder.RegisterFlags()
-	logger = serverlogger.New("")
+	serverLogger := serverlogger.New("")
+	logger = serverLogger
 	if *debug {
 		//logger.Debug(1, "test")
 		logger.SetLevel(3)
@@ -1644,7 +1646,7 @@ func main() {
 		logger.Printf("After load verify")
 	}
 
-	adminDashboard := newAdminDashboard(logger)
+	adminDashboard := newAdminDashboard(serverLogger)
 	// Expose the registered metrics via HTTP.
 	http.Handle("/", adminDashboard)
 	http.Handle("/prometheus_metrics", prometheus.Handler())
