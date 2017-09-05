@@ -14,7 +14,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/serverlogger"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
@@ -116,7 +115,7 @@ var (
 		},
 		[]string{"username", "type"},
 	)
-	logger log.DebugLogger
+	logger *serverlogger.Logger // log.DebugLogger and html.HtmlWriter.
 )
 
 func getHostIdentity() (string, error) {
@@ -1623,7 +1622,7 @@ func main() {
 	flag.Parse()
 
 	tricorder.RegisterFlags()
-	logger := serverlogger.New("")
+	logger = serverlogger.New("")
 	if *debug {
 		//logger.Debug(1, "test")
 		logger.SetLevel(3)
