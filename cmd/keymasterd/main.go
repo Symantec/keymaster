@@ -14,8 +14,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/Symantec/Dominator/lib/log/debuglogger"
-	"github.com/Symantec/Dominator/lib/logbuf"
+	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/Dominator/lib/log/serverlogger"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
@@ -30,7 +30,6 @@ import (
 	"html/template"
 	//"io"
 	"io/ioutil"
-	stdlog "log"
 	//"net"
 	"net/http"
 	//"net/url"
@@ -117,7 +116,7 @@ var (
 		},
 		[]string{"username", "type"},
 	)
-	logger *debuglogger.Logger //log.DebugLogger
+	logger log.DebugLogger
 )
 
 func getHostIdentity() (string, error) {
@@ -1624,13 +1623,7 @@ func main() {
 	flag.Parse()
 
 	tricorder.RegisterFlags()
-	circularBuffer := logbuf.New()
-	if circularBuffer == nil {
-		panic("Cannot create circular buffer")
-	}
-	stdlogger := stdlog.New(circularBuffer, "", stdlog.LstdFlags)
-
-	logger = debuglogger.New(stdlogger)
+	logger := serverlogger.New("")
 	if *debug {
 		//logger.Debug(1, "test")
 		logger.SetLevel(3)
@@ -1652,7 +1645,7 @@ func main() {
 		logger.Printf("After load verify")
 	}
 
-	adminDashboard := newAdminDashboard(circularBuffer)
+	adminDashboard := newAdminDashboard(logger)
 	// Expose the registered metrics via HTTP.
 	http.Handle("/", adminDashboard)
 	http.Handle("/prometheus_metrics", prometheus.Handler())

@@ -4,17 +4,16 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/Symantec/Dominator/lib/html"
-	"github.com/Symantec/Dominator/lib/logbuf"
 	"net/http"
 )
 
 type adminDashboardType struct {
-	logger *logbuf.LogBuffer
+	htmlWriter html.HtmlWriter
 }
 
-func newAdminDashboard(logger *logbuf.LogBuffer) *adminDashboardType {
+func newAdminDashboard(htmlWriter html.HtmlWriter) *adminDashboardType {
 	return &adminDashboardType{
-		logger: logger,
+		htmlWriter: htmlWriter,
 	}
 }
 
@@ -33,7 +32,7 @@ func (dashboard *adminDashboardType) ServeHTTP(w http.ResponseWriter,
 	fmt.Fprintln(writer, "</center>")
 	html.WriteHeaderWithRequest(writer, req)
 	fmt.Fprintln(writer, "<h3>")
-	dashboard.logger.WriteHtml(writer)
+	dashboard.htmlWriter.WriteHtml(writer)
 	fmt.Fprintln(writer, "</h3>")
 	fmt.Fprintln(writer, "<hr>")
 	html.WriteFooter(writer)
