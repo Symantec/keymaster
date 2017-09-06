@@ -14,8 +14,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/Symantec/Dominator/lib/log/debuglogger"
-	"github.com/Symantec/Dominator/lib/logbuf"
+	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/Dominator/lib/log/serverlogger"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
@@ -30,7 +30,6 @@ import (
 	"html/template"
 	//"io"
 	"io/ioutil"
-	stdlog "log"
 	//"net"
 	"net/http"
 	//"net/url"
@@ -104,7 +103,6 @@ const secsBetweenCleanup = 30
 var (
 	Version          = "No version provided"
 	configFilename   = flag.String("config", "config.yml", "The filename of the configuration")
-	debug            = flag.Bool("debug", false, "Enable debug messages to console")
 	generateConfig   = flag.Bool("generateConfig", false, "Generate new valid configuration")
 	u2fAppID         = "https://www.example.com:33443"
 	u2fTrustedFacets = []string{}
@@ -117,7 +115,7 @@ var (
 		},
 		[]string{"username", "type"},
 	)
-	logger *debuglogger.Logger //log.DebugLogger
+	logger log.DebugLogger
 )
 
 func getHostIdentity() (string, error) {
@@ -170,10 +168,10 @@ func (state *RuntimeState) performStateCleanup(secsBetweenCleanup int) {
 		finalPendingSize := len(state.pendingOauth2)
 
 		state.Mutex.Unlock()
-		if *debug {
-			logger.Printf("Auth Cookie sizes: before:(%d) after (%d)\n", initAuthSize, finalAuthSize)
-			logger.Printf("Pending Cookie sizes: before(%d) after(%d)", initPendingSize, finalPendingSize)
-		}
+		logger.Debugf(3, "Auth Cookie sizes: before:(%d) after (%d)\n",
+			initAuthSize, finalAuthSize)
+		logger.Debugf(3, "Pending Cookie sizes: before(%d) after(%d)",
+			initPendingSize, finalPendingSize)
 		time.Sleep(time.Duration(secsBetweenCleanup) * time.Second)
 	}
 
@@ -209,9 +207,7 @@ func checkUserPassword(username string, password string, config AppConfigFile) (
 
 	}
 	if config.Base.HtpasswdFilename != "" {
-		if *debug {
-			logger.Printf("I have htpasswed filename")
-		}
+		logger.Debugf(3, "I have htpasswed filename")
 		buffer, err := ioutil.ReadFile(config.Base.HtpasswdFilename)
 		if err != nil {
 			return false, err
@@ -500,15 +496,11 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		logger.Printf("User %s asking for creds for %s", authUser, targetUser)
 		return
 	}
-	if *debug {
-		logger.Printf("auth succedded for %s", authUser)
-	}
+	logger.Debugf(3, "auth succedded for %s", authUser)
 
 	switch r.Method {
 	case "GET":
-		if *debug {
-			logger.Printf("Got client GET connection")
-		}
+		logger.Debugf(3, "Got client GET connection")
 		err = r.ParseForm()
 		if err != nil {
 			logger.Println(err)
@@ -516,9 +508,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 			return
 		}
 	case "POST":
-		if *debug {
-			logger.Printf("Got client POST connection")
-		}
+		logger.Debugf(3, "Got client POST connection")
 		err = r.ParseMultipartForm(1e7)
 		if err != nil {
 			logger.Println(err)
@@ -852,9 +842,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	//Check for valid method here?
 	switch r.Method {
 	case "GET":
-		if *debug {
-			logger.Printf("Got client GET connection")
-		}
+		logger.Debugf(3, "Got client GET connection")
 		err := r.ParseForm()
 		if err != nil {
 			logger.Println(err)
@@ -862,9 +850,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	case "POST":
-		if *debug {
-			logger.Printf("Got client POST connection")
-		}
+		logger.Debugf(3, "Got client POST connection")
 		//err := r.ParseMultipartForm(1e7)
 		err := r.ParseForm()
 		if err != nil {
@@ -1037,9 +1023,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	//Check for valid method here?
 	switch r.Method {
 	case "GET":
-		if *debug {
-			logger.Printf("Got client GET connection")
-		}
+		logger.Debugf(3, "Got client GET connection")
 		err := r.ParseForm()
 		if err != nil {
 			logger.Println(err)
@@ -1047,9 +1031,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 			return
 		}
 	case "POST":
-		if *debug {
-			logger.Printf("Got client POST connection")
-		}
+		logger.Debugf(3, "Got client POST connection")
 		err := r.ParseForm()
 		if err != nil {
 			logger.Println(err)
@@ -1315,9 +1297,7 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	}
 	profile.U2fAuthChallenge = c
 	req := c.SignRequest(registrations)
-	if *debug {
-		logger.Printf("Sign request: %+v", req)
-	}
+	logger.Debugf(3, "Sign request: %+v", req)
 
 	err = state.SaveUserProfile(authUser, profile)
 	if err != nil {
@@ -1513,9 +1493,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
 		return
 	}
-	if *debug {
-		logger.Printf("Form: %+v", r.Form)
-	}
+	logger.Debugf(3, "Form: %+v", r.Form)
 
 	// Check params
 	if r.Form.Get("username") != authUser {
@@ -1554,7 +1532,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	switch actionName {
 	case "Update":
 		tokenName := r.Form.Get("name")
-		if m, _ := regexp.MatchString("^[a-zA-Z0-9_ ]+$", tokenName); !m {
+		if m, _ := regexp.MatchString("^[-/.a-zA-Z0-9_ ]+$", tokenName); !m {
 			logger.Printf("%s", tokenName)
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "invalidtokenName")
 			return
@@ -1624,17 +1602,8 @@ func main() {
 	flag.Parse()
 
 	tricorder.RegisterFlags()
-	circularBuffer := logbuf.New()
-	if circularBuffer == nil {
-		panic("Cannot create circular buffer")
-	}
-	stdlogger := stdlog.New(circularBuffer, "", stdlog.LstdFlags)
-
-	logger = debuglogger.New(stdlogger)
-	if *debug {
-		//logger.Debug(1, "test")
-		logger.SetLevel(3)
-	}
+	realLogger := serverlogger.New("")
+	logger = realLogger
 
 	if *generateConfig {
 		err := generateNewConfig(*configFilename)
@@ -1648,11 +1617,9 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	if *debug || true {
-		logger.Printf("After load verify")
-	}
+	logger.Debugf(3, "After load verify")
 
-	adminDashboard := newAdminDashboard(circularBuffer)
+	adminDashboard := newAdminDashboard(realLogger)
 	// Expose the registered metrics via HTTP.
 	http.Handle("/", adminDashboard)
 	http.Handle("/prometheus_metrics", prometheus.Handler())

@@ -152,9 +152,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			err = errors.New("Cannot append any certs from Client CA file")
 			return runtimeState, err
 		}
-		if *debug || true {
-			logger.Printf("client ca file loaded")
-		}
+		logger.Debugf(3, "client ca file loaded")
 
 	}
 	if strings.HasPrefix(string(runtimeState.SSHCARawFileContent[:]), "-----BEGIN RSA PRIVATE KEY-----") {
