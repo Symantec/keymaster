@@ -239,8 +239,10 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 	}
 	logger.Debugf(0, "Get url request did not failed %+v", signRequestResp)
 
-	defer signRequestResp.Body.Close()
+	// Dont defer the body response Close ... as we need to close it explicitly
+	// in the body of the function so that we can reuse the connection
 	if signRequestResp.StatusCode != 200 {
+		signRequestResp.Body.Close()
 		logger.Printf("got error from call %s, url='%s'\n", signRequestResp.Status, url)
 		err = errors.New("failed respose from sign request")
 		return err
@@ -252,6 +254,8 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 		//        return
 		logger.Fatal(err)
 	}
+	io.Copy(ioutil.Discard, signRequestResp.Body)
+	signRequestResp.Body.Close()
 
 	// TODO: move this to initialization code, ans pass the device list to this function?
 	// or maybe pass the token?...
@@ -374,7 +378,7 @@ func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 		logger.Printf("got error from call %s, url='%s'\n", signRequestResp2.Status, url)
 		return err
 	}
-
+	io.Copy(ioutil.Discard, signRequestResp2.Body)
 	return nil
 }
 
@@ -443,7 +447,7 @@ func doVIPAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL 
 	if err != nil {
 		return err
 	}
-	loginResp.Body.Close() //so that we can reuse the channel
+	io.Copy(ioutil.Discard, loginResp.Body)
 
 	logger.Debugf(1, "This the login response=%v\n", loginJSONResponse)
 
