@@ -17,9 +17,7 @@ const userProfileSuffix = ".gob"
 const profileDBFilename = "userProfiles.sqlite3"
 
 func initDB(state *RuntimeState) error {
-	if *debug {
-		logger.Printf("storage=%s", state.Config.ProfileStorage.StorageUrl)
-	}
+	logger.Debugf(3, "storage=%s", state.Config.ProfileStorage.StorageUrl)
 	storageURL := state.Config.ProfileStorage.StorageUrl
 	if storageURL == "" {
 		storageURL = "sqlite:"
