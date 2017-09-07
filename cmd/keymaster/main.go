@@ -778,6 +778,13 @@ func main() {
 		logger.Fatal(err)
 	}
 	logger.Debugf(0, "Got Certs from server")
+	//..
+	if _, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
+		// TODO(rgooch): Parse certificate to get actual lifetime.
+		cmd := exec.Command("ssh-add", "-d", privateKeyPath)
+		cmd.Run()
+	}
+
 	//rename files to expected paths
 	err = os.Rename(tempPrivateKeyPath, privateKeyPath)
 	if err != nil {
