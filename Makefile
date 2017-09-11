@@ -1,5 +1,10 @@
 # Set GOPATH to a sensible default if not already set.
+ifdef USERPROFILE
+GOPATH ?= $(USERPROFILE)\go
+else
 GOPATH ?= $(HOME)/go
+endif
+
 
 # This is how we want to name the binary output
 BINARY=keymaster
@@ -13,6 +18,10 @@ VERSION=0.4.3
 
 all:	init-config-host
 	cd $(GOPATH)/src; go install -ldflags "-X main.Version=${VERSION}" github.com/Symantec/keymaster/cmd/*
+
+win-client:
+	cd $(GOPATH)\src && go install -ldflags "-X main.Version=${VERSION}" github.com\Symantec\keymaster\cmd\keymaster
+	cd $(GOPATH)\src\github.com\Symantec\keymaster\cmd\keymaster && go test -v ./...
 
 get-deps:	init-config-host
 	go get -t ./...
