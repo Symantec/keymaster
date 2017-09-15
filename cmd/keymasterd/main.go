@@ -236,11 +236,24 @@ func getPreferredAcceptType(r *http.Request) string {
 	return preferredAcceptType
 }
 
+func browserSupportsU2F(r *http.Request) bool {
+	if strings.Contains(r.UserAgent(), "Chrome/") {
+		return true
+	}
+	return false
+}
+
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.Request) error {
+	JSSources := []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js"}
+	showU2F := browserSupportsU2F(r)
+	if showU2F {
+		JSSources = []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js", "/static/webui-2fa-u2f.js"}
+	}
 	displayData := secondFactorAuthTemplateData{
 		Title:     "Keymaster 2FA Auth",
-		JSSources: []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js", "/static/webui-2fa-u2f.js"},
-		ShowOTP:   state.Config.SymantecVIP.Enabled}
+		JSSources: JSSources,
+		ShowOTP:   state.Config.SymantecVIP.Enabled,
+		ShowU2F:   showU2F}
 
 	t, err := template.New("webpage").Parse(secondFactorAuthFormText)
 	if err != nil {
@@ -1438,9 +1451,17 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		return
 
 	}
+
+	JSSources := []string{"//code.jquery.com/jquery-1.12.4.min.js"}
+	showU2F := browserSupportsU2F(r)
+	if showU2F {
+		JSSources = []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js", "/static/keymaster-u2f.js"}
+	}
+
 	displayData := profilePageTemplateData{Username: authUser,
 		Title:     "Keymaster User Profile",
-		JSSources: []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js", "/static/keymaster-u2f.js"}}
+		ShowU2F:   showU2F,
+		JSSources: JSSources}
 	for i, tokenInfo := range profile.U2fAuthData {
 
 		deviceData := registeredU2FTokenDisplayInfo{

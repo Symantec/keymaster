@@ -39,6 +39,7 @@ type secondFactorAuthTemplateData struct {
 	Title     string
 	JSSources []string
 	ShowOTP   bool
+	ShowU2F   bool
 }
 
 const secondFactorAuthFormText = `
@@ -63,14 +64,18 @@ const secondFactorAuthFormText = `
             <input type="submit" value="Submit" />
 	    </p>
         </form>
+	{{if .ShowU2F}}
 	<p>
 	<h4>Or</h4>
 	</p>
 	{{end}}
+	{{end}}
+	{{if .ShowU2F}}
 	<p>
                <div id="auth_action_text" > Authenticate by touching a blinking registered U2F device (insert if not inserted yet)</div>
-         </p>
-	 </body>
+        </p>
+	{{end}}
+	</body>
 </html>
 `
 
@@ -85,6 +90,7 @@ type profilePageTemplateData struct {
 	Title           string
 	Username        string
 	JSSources       []string
+	ShowU2F         bool
 	RegisteredToken []registeredU2FTokenDisplayInfo
 }
 
@@ -109,6 +115,7 @@ const profileHTML = `<!DOCTYPE html>
     <h2> {{.Username}}</h2>
     <ul>
       <li><a href="/api/v0/logout" >Logout </a></li>
+       {{if .ShowU2F}}
       <li>
          <a id="register_button" href="#">Register token</a>
          <div id="register_action_text" style="color: blue;background-color: yellow; display: none;"> Please Touch the blinking device to register(insert if not inserted yet) </div>
@@ -116,6 +123,9 @@ const profileHTML = `<!DOCTYPE html>
       <li><a id="auth_button" href="#">Authenticate</a>
       <div id="auth_action_text" style="color: blue;background-color: yellow; display: none;"> Please Touch the blinking device to authenticate(insert if not inserted yet) </div>
       </li>
+      {{else}}
+      <div id="auth_action_text" style="color: blue;background-color: yellow;"> Your browser does not support U2F. However you can still Enable/Disable/Delete U2F tokens </div>
+      {{end}}
     </ul>
     {{if .RegisteredToken -}}
         Your U2F Token(s):
