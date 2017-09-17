@@ -66,7 +66,7 @@ var (
 	cliUsername    = flag.String("username", "", "username for keymaster")
 	duration       = flag.String("duration", "16h", "Duration of the requested certificates in golang duration format (ex: 30s, 5m, 12h)")
 	checkDevices   = flag.Bool("checkDevices", false, "CheckU2F devices in your system")
-	noU2F          = flag.Bool("noU2F", false, "Dont use U2F as second factor")
+	noU2F          = flag.Bool("noU2F", false, "Don't use U2F as second factor")
 
 	logger log.DebugLogger
 )
