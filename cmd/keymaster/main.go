@@ -66,6 +66,7 @@ var (
 	cliUsername    = flag.String("username", "", "username for keymaster")
 	duration       = flag.String("duration", "16h", "Duration of the requested certificates in golang duration format (ex: 30s, 5m, 12h)")
 	checkDevices   = flag.Bool("checkDevices", false, "CheckU2F devices in your system")
+	noU2F          = flag.Bool("noU2F", false, "Dont use U2F as second factor")
 
 	logger log.DebugLogger
 )
@@ -543,6 +544,12 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 			allowU2F = true
 		}
 	}
+
+	// Dont try U2F if chosen by user
+	if *noU2F {
+		allowU2F = false
+	}
+
 	// upgrade to u2f
 	successful2fa := false
 	if !skip2fa {
