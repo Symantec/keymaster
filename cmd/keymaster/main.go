@@ -67,6 +67,7 @@ var (
 	duration       = flag.String("duration", "16h", "Duration of the requested certificates in golang duration format (ex: 30s, 5m, 12h)")
 	checkDevices   = flag.Bool("checkDevices", false, "CheckU2F devices in your system")
 	noU2F          = flag.Bool("noU2F", false, "Don't use U2F as second factor")
+	noVIPAccess    = flag.Bool("noVIPAccess", false, "Don't use VIPAccess as second factor")
 
 	logger log.DebugLogger
 )
@@ -549,6 +550,9 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 	if *noU2F {
 		allowU2F = false
 	}
+	if *noVIPAccess {
+		allowVIP = false
+	}
 
 	// upgrade to u2f
 	successful2fa := false
@@ -580,8 +584,7 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 		}
 
 		if !successful2fa {
-			err = errors.New("2FA failure")
-			logger.Println(err)
+			err = errors.New("Failed to Pefrom 2FA (as requested from server)")
 			return nil, nil, err
 		}
 
@@ -634,7 +637,6 @@ func getCertFromTargetUrls(signer crypto.Signer, userName string, password []byt
 
 	}
 	if !success {
-		logger.Printf("failed to get creds")
 		err := errors.New("Failed to get creds")
 		return nil, nil, err
 	}
