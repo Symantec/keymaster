@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/user"
 	"testing"
+	"time"
 )
 
 /*
@@ -124,6 +125,8 @@ RQ9Re2rAo1N/ZZUAnFPxxsj8puX2tvTbm8NHc2WVxmVFRWpcaNNmDDOz/SOmY3gr
 LwIDAQAB
 -----END PUBLIC KEY-----`
 
+const testDuration = time.Duration(120 * time.Second)
+
 // SSSD tests do require some setup... in this case we do some checks to ensure
 // that actually trying to even do this makes sense
 func canDoSSSDTests() (string, error) {
@@ -159,7 +162,7 @@ func TestGenSSHCertFileStringGenerateSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := GenSSHCertFileString(username, testUserPublicKey, goodSigner, hostIdentity)
+	c, err := GenSSHCertFileString(username, testUserPublicKey, goodSigner, hostIdentity, testDuration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +176,7 @@ func TestGenSSHCertFileStringGenerateFailBadPublicKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = GenSSHCertFileString(username, "ThisIsNOTAPublicKey", goodSigner, hostIdentity)
+	_, err = GenSSHCertFileString(username, "ThisIsNOTAPublicKey", goodSigner, hostIdentity, testDuration)
 	if err == nil {
 		t.Fatal(err)
 	}
@@ -221,8 +224,7 @@ func TestGenSSHCertFileStringFromSSSDPublicKeySuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	_, err = GenSSHCertFileStringFromSSSDPublicKey(username, goodSigner, hostIdentity)
+	_, err = GenSSHCertFileStringFromSSSDPublicKey(username, goodSigner, hostIdentity, testDuration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +244,7 @@ func TestGenSSHCertFileStringFromSSSDPublicKeyFailUserWithNoSSSDPublicKey(t *tes
 		t.Fatal(err)
 	}
 
-	_, err = GenSSHCertFileStringFromSSSDPublicKey("THISISANINVALIDUSER-FOOBARBAZ", goodSigner, hostIdentity)
+	_, err = GenSSHCertFileStringFromSSSDPublicKey("THISISANINVALIDUSER-FOOBARBAZ", goodSigner, hostIdentity, testDuration)
 	if err == nil {
 		t.Fatal(err)
 	}
@@ -283,7 +285,7 @@ func derBytesCertToCertAndPem(derBytes []byte) (*x509.Certificate, string, error
 func TestGenx509CertGoodNoRealm(t *testing.T) {
 	userPub, caCert, caPriv := setupX509Generator(t)
 
-	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, nil)
+	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, nil, testDuration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +307,7 @@ func TestGenx509CertGoodWithRealm(t *testing.T) {
 	/*
 	 */
 	realm := "EXAMPLE.COM"
-	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, &realm)
+	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, &realm, testDuration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +346,7 @@ func TestGenSelfSignedCACertGood(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = GenUserX509Cert("username", userPub, cert, caPriv, nil)
+	_, err = GenUserX509Cert("username", userPub, cert, caPriv, nil, testDuration)
 	if err != nil {
 		t.Fatal(err)
 	}

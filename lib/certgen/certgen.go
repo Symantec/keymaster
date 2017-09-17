@@ -23,8 +23,6 @@ import (
 	"fmt"
 )
 
-const numValidHours = 24
-
 // GetUserPubKeyFromSSSD user authorized keys content based on the running sssd configuration
 func GetUserPubKeyFromSSSD(username string) (string, error) {
 	cmd := exec.Command("/usr/bin/sss_ssh_authorizedkeys", username)
@@ -45,7 +43,7 @@ func goCertToFileString(c ssh.Certificate, username string) (string, error) {
 }
 
 // gen_user_cert a username and key, returns a short lived cert for that user
-func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer, host_identity string) (string, error) {
+func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer, host_identity string, duration time.Duration) (string, error) {
 	userKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(userPubKey))
 	if err != nil {
 		return "", err
@@ -53,7 +51,7 @@ func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer,
 	keyIdentity := host_identity + "_" + username
 
 	currentEpoch := uint64(time.Now().Unix())
-	expireEpoch := currentEpoch + (3600 * numValidHours)
+	expireEpoch := currentEpoch + uint64(duration.Seconds())
 
 	// The values of the permissions are taken from the default values used
 	// by ssh-keygen
@@ -83,13 +81,13 @@ func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer,
 	return certString, nil
 }
 
-func GenSSHCertFileStringFromSSSDPublicKey(userName string, signer ssh.Signer, hostIdentity string) (string, error) {
+func GenSSHCertFileStringFromSSSDPublicKey(userName string, signer ssh.Signer, hostIdentity string, duration time.Duration) (string, error) {
 
 	userPubKey, err := GetUserPubKeyFromSSSD(userName)
 	if err != nil {
 		return "", err
 	}
-	cert, err := GenSSHCertFileString(userName, userPubKey, signer, hostIdentity)
+	cert, err := GenSSHCertFileString(userName, userPubKey, signer, hostIdentity, duration)
 	if err != nil {
 		return "", err
 	}
@@ -247,12 +245,15 @@ func genSANExtension(userName string, kerberosRealm *string) (*pkix.Extension, e
 	return &sanExtension, nil
 }
 
-// returns an x509 cert that has the username in the common name, optionally if a kerberos Realm is present
-// it will also add a kerberos SAN exention for pkinit
-func GenUserX509Cert(userName string, userPub interface{}, caCert *x509.Certificate, caPriv crypto.Signer, kerberosRealm *string) ([]byte, error) {
+// returns an x509 cert that has the username in the common name,
+// optionally if a kerberos Realm is present it will also add a kerberos
+// SAN exention for pkinit
+func GenUserX509Cert(userName string, userPub interface{},
+	caCert *x509.Certificate, caPriv crypto.Signer,
+	kerberosRealm *string, duration time.Duration) ([]byte, error) {
 	//// Now do the actual work...
 	notBefore := time.Now()
-	notAfter := notBefore.Add(time.Duration(numValidHours) * time.Hour)
+	notAfter := notBefore.Add(duration)
 
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)

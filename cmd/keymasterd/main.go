@@ -533,6 +533,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	duration := time.Duration(20 * time.Hour)
 	certType := "ssh"
 	if val, ok := r.Form["type"]; ok {
 		certType = val[0]
@@ -541,10 +542,10 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 
 	switch certType {
 	case "ssh":
-		state.postAuthSSHCertHandler(w, r, targetUser, keySigner)
+		state.postAuthSSHCertHandler(w, r, targetUser, keySigner, duration)
 		return
 	case "x509":
-		state.postAuthX509CertHandler(w, r, targetUser, keySigner)
+		state.postAuthX509CertHandler(w, r, targetUser, keySigner, duration)
 		return
 	default:
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Unrecognized cert type")
@@ -557,7 +558,9 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 
 }
 
-func (state *RuntimeState) postAuthSSHCertHandler(w http.ResponseWriter, r *http.Request, targetUser string, keySigner crypto.Signer) {
+func (state *RuntimeState) postAuthSSHCertHandler(
+	w http.ResponseWriter, r *http.Request, targetUser string,
+	keySigner crypto.Signer, duration time.Duration) {
 	signer, err := ssh.NewSignerFromSigner(keySigner)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -568,7 +571,7 @@ func (state *RuntimeState) postAuthSSHCertHandler(w http.ResponseWriter, r *http
 	var cert string
 	switch r.Method {
 	case "GET":
-		cert, err = certgen.GenSSHCertFileStringFromSSSDPublicKey(targetUser, signer, state.HostIdentity)
+		cert, err = certgen.GenSSHCertFileStringFromSSSDPublicKey(targetUser, signer, state.HostIdentity, duration)
 		if err != nil {
 			http.NotFound(w, r)
 			return
@@ -598,7 +601,7 @@ func (state *RuntimeState) postAuthSSHCertHandler(w http.ResponseWriter, r *http
 
 		}
 
-		cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity)
+		cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity, duration)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			logger.Printf("signUserPubkey Err")
@@ -621,7 +624,9 @@ func (state *RuntimeState) postAuthSSHCertHandler(w http.ResponseWriter, r *http
 	}(targetUser, "ssh")
 }
 
-func (state *RuntimeState) postAuthX509CertHandler(w http.ResponseWriter, r *http.Request, targetUser string, keySigner crypto.Signer) {
+func (state *RuntimeState) postAuthX509CertHandler(
+	w http.ResponseWriter, r *http.Request, targetUser string,
+	keySigner crypto.Signer, duration time.Duration) {
 	var cert string
 	switch r.Method {
 	case "POST":
@@ -655,7 +660,7 @@ func (state *RuntimeState) postAuthX509CertHandler(w http.ResponseWriter, r *htt
 			logger.Printf("Cannot parse CA Der data")
 			return
 		}
-		derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert, keySigner, state.KerberosRealm)
+		derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert, keySigner, state.KerberosRealm, duration)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			logger.Printf("Cannot Generate x509cert")
