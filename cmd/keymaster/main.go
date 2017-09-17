@@ -64,6 +64,7 @@ var (
 	rootCAFilename = flag.String("rootCAFilename", "", "(optional) name for using non OS root CA to verify TLS connections")
 	configHost     = flag.String("configHost", "", "Get a bootstrap config from this host")
 	cliUsername    = flag.String("username", "", "username for keymaster")
+	duration       = flag.String("duration", "16h", "Duration of the requested certificates in golang duration format (ex: 30s, 5m, 12h)")
 	checkDevices   = flag.Bool("checkDevices", false, "CheckU2F devices in your system")
 
 	logger log.DebugLogger
@@ -153,6 +154,11 @@ func createKeyBodyRequest(method, urlStr, filedata string) (*http.Request, error
 	fh := strings.NewReader(filedata)
 
 	_, err = io.Copy(fileWriter, fh)
+	if err != nil {
+		return nil, err
+	}
+
+	err = bodyWriter.WriteField("duration", *duration)
 	if err != nil {
 		return nil, err
 	}
@@ -699,6 +705,12 @@ func main() {
 			logger.Fatal("cannot append file data")
 		}
 
+	}
+	//ensure duration is sane
+	_, err := time.ParseDuration(*duration)
+	if err != nil {
+		logger.Printf("Duration cannot be parsed, please check syntax I read '%s'", *duration)
+		logger.Fatal(err)
 	}
 
 	usr, err := user.Current()

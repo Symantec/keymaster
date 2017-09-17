@@ -533,7 +533,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	duration := time.Duration(20 * time.Hour)
+	duration := time.Duration(24 * time.Hour)
 	if formDuration, ok := r.Form["duration"]; ok {
 		stringDuration := formDuration[0]
 		newDuration, err := time.ParseDuration(stringDuration)
