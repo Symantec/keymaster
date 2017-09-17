@@ -707,7 +707,7 @@ func main() {
 
 	}
 	//ensure duration is sane
-	_, err := time.ParseDuration(*duration)
+	parsedDuration, err := time.ParseDuration(*duration)
 	if err != nil {
 		logger.Printf("Duration cannot be parsed, please check syntax I read '%s'", *duration)
 		logger.Fatal(err)
@@ -827,7 +827,8 @@ func main() {
 	logger.Printf("Success")
 	if _, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
 		// TODO(rgooch): Parse certificate to get actual lifetime.
-		cmd := exec.Command("ssh-add", "-t", "20h", privateKeyPath)
+		lifetime := fmt.Sprintf("%ds", uint64(parsedDuration.Seconds()))
+		cmd := exec.Command("ssh-add", "-t", lifetime, privateKeyPath)
 		cmd.Run()
 	}
 }
