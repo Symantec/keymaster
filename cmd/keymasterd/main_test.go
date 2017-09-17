@@ -122,7 +122,7 @@ var loginFailValues = []loginTestVector{
 	loginTestVector{Username: &validUsernameConst, Password: nil},
 }
 
-func createKeyBodyRequest(method, urlStr, filedata string) (*http.Request, error) {
+func createKeyBodyRequest(method, urlStr, filedata, durationString string) (*http.Request, error) {
 	//create attachment....
 	bodyBuf := &bytes.Buffer{}
 	bodyWriter := multipart.NewWriter(bodyBuf)
@@ -138,6 +138,14 @@ func createKeyBodyRequest(method, urlStr, filedata string) (*http.Request, error
 
 	//iocopy
 	_, err = io.Copy(fileWriter, fh)
+	if err != nil {
+		//t.Fatal(err)
+		return nil, err
+	}
+	if durationString == "" {
+		durationString = "1h"
+	}
+	err = bodyWriter.WriteField("duration", durationString)
 	if err != nil {
 		//t.Fatal(err)
 		return nil, err
@@ -160,7 +168,7 @@ func createKeyBodyRequest(method, urlStr, filedata string) (*http.Request, error
 
 func createBasicAuthRequstWithKeyBody(method, urlStr, username, password, filedata string) (*http.Request, error) {
 
-	req, err := createKeyBodyRequest(method, urlStr, filedata)
+	req, err := createKeyBodyRequest(method, urlStr, filedata, "")
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +242,7 @@ func TestSuccessFullSigningSSH(t *testing.T) {
 	// now we check using login auth + cookies
 	// For now just inject cookie into space
 
-	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username", testUserSSHPublicKey)
+	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username", testUserSSHPublicKey, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +278,7 @@ func TestSuccessFullSigningX509(t *testing.T) {
 	// TODO: Check the response body is what we expect.
 
 	//And also test with cookies
-	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey)
+	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,6 +294,66 @@ func TestSuccessFullSigningX509(t *testing.T) {
 	}
 }
 
+func TestFailCertgenDurationTooLong(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+
+	// Get request
+	req, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username", "username", "password", testUserSSHPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// now we check using login auth + cookies
+	// For now just inject cookie into space
+
+	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username", testUserSSHPublicKey, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cookieVal := "supersecret"
+	state.authCookie[cookieVal] = authInfo{Username: "username", AuthType: AuthTypeU2F, ExpiresAt: time.Now().Add(120 * time.Second)}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+	cookieReq.AddCookie(&authCookie)
+
+	_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Now since we know it is correct.. we try again with invalid durations
+	badValues := []string{"100h", "10X"}
+	for _, invalidValue := range badValues {
+		tooLongReqSSH, err := createKeyBodyRequest("POST", "/certgen/username", testUserSSHPublicKey, invalidValue)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tooLongReqSSH.AddCookie(&authCookie)
+		_, err = checkRequestHandlerCode(tooLongReqSSH, state.certGenHandler, http.StatusBadRequest)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		tooLongReqX509, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey, invalidValue)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tooLongReqX509.AddCookie(&authCookie)
+		_, err = checkRequestHandlerCode(tooLongReqX509, state.certGenHandler, http.StatusBadRequest)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+}
+
 func TestFailSingingExpiredCookie(t *testing.T) {
 	state, passwdFile, err := setupValidRuntimeStateSigner()
 	if err != nil {
@@ -294,7 +362,7 @@ func TestFailSingingExpiredCookie(t *testing.T) {
 	defer os.Remove(passwdFile.Name()) // clean up
 
 	//Fist we ensure OK is working
-	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey)
+	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +395,7 @@ func TestFailSingingUnexpectedCookie(t *testing.T) {
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
 
-	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey)
+	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -374,7 +442,7 @@ func TestInjectingSecret(t *testing.T) {
 	state.authCookie = make(map[string]authInfo)
 	// Make certgen Request
 	//Fist we ensure OK is working
-	certGenReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey)
+	certGenReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey, "")
 	if err != nil {
 		t.Fatal(err)
 	}

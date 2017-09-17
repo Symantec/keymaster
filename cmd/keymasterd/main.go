@@ -534,6 +534,22 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	duration := time.Duration(20 * time.Hour)
+	if formDuration, ok := r.Form["duration"]; ok {
+		stringDuration := formDuration[0]
+		newDuration, err := time.ParseDuration(stringDuration)
+		if err != nil {
+			logger.Println(err)
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form (duration)")
+			return
+		}
+		if newDuration > duration {
+			logger.Println(err)
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form (invalid duration)")
+			return
+		}
+		duration = newDuration
+	}
+
 	certType := "ssh"
 	if val, ok := r.Form["type"]; ok {
 		certType = val[0]
