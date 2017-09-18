@@ -1624,6 +1624,12 @@ func (state *RuntimeState) serveClientConfHandler(w http.ResponseWriter, r *http
 func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Request) {
 	//redirect to profile
 	if r.URL.Path[:] == "/" {
+		//landing page
+		if r.Method == "GET" && len(r.Cookies()) < 1 {
+			state.writeHTMLLoginPage(w, r)
+			return
+		}
+
 		http.Redirect(w, r, profilePath, 302)
 		return
 	}
