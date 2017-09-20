@@ -17,6 +17,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v2"
+	"html/template"
 	"io/ioutil"
 	"math/big"
 	"os"
@@ -38,6 +39,8 @@ type baseConfig struct {
 	KerberosRealm               string   `yaml:"kerberos_realm"`
 	DataDirectory               string   `yaml:"data_directory"`
 	SharedDataDirectory         string   `yaml:"shared_data_directory"`
+	DocumentationURL            string   `yaml:"documentation_url"`
+	ClientDownloadURL           string   `yaml:"client_download_url"`
 	AllowedAuthBackendsForCerts []string `yaml:"allowed_auth_backends_for_certs"`
 	AllowedAuthBackendsForWebUI []string `yaml:"allowed_auth_backends_for_webui"`
 }
@@ -80,6 +83,32 @@ type AppConfigFile struct {
 }
 
 const defaultRSAKeySize = 3072
+
+func (state *RuntimeState) loadTemplates() (err error) {
+	//Load extra templates
+	templatesPath := filepath.Join(state.Config.Base.SharedDataDirectory, "customization_data", "templates")
+	if _, err = os.Stat(templatesPath); err != nil {
+		return err
+	}
+	state.htmlTemplate = template.New("main")
+	templateFiles := []string{"footer_extra.tmpl", "header_extra.tmpl"}
+	for _, templateFilename := range templateFiles {
+		templatePath := filepath.Join(templatesPath, templateFilename)
+		_, err = state.htmlTemplate.ParseFiles(templatePath)
+		if err != nil {
+			return err
+		}
+	}
+	/// Load the oter built in templates
+	extraTemplates := []string{footerTemplateText, loginFormText, secondFactorAuthFormText, profileHTML, headerTemplateText}
+	for _, templateString := range extraTemplates {
+		_, err = state.htmlTemplate.Parse(templateString)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	var runtimeState RuntimeState
@@ -215,6 +244,12 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			return runtimeState, err
 		}
 		runtimeState.Config.SymantecVIP.Client = &client
+	}
+
+	//Load extra templates
+	err = runtimeState.loadTemplates()
+	if err != nil {
+		return runtimeState, err
 	}
 
 	logger.Debugf(1, "End of config initialization: %+v", runtimeState)

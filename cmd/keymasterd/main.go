@@ -95,6 +95,7 @@ type RuntimeState struct {
 	storageRWMutex sync.RWMutex
 	db             *sql.DB
 	dbType         string
+	htmlTemplate   *template.Template
 }
 
 const redirectPath = "/auth/oauth2/callback"
@@ -254,14 +255,7 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.R
 		JSSources: JSSources,
 		ShowOTP:   state.Config.SymantecVIP.Enabled,
 		ShowU2F:   showU2F}
-
-	t, err := template.New("webpage").Parse(secondFactorAuthFormText)
-	if err != nil {
-		logger.Printf("bad template %v", err)
-		http.Error(w, "error", http.StatusInternalServerError)
-		return err
-	}
-	err = t.Execute(w, displayData)
+	err := state.htmlTemplate.ExecuteTemplate(w, "secondFactorLoginPage", displayData)
 	if err != nil {
 		logger.Printf("Failed to execute %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -271,14 +265,11 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.R
 }
 
 func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter, r *http.Request) error {
-	displayData := loginPageTemplateData{Title: "Keymaster Login", ShowOauth2: state.Config.Oauth2.Enabled}
-	t, err := template.New("webpage").Parse(loginFormText)
-	if err != nil {
-		logger.Printf("bad template %v", err)
-		http.Error(w, "error", http.StatusInternalServerError)
-		return err
-	}
-	err = t.Execute(w, displayData)
+	//footerText := state.getFooterText()
+	displayData := loginPageTemplateData{
+		Title:      "Keymaster Login",
+		ShowOauth2: state.Config.Oauth2.Enabled}
+	err := state.htmlTemplate.ExecuteTemplate(w, "loginPage", displayData)
 	if err != nil {
 		logger.Printf("Failed to execute %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -350,7 +341,7 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("X-XSS-Protection", "1")
 	//w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self' code.jquery.com; connect-src 'self'; img-src 'self'; style-src 'self';")
-	w.Header().Set("Content-Security-Policy", "default-src 'self' code.jquery.com; style-src 'self' 'unsafe-inline';")
+	w.Header().Set("Content-Security-Policy", "default-src 'self' code.jquery.com; style-src 'self' fonts.googleapis.com 'unsafe-inline'; font-src fonts.gstatic.com fonts.googleapis.com")
 
 	if signerIsNull {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -1479,10 +1470,12 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		JSSources = []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js", "/static/keymaster-u2f.js"}
 	}
 
-	displayData := profilePageTemplateData{Username: authUser,
-		Title:     "Keymaster User Profile",
-		ShowU2F:   showU2F,
-		JSSources: JSSources}
+	displayData := profilePageTemplateData{
+		Username:     authUser,
+		AuthUsername: authUser,
+		Title:        "Keymaster User Profile",
+		ShowU2F:      showU2F,
+		JSSources:    JSSources}
 	for i, tokenInfo := range profile.U2fAuthData {
 
 		deviceData := registeredU2FTokenDisplayInfo{
@@ -1495,13 +1488,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 
 	logger.Printf("%v", displayData)
 
-	t, err := template.New("webpage").Parse(profileHTML)
-	if err != nil {
-		logger.Printf("bad template %v", err)
-		http.Error(w, "error", http.StatusInternalServerError)
-		return
-	}
-	err = t.Execute(w, displayData)
+	err = state.htmlTemplate.ExecuteTemplate(w, "userProfilePage", displayData)
 	if err != nil {
 		logger.Printf("Failed to execute %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1624,6 +1611,12 @@ func (state *RuntimeState) serveClientConfHandler(w http.ResponseWriter, r *http
 func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Request) {
 	//redirect to profile
 	if r.URL.Path[:] == "/" {
+		//landing page
+		if r.Method == "GET" && len(r.Cookies()) < 1 {
+			state.writeHTMLLoginPage(w, r)
+			return
+		}
+
 		http.Redirect(w, r, profilePath, 302)
 		return
 	}
@@ -1676,6 +1669,10 @@ func main() {
 
 	staticFilesPath := filepath.Join(runtimeState.Config.Base.SharedDataDirectory, "static_files")
 	serviceMux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticFilesPath))))
+	customWebResourcesPath := filepath.Join(runtimeState.Config.Base.SharedDataDirectory, "customization_data", "web_resources")
+	if _, err = os.Stat(customWebResourcesPath); err == nil {
+		serviceMux.Handle("/custom_static/", http.StripPrefix("/custom_static/", http.FileServer(http.Dir(customWebResourcesPath))))
+	}
 	serviceMux.HandleFunc(u2fRegustisterRequestPath, runtimeState.u2fRegisterRequest)
 	serviceMux.HandleFunc(u2fRegisterRequesponsePath, runtimeState.u2fRegisterResponse)
 	serviceMux.HandleFunc(u2fSignRequestPath, runtimeState.u2fSignRequest)

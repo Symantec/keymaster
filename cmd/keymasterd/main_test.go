@@ -513,6 +513,10 @@ func TestPublicHandleLoginForm(t *testing.T) {
 	}
 	state.Signer = signer
 	urlList := []string{"/public/loginForm", "/public/x509ca"}
+	err = state.loadTemplates()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, url := range urlList {
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
@@ -715,6 +719,10 @@ func TestProfileHandlerTemplate(t *testing.T) {
 	state.Config.Base.DataDirectory = dir
 	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
 	err = initDB(&state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = state.loadTemplates()
 	if err != nil {
 		t.Fatal(err)
 	}
