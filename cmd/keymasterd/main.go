@@ -341,7 +341,7 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("X-XSS-Protection", "1")
 	//w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self' code.jquery.com; connect-src 'self'; img-src 'self'; style-src 'self';")
-	w.Header().Set("Content-Security-Policy", "default-src 'self' code.jquery.com; style-src 'self' 'unsafe-inline';")
+	w.Header().Set("Content-Security-Policy", "default-src 'self' code.jquery.com; style-src 'self' fonts.googleapis.com 'unsafe-inline'; font-src fonts.gstatic.com fonts.googleapis.com")
 
 	if signerIsNull {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")

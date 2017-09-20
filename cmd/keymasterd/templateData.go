@@ -6,8 +6,8 @@ import (
 
 const headerTemplateText = `
 {{define "header"}}
-<div style="font-size: 95%;height:30px;color: black;background-color: #FDBB30;width:100%;">
-<table style="width:100%;vertical-align: middle">
+<div class="header">
+<table style="width:100%;">
 <tr>
 <th style="text-align:left;"> {{template "header_extra"}}</th>
 <th style="text-align:right;">  {{if .AuthUsername}} <b> {{.AuthUsername}} </b> <a href="/api/v0/logout" >Logout </a> {{end}}</th>
@@ -21,7 +21,7 @@ const headerTemplateText = `
 const footerTemplateText = `
 {{define "footer"}}
 
-<div style="font-size: 95%;height:60px; position:absolute;width:100%;bottom:0">
+<div class="footer">
 <hr>
 <center>
 Copright 2017 Symantec Corporation.  {{template "footer_extra"}}
@@ -46,7 +46,9 @@ const loginFormText = `
     <head>
         <meta charset="UTF-8">
         <title>{{.Title}}</title>
-	<style>body{padding:0;border:0;margin:0; height:100%; font-family: sans-serif;}h1,h2,h3{line-height:1.2;}@media print{body{max-width:none}}</style>
+	<link rel="stylesheet" type="text/css" href="//fonts.googleapis.com/css?family=Droid+Sans" />
+	<link rel="stylesheet" type="text/css" href="/custom_static/customization.css">
+        <link rel="stylesheet" type="text/css" href="/static/keymaster.css">
     </head>
     <body>
     <div style="min-height:100%;position:relative;">
@@ -91,10 +93,12 @@ const secondFactorAuthFormText = `
         <script type="text/javascript" src="{{.}}"></script>
         {{- end}}
         {{- end}}
-	<style>body{padding:0;border:0;margin:0; height:100%;font-family: sans-serif;}h1,h2,h3{line-height:1.2;}@media print{body{max-width:none}}</style>
+        <link rel="stylesheet" type="text/css" href="//fonts.googleapis.com/css?family=Droid+Sans" />
+        <link rel="stylesheet" type="text/css" href="/custom_static/customization.css">
+        <link rel="stylesheet" type="text/css" href="/static/keymaster.css">
     </head>
     <body>
-        <div style="min-height:100%;position:relative;">
+        <div  style="min-height:100%;position:relative;">
 	{{template "header" .}}
 	<div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
         <h2> Keymaster second factor Authenticaion </h2>
@@ -141,8 +145,9 @@ type profilePageTemplateData struct {
 }
 
 //{{ .Date | formatAsDate}} {{ printf "%-20s" .Description }} {{.AmountInCents | formatAsDollars -}}
-const profileHTML = `<!DOCTYPE html>
+const profileHTML = `
 {{define "userProfilePage"}}
+<!DOCTYPE html>
 <html style="height:100%; padding:0;border:0;margin:0">
   <head>
     <title>{{.Title}}</title>
@@ -154,7 +159,9 @@ const profileHTML = `<!DOCTYPE html>
     <!-- The original u2f-api.js code can be found here:
     https://github.com/google/u2f-ref-code/blob/master/u2f-gae-demo/war/js/u2f-api.js -->
     <!-- script type="text/javascript" src="https://demo.yubico.com/js/u2f-api.js"></script-->
-    <style>body{padding:0;border:0;margin:0; height:100%;font-family: sans-serif;}h1,h2,h3{line-height:1.2;}@media print{body{max-width:none}}</style>
+    <link rel="stylesheet" type="text/css" href="//fonts.googleapis.com/css?family=Droid+Sans" />
+    <link rel="stylesheet" type="text/css" href="/custom_static/customization.css">
+    <link rel="stylesheet" type="text/css" href="/static/keymaster.css">
   </head>
   <body>
     <div style="min-height:100%;position:relative;">
