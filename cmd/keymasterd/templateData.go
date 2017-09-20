@@ -9,7 +9,7 @@ const headerTemplateText = `
 <div class="header">
 <table style="width:100%;">
 <tr>
-<th style="text-align:left;"> {{template "header_extra"}}</th>
+<th style="text-align:left;"> <div class="header_extra">{{template "header_extra"}}</div></th>
 <th style="text-align:right;">  {{if .AuthUsername}} <b> {{.AuthUsername}} </b> <a href="/api/v0/logout" >Logout </a> {{end}}</th>
 </tr>
 </table>

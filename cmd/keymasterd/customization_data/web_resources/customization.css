@@ -15,6 +15,12 @@ width:100%;
 	color: red
 	}
 
+.header_extra{
+	font-size: 140%;
+	padding-left: 1.2em;
+	line-height:normal;
+}
+
 .footer {
     font-size: 95%;
     height:60px; 
