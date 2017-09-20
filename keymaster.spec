@@ -39,6 +39,12 @@ install -d %{buildroot}/%{_datarootdir}/keymasterd/static_files/
 install -p -m 0644 cmd/keymasterd/static_files/u2f-api.js  %{buildroot}/%{_datarootdir}/keymasterd/static_files/u2f-api.js
 install -p -m 0644 cmd/keymasterd/static_files/keymaster-u2f.js  %{buildroot}/%{_datarootdir}/keymasterd/static_files/keymaster-u2f.js
 install -p -m 0644 cmd/keymasterd/static_files/webui-2fa-u2f.js  %{buildroot}/%{_datarootdir}/keymasterd/static_files/webui-2fa-u2f.js
+install -p -m 0644 cmd/keymasterd/static_files/keymaster.css  %{buildroot}/%{_datarootdir}/keymasterd/static_files/keymaster.css
+install -d %{buildroot}/%{_datarootdir}/keymasterd/customization_data/templates
+install -p -m 0644 cmd/keymasterd/customization_data/templates/header_extra.tmpl %{buildroot}/%{_datarootdir}/keymasterd/customization_data/templates/header_extra.tmpl
+install -p -m 0644 cmd/keymasterd/customization_data/templates/footer_extra.tmpl %{buildroot}/%{_datarootdir}/keymasterd/customization_data/templates/footer_extra.tmpl
+install -d %{buildroot}/%{_datarootdir}/keymasterd/customization_data/web_resources
+install -p -m 0644 cmd/keymasterd/customization_data/web_resources/customization.css %{buildroot}/%{_datarootdir}/keymasterd/customization_data/web_resources/customization.css
 %pre
 /usr/bin/getent passwd keymaster || useradd -d /var/lib/keymaster -s /bin/false -U -r  keymaster
 
@@ -59,7 +65,8 @@ systemctl daemon-reload
 %{_bindir}/keymaster-unlocker
 /usr/lib/systemd/system/keymaster.service
 %{_datarootdir}/keymasterd/static_files/*
-
+%config(noreplace) %{_datarootdir}/keymasterd/customization_data/web_resources/*
+%config(noreplace) %{_datarootdir}/keymasterd/customization_data/templates/*
 %changelog
 
 
