@@ -84,6 +84,32 @@ type AppConfigFile struct {
 
 const defaultRSAKeySize = 3072
 
+func (state *RuntimeState) loadTemplates() (err error) {
+	//Load extra templates
+	templatesPath := filepath.Join(state.Config.Base.SharedDataDirectory, "customization_data", "templates")
+	if _, err = os.Stat(templatesPath); err != nil {
+		return err
+	}
+	state.htmlTemplate = template.New("main")
+	templateFiles := []string{"footer_extra.tmpl", "header_extra.tmpl"}
+	for _, templateFilename := range templateFiles {
+		templatePath := filepath.Join(templatesPath, templateFilename)
+		_, err = state.htmlTemplate.ParseFiles(templatePath)
+		if err != nil {
+			return err
+		}
+	}
+	/// Load the oter built in templates
+	extraTemplates := []string{footerTemplateText, loginFormText, secondFactorAuthFormText, profileHTML, headerTemplateText}
+	for _, templateString := range extraTemplates {
+		_, err = state.htmlTemplate.Parse(templateString)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	var runtimeState RuntimeState
 	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
@@ -221,26 +247,9 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	}
 
 	//Load extra templates
-	templatesPath := filepath.Join(runtimeState.Config.Base.SharedDataDirectory, "customization_data", "templates")
-	if _, err = os.Stat(templatesPath); err != nil {
+	err = runtimeState.loadTemplates()
+	if err != nil {
 		return runtimeState, err
-	}
-	runtimeState.htmlTemplate = template.New("main")
-	templateFiles := []string{"footer_extra.tmpl", "header_extra.tmpl"}
-	for _, templateFilename := range templateFiles {
-		templatePath := filepath.Join(templatesPath, templateFilename)
-		_, err = runtimeState.htmlTemplate.ParseFiles(templatePath)
-		if err != nil {
-			return runtimeState, err
-		}
-	}
-	/// Load the oter built in templates
-	extraTemplates := []string{footerTemplateText, loginFormText, secondFactorAuthFormText, profileHTML, headerTemplateText}
-	for _, templateString := range extraTemplates {
-		_, err = runtimeState.htmlTemplate.Parse(templateString)
-		if err != nil {
-			return runtimeState, err
-		}
 	}
 
 	logger.Debugf(1, "End of config initialization: %+v", runtimeState)
