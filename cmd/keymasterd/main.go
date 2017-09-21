@@ -116,6 +116,23 @@ var (
 		},
 		[]string{"username", "type"},
 	)
+	authOperationCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "keymaster_auth_operation_counter",
+			Help: "Keymaster_auth_operation_counter",
+		},
+		[]string{"client_type", "type", "result"},
+	)
+
+	/*
+		ldapBindDuration = prometheus.NewSummaryVec(
+			prometheus.SummaryOpts{
+				Name: "keymaster_ldaps_bind_miliseconds",
+				Help: "LDAPS sucessful bind (connection plust binding) distributions.",
+			},
+			[]string{"host"},
+		)
+	*/
 	logger log.DebugLogger
 )
 
@@ -182,10 +199,11 @@ func convertToBindDN(username string, bind_pattern string) string {
 	return fmt.Sprintf(bind_pattern, username)
 }
 
-func checkUserPassword(username string, password string, config AppConfigFile) (bool, error) {
+func checkUserPassword(username string, password string, config AppConfigFile, r *http.Request) (bool, error) {
 	//if username == "camilo_viecco1" && password == "pass" {
 	//	return true, nil
 	//}
+	clientType := getClientType(r)
 
 	const timeoutSecs = 3
 	bindDN := convertToBindDN(username, config.Ldap.Bind_Pattern)
@@ -198,13 +216,21 @@ func checkUserPassword(username string, password string, config AppConfigFile) (
 			logger.Printf("Failed to parse ldapurl '%s'", ldapUrl)
 			continue
 		}
-		vaild, err := authutil.CheckLDAPUserPassword(*u, bindDN, password, timeoutSecs, nil)
+		valid, err := authutil.CheckLDAPUserPassword(*u, bindDN, password, timeoutSecs, nil)
 		if err != nil {
 			logger.Debugf(1, "Error checking LDAP user password url= %s", ldapUrl)
 			continue
 		}
 		// the ldap exchange was successful (user might be invaid)
-		return vaild, nil
+
+		go func(clientType string, authType string, success bool) {
+			validStr := strconv.FormatBool(success)
+			metricsMutex.Lock()
+			defer metricsMutex.Unlock()
+			authOperationCounter.WithLabelValues(clientType, authType, validStr).Inc()
+		}(clientType, "password", valid)
+
+		return valid, nil
 
 	}
 	if config.Base.HtpasswdFilename != "" {
@@ -217,8 +243,20 @@ func checkUserPassword(username string, password string, config AppConfigFile) (
 		if err != nil {
 			return false, err
 		}
+		go func(clientType string, authType string, valid bool) {
+			validStr := strconv.FormatBool(valid)
+			metricsMutex.Lock()
+			defer metricsMutex.Unlock()
+			authOperationCounter.WithLabelValues(clientType, authType, validStr).Inc()
+		}(clientType, "password", valid)
 		return valid, nil
 	}
+	go func(clientType string, authType string, valid bool) {
+		validStr := strconv.FormatBool(valid)
+		metricsMutex.Lock()
+		defer metricsMutex.Unlock()
+		authOperationCounter.WithLabelValues(clientType, authType, validStr).Inc()
+	}(clientType, "password", false)
 	return false, nil
 }
 
@@ -242,6 +280,25 @@ func browserSupportsU2F(r *http.Request) bool {
 		return true
 	}
 	return false
+}
+
+func getClientType(r *http.Request) string {
+	if r == nil {
+		return "unknown"
+	}
+
+	preferredAcceptType := getPreferredAcceptType(r)
+	switch preferredAcceptType {
+	case "text/html":
+		return "browser"
+	case "application/json":
+		if len(r.Referer()) > 1 {
+			return "browser"
+		}
+		return "cli"
+	default:
+		return "unknown"
+	}
 }
 
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.Request) error {
@@ -380,7 +437,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		state.Mutex.Lock()
 		config := state.Config
 		state.Mutex.Unlock()
-		valid, err := checkUserPassword(user, pass, config)
+		valid, err := checkUserPassword(user, pass, config, r)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			return "", AuthTypeNone, err
@@ -917,7 +974,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	valid, err := checkUserPassword(username, password, state.Config)
+	valid, err := checkUserPassword(username, password, state.Config, r)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
@@ -1096,6 +1153,14 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
 		return
 	}
+	//
+	go func(clientType string, authType string, success bool) {
+		validStr := strconv.FormatBool(success)
+		metricsMutex.Lock()
+		defer metricsMutex.Unlock()
+		authOperationCounter.WithLabelValues(clientType, authType, validStr).Inc()
+	}(getClientType(r), proto.AuthTypeSymantecVIP, valid)
+
 	if !valid {
 		logger.Printf("Invalid OTP value login for %s", authUser)
 		// TODO if client is html then do a redirect back to vipLoginPage
@@ -1404,6 +1469,13 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 	for i, u2fReg := range profile.U2fAuthData {
 		newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *profile.U2fAuthChallenge, u2fReg.Counter)
 		if authErr == nil {
+			go func(clientType string, authType string, success bool) {
+				validStr := strconv.FormatBool(success)
+				metricsMutex.Lock()
+				defer metricsMutex.Unlock()
+				authOperationCounter.WithLabelValues(clientType, authType, validStr).Inc()
+			}(getClientType(r), proto.AuthTypeU2F, true)
+
 			logger.Printf("newCounter: %d", newCounter)
 			//counter = newCounter
 			u2fReg.Counter = newCounter
@@ -1435,6 +1507,12 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
+	go func(clientType string, authType string, success bool) {
+		validStr := strconv.FormatBool(success)
+		metricsMutex.Lock()
+		defer metricsMutex.Unlock()
+		authOperationCounter.WithLabelValues(clientType, authType, validStr).Inc()
+	}(getClientType(r), proto.AuthTypeU2F, false)
 
 	logger.Printf("VerifySignResponse error: %v", err)
 	http.Error(w, "error verifying response", http.StatusInternalServerError)
@@ -1630,6 +1708,7 @@ func Usage() {
 
 func init() {
 	prometheus.MustRegister(certGenCounter)
+	prometheus.MustRegister(authOperationCounter)
 }
 
 func main() {
