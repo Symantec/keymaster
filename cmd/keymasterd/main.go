@@ -262,10 +262,10 @@ func checkUserPassword(username string, password string, config AppConfigFile, r
 			continue
 		}
 
-		go metricLogExternalServiceDuration("ldap", time.Since(start).Seconds()*1000)
+		metricLogExternalServiceDuration("ldap", time.Since(start).Seconds()*1000)
 
 		// the ldap exchange was successful (user might be invaid)
-		go metricLogAuthOperation(clientType, "password", valid)
+		metricLogAuthOperation(clientType, "password", valid)
 
 		return valid, nil
 
@@ -280,10 +280,10 @@ func checkUserPassword(username string, password string, config AppConfigFile, r
 		if err != nil {
 			return false, err
 		}
-		go metricLogAuthOperation(clientType, "password", valid)
+		metricLogAuthOperation(clientType, "password", valid)
 		return valid, nil
 	}
-	go metricLogAuthOperation(clientType, "password", false)
+	metricLogAuthOperation(clientType, "password", false)
 	return false, nil
 }
 
@@ -617,7 +617,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form (duration)")
 			return
 		}
-		go metricLogCertDuration("unparsed", "requested", float64(newDuration.Seconds()))
+		metricLogCertDuration("unparsed", "requested", float64(newDuration.Seconds()))
 		if newDuration > duration {
 			logger.Println(err)
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form (invalid duration)")
@@ -705,7 +705,7 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 		return
 
 	}
-	go metricLogCertDuration("ssh", "granted", float64(duration.Seconds()))
+	metricLogCertDuration("ssh", "granted", float64(duration.Seconds()))
 
 	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
 	w.WriteHeader(200)
@@ -767,7 +767,7 @@ func (state *RuntimeState) postAuthX509CertHandler(
 		return
 
 	}
-	go metricLogCertDuration("x509", "granted", float64(duration.Seconds()))
+	metricLogCertDuration("x509", "granted", float64(duration.Seconds()))
 
 	w.Header().Set("Content-Disposition", `attachment; filename="userCert.pem"`)
 	w.WriteHeader(200)
@@ -1187,10 +1187,10 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	go metricLogExternalServiceDuration("vip", time.Since(start).Seconds()*1000)
+	metricLogExternalServiceDuration("vip", time.Since(start).Seconds()*1000)
 
 	//
-	go metricLogAuthOperation(getClientType(r), proto.AuthTypeSymantecVIP, valid)
+	metricLogAuthOperation(getClientType(r), proto.AuthTypeSymantecVIP, valid)
 
 	if !valid {
 		logger.Printf("Invalid OTP value login for %s", authUser)
@@ -1500,7 +1500,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 	for i, u2fReg := range profile.U2fAuthData {
 		newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *profile.U2fAuthChallenge, u2fReg.Counter)
 		if authErr == nil {
-			go metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, true)
+			metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, true)
 
 			logger.Printf("newCounter: %d", newCounter)
 			//counter = newCounter
@@ -1533,7 +1533,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
-	go metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, false)
+	metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, false)
 
 	logger.Printf("VerifySignResponse error: %v", err)
 	http.Error(w, "error verifying response", http.StatusInternalServerError)
