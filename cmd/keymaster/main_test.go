@@ -7,11 +7,10 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"github.com/Symantec/Dominator/lib/log/debuglogger"
+	"github.com/Symantec/Dominator/lib/log/testlogger"
 	"github.com/Symantec/keymaster/lib/certgen"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"io/ioutil"
-	stdlog "log"
 	"net/http"
 	"os"
 	"os/user"
@@ -143,7 +142,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func init() {
-	logger = debuglogger.New(stdlog.New(os.Stderr, "", stdlog.LstdFlags))
 	tlsConfig, _ := getTLSconfig()
 	//_, _ = tls.Listen("tcp", ":11443", config)
 	srv := &http.Server{
@@ -163,7 +161,7 @@ func TestGenKeyPairSuccess(t *testing.T) {
 
 	defer os.Remove(tmpfile.Name()) // clean up
 
-	_, _, err = genKeyPair(tmpfile.Name(), "test")
+	_, _, err = genKeyPair(tmpfile.Name(), "test", testlogger.New(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +177,7 @@ func TestGenKeyPairSuccess(t *testing.T) {
 }
 
 func TestGenKeyPairFailNoPerms(t *testing.T) {
-	_, _, err := genKeyPair("/proc/something", "test")
+	_, _, err := genKeyPair("/proc/something", "test", testlogger.New(t))
 	if err == nil {
 		t.Logf("Should have failed")
 		t.Fatal(err)
@@ -285,7 +283,14 @@ func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	skipu2f := true
-	_, _, err = getCertFromTargetUrls(privateKey, "username", []byte("password"), []string{localHttpsTarget}, certPool, skipu2f) //(cert []byte, err error)
+	_, _, err = getCertFromTargetUrls(
+		privateKey,
+		"username",
+		[]byte("password"),
+		[]string{localHttpsTarget},
+		certPool,
+		skipu2f,
+		testlogger.New(t)) //(cert []byte, err error)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +302,14 @@ func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
 		t.Fatal(err)
 	}
 	skipu2f := true
-	_, _, err = getCertFromTargetUrls(privateKey, "username", []byte("password"), []string{localHttpsTarget}, nil, skipu2f)
+	_, _, err = getCertFromTargetUrls(
+		privateKey,
+		"username",
+		[]byte("password"),
+		[]string{localHttpsTarget},
+		nil,
+		skipu2f,
+		testlogger.New(t))
 	if err == nil {
 		t.Fatal("Should have failed to connect untrusted CA")
 	}
