@@ -151,6 +151,12 @@ func metricLogAuthOperation(clientType string, authType string, success bool) {
 	authOperationCounter.WithLabelValues(clientType, authType, validStr).Inc()
 }
 
+func metricLogCertDuration(certType string, stage string, val float64) {
+	metricsMutex.Lock()
+	defer metricsMutex.Unlock()
+	certDurationHistogram.WithLabelValues(certType, stage).Observe(val)
+}
+
 func getHostIdentity() (string, error) {
 	return os.Hostname()
 }
@@ -598,11 +604,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form (duration)")
 			return
 		}
-		go func(certType string, stage string, val float64) {
-			metricsMutex.Lock()
-			defer metricsMutex.Unlock()
-			certDurationHistogram.WithLabelValues(certType, stage).Observe(val)
-		}("unparsed", "requested", float64(newDuration.Seconds()))
+		go metricLogCertDuration("unparsed", "requested", float64(newDuration.Seconds()))
 		if newDuration > duration {
 			logger.Println(err)
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form (invalid duration)")
@@ -690,11 +692,7 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 		return
 
 	}
-	go func(certType string, stage string, val float64) {
-		metricsMutex.Lock()
-		defer metricsMutex.Unlock()
-		certDurationHistogram.WithLabelValues(certType, stage).Observe(val)
-	}("ssh", "granted", float64(duration.Seconds()))
+	go metricLogCertDuration("ssh", "granted", float64(duration.Seconds()))
 
 	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
 	w.WriteHeader(200)
@@ -756,11 +754,7 @@ func (state *RuntimeState) postAuthX509CertHandler(
 		return
 
 	}
-	go func(certType string, stage string, val float64) {
-		metricsMutex.Lock()
-		defer metricsMutex.Unlock()
-		certDurationHistogram.WithLabelValues(certType, stage).Observe(val)
-	}("x509", "granted", float64(duration.Seconds()))
+	go metricLogCertDuration("x509", "granted", float64(duration.Seconds()))
 
 	w.Header().Set("Content-Disposition", `attachment; filename="userCert.pem"`)
 	w.WriteHeader(200)
