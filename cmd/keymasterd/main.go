@@ -242,9 +242,6 @@ func convertToBindDN(username string, bind_pattern string) string {
 }
 
 func checkUserPassword(username string, password string, config AppConfigFile, r *http.Request) (bool, error) {
-	//if username == "camilo_viecco1" && password == "pass" {
-	//	return true, nil
-	//}
 	clientType := getClientType(r)
 
 	const timeoutSecs = 3
@@ -1736,22 +1733,19 @@ func init() {
 	prometheus.MustRegister(externalServiceDurationTotal)
 	prometheus.MustRegister(certDurationHistogram)
 	tricorder.RegisterMetric(
-		"keymaster/externalServiceDuration/LDAP",
+		"keymaster/external_service_duration/LDAP",
 		tricorderLDAPExternalServiceDurationTotal,
 		units.Millisecond,
-		//tricorder.None,
 		"Time for external LDAP server to perform operation(ms)")
 	tricorder.RegisterMetric(
-		"keymaster/externalServiceDuration/VIP",
+		"keymaster/external_service_duration/VIP",
 		tricorderVIPExternalServiceDurationTotal,
 		units.Millisecond,
-		//tricorder.None,
 		"Time for external VIP server to perform operation(ms)")
 	tricorder.RegisterMetric(
-		"keymaster/externalServiceDuration/Storage",
+		"keymaster/external_service_duration/Storage",
 		tricorderStorageExternalServiceDurationTotal,
 		units.Millisecond,
-		//tricorder.None,
 		"Time for external Storage server to perform operation(ms)")
 }
 
