@@ -61,7 +61,7 @@ type AppConfigFile struct {
 var (
 	// Must be a global variable in the data segment so that the build
 	// process can inject the version number on the fly when building the
-	// binary. Use only from the main() function.
+	// binary. Use only from the Usage() function.
 	Version = "No version provided"
 )
 
@@ -732,12 +732,14 @@ func getConfigFromHost(
 	return ioutil.WriteFile(configFilename, configData, 0644)
 }
 
+func Usage() {
+	fmt.Fprintf(
+		os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
+	flag.PrintDefaults()
+}
+
 func main() {
-	flag.Usage = func() {
-		fmt.Fprintf(
-			os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
-		flag.PrintDefaults()
-	}
+	flag.Usage = Usage
 	flag.Parse()
 	logger := cmdlogger.New()
 
