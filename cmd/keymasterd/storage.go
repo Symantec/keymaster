@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const userProfilePrefix = "profile_"
@@ -118,6 +119,7 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 	var defaultProfile userProfile
 	defaultProfile.U2fAuthData = make(map[int64]*u2fAuthData)
 	//load from DB
+	start := time.Now()
 	stmtText := loadUserProfileStmt[state.dbType]
 	stmt, err := state.db.Prepare(stmtText)
 	if err != nil {
@@ -128,6 +130,7 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 	defer stmt.Close()
 	var profileBytes []byte
 	err = stmt.QueryRow(username).Scan(&profileBytes)
+	//end := time.Now()
 	if err != nil {
 		if err.Error() == "sql: no rows in result set" {
 			logger.Printf("err='%s'", err)
@@ -138,6 +141,12 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 		}
 
 	}
+	go func(service string, val float64) {
+		metricsMutex.Lock()
+		defer metricsMutex.Unlock()
+		externalServiceDurationTotal.WithLabelValues(service).Observe(val)
+	}("storage-read", time.Since(start).Seconds()*1000)
+
 	logger.Debugf(10, "profile bytes len=%d", len(profileBytes))
 	//gobReader := bytes.NewReader(fileBytes)
 	gobReader := bytes.NewReader(profileBytes)
@@ -163,6 +172,7 @@ func (state *RuntimeState) SaveUserProfile(username string, profile *userProfile
 		return err
 	}
 
+	start := time.Now()
 	//insert into DB
 	tx, err := state.db.Begin()
 	if err != nil {
@@ -182,5 +192,10 @@ func (state *RuntimeState) SaveUserProfile(username string, profile *userProfile
 	if err != nil {
 		return err
 	}
+	go func(service string, val float64) {
+		metricsMutex.Lock()
+		defer metricsMutex.Unlock()
+		externalServiceDurationTotal.WithLabelValues(service).Observe(val)
+	}("storage-save", time.Since(start).Seconds()*1000)
 	return nil
 }

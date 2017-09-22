@@ -124,15 +124,23 @@ var (
 		[]string{"client_type", "type", "result"},
 	)
 
-	/*
-		ldapBindDuration = prometheus.NewSummaryVec(
-			prometheus.SummaryOpts{
-				Name: "keymaster_ldaps_bind_miliseconds",
-				Help: "LDAPS sucessful bind (connection plust binding) distributions.",
-			},
-			[]string{"host"},
-		)
-	*/
+	externalServiceDurationTotal = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "keymaster_external_service_request_duration",
+			Help:    "Total amount of time spent non-errored external checks in ms",
+			Buckets: []float64{5, 7.5, 10, 15, 25, 50, 75, 100, 150, 250, 500, 750, 1000, 1500, 2500, 5000},
+		},
+		[]string{"service_name"},
+	)
+	certDurationHistogram = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "keymaster_cert_duration",
+			Help:    "Duration of certs in seconds",
+			Buckets: []float64{15, 30, 60, 120, 300, 600, 3600, 7200, 36000, 57600, 72000, 86400, 172800},
+		},
+		[]string{"cert_type", "stage"},
+	)
+
 	logger log.DebugLogger
 )
 
@@ -216,11 +224,20 @@ func checkUserPassword(username string, password string, config AppConfigFile, r
 			logger.Printf("Failed to parse ldapurl '%s'", ldapUrl)
 			continue
 		}
+		start := time.Now()
 		valid, err := authutil.CheckLDAPUserPassword(*u, bindDN, password, timeoutSecs, nil)
 		if err != nil {
 			logger.Debugf(1, "Error checking LDAP user password url= %s", ldapUrl)
 			continue
 		}
+
+		go func(service string, val float64) {
+			metricsMutex.Lock()
+			defer metricsMutex.Unlock()
+			//perfQueryDuration.WithLabelValues(server, name).Observe(val)
+			externalServiceDurationTotal.WithLabelValues(service).Observe(val)
+		}("ldap", time.Since(start).Seconds()*1000)
+
 		// the ldap exchange was successful (user might be invaid)
 
 		go func(clientType string, authType string, success bool) {
@@ -590,6 +607,11 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form (duration)")
 			return
 		}
+		go func(certType string, stage string, val float64) {
+			metricsMutex.Lock()
+			defer metricsMutex.Unlock()
+			certDurationHistogram.WithLabelValues(certType, stage).Observe(val)
+		}("unparsed", "requested", float64(newDuration.Seconds()))
 		if newDuration > duration {
 			logger.Println(err)
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form (invalid duration)")
@@ -677,6 +699,12 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 		return
 
 	}
+	go func(certType string, stage string, val float64) {
+		metricsMutex.Lock()
+		defer metricsMutex.Unlock()
+		certDurationHistogram.WithLabelValues(certType, stage).Observe(val)
+	}("ssh", "granted", float64(duration.Seconds()))
+
 	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", cert)
@@ -737,6 +765,12 @@ func (state *RuntimeState) postAuthX509CertHandler(
 		return
 
 	}
+	go func(certType string, stage string, val float64) {
+		metricsMutex.Lock()
+		defer metricsMutex.Unlock()
+		certDurationHistogram.WithLabelValues(certType, stage).Observe(val)
+	}("x509", "granted", float64(duration.Seconds()))
+
 	w.Header().Set("Content-Disposition", `attachment; filename="userCert.pem"`)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", cert)
@@ -1147,12 +1181,20 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing OTP value")
 	}
 
+	start := time.Now()
 	valid, err := state.Config.SymantecVIP.Client.ValidateUserOTP(authUser, otpValue)
 	if err != nil {
 		logger.Println(err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
 		return
 	}
+
+	go func(service string, val float64) {
+		metricsMutex.Lock()
+		defer metricsMutex.Unlock()
+		externalServiceDurationTotal.WithLabelValues(service).Observe(val)
+	}("vip", time.Since(start).Seconds()*1000)
+
 	//
 	go func(clientType string, authType string, success bool) {
 		validStr := strconv.FormatBool(success)
@@ -1709,6 +1751,8 @@ func Usage() {
 func init() {
 	prometheus.MustRegister(certGenCounter)
 	prometheus.MustRegister(authOperationCounter)
+	prometheus.MustRegister(externalServiceDurationTotal)
+	prometheus.MustRegister(certDurationHistogram)
 }
 
 func main() {
