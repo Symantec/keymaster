@@ -130,7 +130,6 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 	defer stmt.Close()
 	var profileBytes []byte
 	err = stmt.QueryRow(username).Scan(&profileBytes)
-	//end := time.Now()
 	if err != nil {
 		if err.Error() == "sql: no rows in result set" {
 			logger.Printf("err='%s'", err)
