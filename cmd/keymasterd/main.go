@@ -144,6 +144,13 @@ var (
 	logger log.DebugLogger
 )
 
+func metricLogAuthOperation(clientType string, authType string, success bool) {
+	validStr := strconv.FormatBool(success)
+	metricsMutex.Lock()
+	defer metricsMutex.Unlock()
+	authOperationCounter.WithLabelValues(clientType, authType, validStr).Inc()
+}
+
 func getHostIdentity() (string, error) {
 	return os.Hostname()
 }
@@ -239,13 +246,7 @@ func checkUserPassword(username string, password string, config AppConfigFile, r
 		}("ldap", time.Since(start).Seconds()*1000)
 
 		// the ldap exchange was successful (user might be invaid)
-
-		go func(clientType string, authType string, success bool) {
-			validStr := strconv.FormatBool(success)
-			metricsMutex.Lock()
-			defer metricsMutex.Unlock()
-			authOperationCounter.WithLabelValues(clientType, authType, validStr).Inc()
-		}(clientType, "password", valid)
+		go metricLogAuthOperation(clientType, "password", valid)
 
 		return valid, nil
 
@@ -260,20 +261,10 @@ func checkUserPassword(username string, password string, config AppConfigFile, r
 		if err != nil {
 			return false, err
 		}
-		go func(clientType string, authType string, valid bool) {
-			validStr := strconv.FormatBool(valid)
-			metricsMutex.Lock()
-			defer metricsMutex.Unlock()
-			authOperationCounter.WithLabelValues(clientType, authType, validStr).Inc()
-		}(clientType, "password", valid)
+		go metricLogAuthOperation(clientType, "password", valid)
 		return valid, nil
 	}
-	go func(clientType string, authType string, valid bool) {
-		validStr := strconv.FormatBool(valid)
-		metricsMutex.Lock()
-		defer metricsMutex.Unlock()
-		authOperationCounter.WithLabelValues(clientType, authType, validStr).Inc()
-	}(clientType, "password", false)
+	go metricLogAuthOperation(clientType, "password", false)
 	return false, nil
 }
 
@@ -1196,12 +1187,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	}("vip", time.Since(start).Seconds()*1000)
 
 	//
-	go func(clientType string, authType string, success bool) {
-		validStr := strconv.FormatBool(success)
-		metricsMutex.Lock()
-		defer metricsMutex.Unlock()
-		authOperationCounter.WithLabelValues(clientType, authType, validStr).Inc()
-	}(getClientType(r), proto.AuthTypeSymantecVIP, valid)
+	go metricLogAuthOperation(getClientType(r), proto.AuthTypeSymantecVIP, valid)
 
 	if !valid {
 		logger.Printf("Invalid OTP value login for %s", authUser)
@@ -1511,12 +1497,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 	for i, u2fReg := range profile.U2fAuthData {
 		newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *profile.U2fAuthChallenge, u2fReg.Counter)
 		if authErr == nil {
-			go func(clientType string, authType string, success bool) {
-				validStr := strconv.FormatBool(success)
-				metricsMutex.Lock()
-				defer metricsMutex.Unlock()
-				authOperationCounter.WithLabelValues(clientType, authType, validStr).Inc()
-			}(getClientType(r), proto.AuthTypeU2F, true)
+			go metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, true)
 
 			logger.Printf("newCounter: %d", newCounter)
 			//counter = newCounter
@@ -1549,12 +1530,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
-	go func(clientType string, authType string, success bool) {
-		validStr := strconv.FormatBool(success)
-		metricsMutex.Lock()
-		defer metricsMutex.Unlock()
-		authOperationCounter.WithLabelValues(clientType, authType, validStr).Inc()
-	}(getClientType(r), proto.AuthTypeU2F, false)
+	go metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, false)
 
 	logger.Printf("VerifySignResponse error: %v", err)
 	http.Error(w, "error verifying response", http.StatusInternalServerError)
