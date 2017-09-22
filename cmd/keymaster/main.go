@@ -59,7 +59,13 @@ type AppConfigFile struct {
 }
 
 var (
-	Version        = "No version provided"
+	// Must be a global variable in the data segment so that the build
+	// process can inject the version number on the fly when building the
+	// binary. Use only from the main() function.
+	Version = "No version provided"
+)
+
+var (
 	configFilename = flag.String("config", filepath.Join(os.Getenv("HOME"), ".keymaster", "client_config.yml"), "The filename of the configuration")
 	rootCAFilename = flag.String("rootCAFilename", "", "(optional) name for using non OS root CA to verify TLS connections")
 	configHost     = flag.String("configHost", "", "Get a bootstrap config from this host")
@@ -68,8 +74,6 @@ var (
 	checkDevices   = flag.Bool("checkDevices", false, "CheckU2F devices in your system")
 	noU2F          = flag.Bool("noU2F", false, "Don't use U2F as second factor")
 	noVIPAccess    = flag.Bool("noVIPAccess", false, "Don't use VIPAccess as second factor")
-
-	logger log.DebugLogger
 )
 
 func getUserHomeDir(usr *user.User) (string, error) {
@@ -79,7 +83,9 @@ func getUserHomeDir(usr *user.User) (string, error) {
 
 // generateKeyPair uses internal golang functions to be portable
 // mostly comes from: http://stackoverflow.com/questions/21151714/go-generate-an-ssh-public-key
-func genKeyPair(privateKeyPath string, identity string) (crypto.Signer, string, error) {
+func genKeyPair(
+	privateKeyPath string, identity string, logger log.Logger) (
+	crypto.Signer, string, error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, RSAKeySize)
 	if err != nil {
 		return nil, "", err
@@ -177,7 +183,7 @@ func createKeyBodyRequest(method, urlStr, filedata string) (*http.Request, error
 	return req, nil
 }
 
-func doCertRequest(client *http.Client, authCookies []*http.Cookie, url, filedata string) ([]byte, error) {
+func doCertRequest(client *http.Client, authCookies []*http.Cookie, url, filedata string, logger log.Logger) ([]byte, error) {
 
 	req, err := createKeyBodyRequest("POST", url, filedata)
 	if err != nil {
@@ -202,7 +208,7 @@ func doCertRequest(client *http.Client, authCookies []*http.Cookie, url, filedat
 
 }
 
-func checkU2FDevices() {
+func checkU2FDevices(logger log.Logger) {
 	// TODO: move this to initialization code, ans pass the device list to this function?
 	// or maybe pass the token?...
 	devices, err := u2fhid.Devices()
@@ -227,7 +233,11 @@ func checkU2FDevices() {
 
 }
 
-func doU2FAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL string) error {
+func doU2FAuthenticate(
+	client *http.Client,
+	authCookies []*http.Cookie,
+	baseURL string,
+	logger log.DebugLogger) error {
 	logger.Printf("top of doU2fAuthenticate")
 	url := baseURL + "/u2f/SignRequest"
 	signRequest, err := http.NewRequest("GET", url, nil)
@@ -403,7 +413,11 @@ func getParseURLEnvVariable(name string) (*url.URL, error) {
 	return envUrl, nil
 }
 
-func doVIPAuthenticate(client *http.Client, authCookies []*http.Cookie, baseURL string) error {
+func doVIPAuthenticate(
+	client *http.Client,
+	authCookies []*http.Cookie,
+	baseURL string,
+	logger log.DebugLogger) error {
 	logger.Printf("top of doVIPAuthenticate")
 
 	// Read VIP token from client
@@ -482,7 +496,14 @@ func getHttpClient(tlsConfig *tls.Config) (*http.Client, error) {
 	return client, nil
 }
 
-func getCertsFromServer(signer crypto.Signer, userName string, password []byte, baseUrl string, tlsConfig *tls.Config, skip2fa bool) (sshCert []byte, x509Cert []byte, err error) {
+func getCertsFromServer(
+	signer crypto.Signer,
+	userName string,
+	password []byte,
+	baseUrl string,
+	tlsConfig *tls.Config,
+	skip2fa bool,
+	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, err error) {
 	//First Do Login
 	client, err := getHttpClient(tlsConfig)
 	if err != nil {
@@ -565,7 +586,8 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 			}
 			if len(devices) > 0 {
 
-				err = doU2FAuthenticate(client, loginResp.Cookies(), baseUrl)
+				err = doU2FAuthenticate(
+					client, loginResp.Cookies(), baseUrl, logger)
 				if err != nil {
 
 					return nil, nil, err
@@ -575,7 +597,8 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 		}
 
 		if allowVIP && !successful2fa {
-			err = doVIPAuthenticate(client, loginResp.Cookies(), baseUrl)
+			err = doVIPAuthenticate(
+				client, loginResp.Cookies(), baseUrl, logger)
 			if err != nil {
 
 				return nil, nil, err
@@ -601,7 +624,12 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 	pemKey := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: derKey}))
 
 	// TODO: urlencode the userName
-	x509Cert, err = doCertRequest(client, loginResp.Cookies(), baseUrl+"/certgen/"+userName+"?type=x509", pemKey)
+	x509Cert, err = doCertRequest(
+		client,
+		loginResp.Cookies(),
+		baseUrl+"/certgen/"+userName+"?type=x509",
+		pemKey,
+		logger)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -613,7 +641,12 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 		return nil, nil, err
 	}
 	sshAuthFile := string(ssh.MarshalAuthorizedKey(sshPub))
-	sshCert, err = doCertRequest(client, loginResp.Cookies(), baseUrl+"/certgen/"+userName+"?type=ssh", sshAuthFile)
+	sshCert, err = doCertRequest(
+		client,
+		loginResp.Cookies(),
+		baseUrl+"/certgen/"+userName+"?type=ssh",
+		sshAuthFile,
+		logger)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -621,13 +654,21 @@ func getCertsFromServer(signer crypto.Signer, userName string, password []byte, 
 	return sshCert, x509Cert, nil
 }
 
-func getCertFromTargetUrls(signer crypto.Signer, userName string, password []byte, targetUrls []string, rootCAs *x509.CertPool, skipu2f bool) (sshCert []byte, x509Cert []byte, err error) {
+func getCertFromTargetUrls(
+	signer crypto.Signer,
+	userName string,
+	password []byte,
+	targetUrls []string,
+	rootCAs *x509.CertPool,
+	skipu2f bool,
+	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, err error) {
 	success := false
 	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
 
 	for _, baseUrl := range targetUrls {
 		logger.Printf("attempting to target '%s' for '%s'\n", baseUrl, userName)
-		sshCert, x509Cert, err = getCertsFromServer(signer, userName, password, baseUrl, tlsConfig, skipu2f)
+		sshCert, x509Cert, err = getCertsFromServer(
+			signer, userName, password, baseUrl, tlsConfig, skipu2f, logger)
 		if err != nil {
 			logger.Println(err)
 			continue
@@ -656,7 +697,11 @@ func getUserCreds(userName string) (password []byte, err error) {
 
 const hostConfigPath = "/public/clientConfig"
 
-func getConfigFromHost(configFilename string, hostname string, rootCAs *x509.CertPool) error {
+func getConfigFromHost(
+	configFilename string,
+	hostname string,
+	rootCAs *x509.CertPool,
+	logger log.Logger) error {
 	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
 	client, err := getHttpClient(tlsConfig)
 	if err != nil {
@@ -687,18 +732,17 @@ func getConfigFromHost(configFilename string, hostname string, rootCAs *x509.Cer
 	return ioutil.WriteFile(configFilename, configData, 0644)
 }
 
-func Usage() {
-	fmt.Fprintf(os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
-	flag.PrintDefaults()
-}
-
 func main() {
-	flag.Usage = Usage
+	flag.Usage = func() {
+		fmt.Fprintf(
+			os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
+		flag.PrintDefaults()
+	}
 	flag.Parse()
-	logger = cmdlogger.New()
+	logger := cmdlogger.New()
 
 	if *checkDevices {
-		checkU2FDevices()
+		checkU2FDevices(logger)
 		return
 	}
 
@@ -742,13 +786,14 @@ func main() {
 	}
 
 	if len(*configHost) > 1 {
-		err = getConfigFromHost(*configFilename, *configHost, rootCAs)
+		err = getConfigFromHost(*configFilename, *configHost, rootCAs, logger)
 		if err != nil {
 			logger.Fatal(err)
 		}
 	} else if len(defaultConfigHost) > 1 { // if there is a configHost AND there is NO config file, create one
 		if _, err := os.Stat(*configFilename); os.IsNotExist(err) {
-			err = getConfigFromHost(*configFilename, defaultConfigHost, rootCAs)
+			err = getConfigFromHost(
+				*configFilename, defaultConfigHost, rootCAs, logger)
 			if err != nil {
 				logger.Fatal(err)
 			}
@@ -777,7 +822,8 @@ func main() {
 	}
 
 	tempPrivateKeyPath := filepath.Join(homeDir, DefaultKeysLocation, "keymaster-temp")
-	signer, tempPublicKeyPath, err := genKeyPair(tempPrivateKeyPath, userName+"@keymaster")
+	signer, tempPublicKeyPath, err := genKeyPair(
+		tempPrivateKeyPath, userName+"@keymaster", logger)
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -789,8 +835,14 @@ func main() {
 		logger.Fatal(err)
 	}
 
-	sshCert, x509Cert, err := getCertFromTargetUrls(signer, userName,
-		password, strings.Split(config.Base.Gen_Cert_URLS, ","), rootCAs, false)
+	sshCert, x509Cert, err := getCertFromTargetUrls(
+		signer,
+		userName,
+		password,
+		strings.Split(config.Base.Gen_Cert_URLS, ","),
+		rootCAs,
+		false,
+		logger)
 	if err != nil {
 		logger.Fatal(err)
 	}
