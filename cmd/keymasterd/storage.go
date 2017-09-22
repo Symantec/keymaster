@@ -141,11 +141,7 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 		}
 
 	}
-	go func(service string, val float64) {
-		metricsMutex.Lock()
-		defer metricsMutex.Unlock()
-		externalServiceDurationTotal.WithLabelValues(service).Observe(val)
-	}("storage-read", time.Since(start).Seconds()*1000)
+	go metricLogExternalServiceDuration("storage-read", time.Since(start).Seconds()*1000)
 
 	logger.Debugf(10, "profile bytes len=%d", len(profileBytes))
 	//gobReader := bytes.NewReader(fileBytes)
@@ -192,10 +188,6 @@ func (state *RuntimeState) SaveUserProfile(username string, profile *userProfile
 	if err != nil {
 		return err
 	}
-	go func(service string, val float64) {
-		metricsMutex.Lock()
-		defer metricsMutex.Unlock()
-		externalServiceDurationTotal.WithLabelValues(service).Observe(val)
-	}("storage-save", time.Since(start).Seconds()*1000)
+	go metricLogExternalServiceDuration("storage-save", time.Since(start).Seconds()*1000)
 	return nil
 }

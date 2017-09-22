@@ -151,6 +151,12 @@ func metricLogAuthOperation(clientType string, authType string, success bool) {
 	authOperationCounter.WithLabelValues(clientType, authType, validStr).Inc()
 }
 
+func metricLogExternalServiceDuration(service string, val float64) {
+	metricsMutex.Lock()
+	defer metricsMutex.Unlock()
+	externalServiceDurationTotal.WithLabelValues(service).Observe(val)
+}
+
 func metricLogCertDuration(certType string, stage string, val float64) {
 	metricsMutex.Lock()
 	defer metricsMutex.Unlock()
@@ -244,12 +250,7 @@ func checkUserPassword(username string, password string, config AppConfigFile, r
 			continue
 		}
 
-		go func(service string, val float64) {
-			metricsMutex.Lock()
-			defer metricsMutex.Unlock()
-			//perfQueryDuration.WithLabelValues(server, name).Observe(val)
-			externalServiceDurationTotal.WithLabelValues(service).Observe(val)
-		}("ldap", time.Since(start).Seconds()*1000)
+		go metricLogExternalServiceDuration("ldap", time.Since(start).Seconds()*1000)
 
 		// the ldap exchange was successful (user might be invaid)
 		go metricLogAuthOperation(clientType, "password", valid)
@@ -1174,11 +1175,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	go func(service string, val float64) {
-		metricsMutex.Lock()
-		defer metricsMutex.Unlock()
-		externalServiceDurationTotal.WithLabelValues(service).Observe(val)
-	}("vip", time.Since(start).Seconds()*1000)
+	go metricLogExternalServiceDuration("vip", time.Since(start).Seconds()*1000)
 
 	//
 	go metricLogAuthOperation(getClientType(r), proto.AuthTypeSymantecVIP, valid)
