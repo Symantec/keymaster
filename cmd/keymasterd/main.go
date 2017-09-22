@@ -21,6 +21,7 @@ import (
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"github.com/Symantec/tricorder/go/healthserver"
 	"github.com/Symantec/tricorder/go/tricorder"
+	"github.com/Symantec/tricorder/go/tricorder/units"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/tstranex/u2f"
 	"golang.org/x/crypto/openpgp"
@@ -132,6 +133,10 @@ var (
 		},
 		[]string{"service_name"},
 	)
+	tricorderLDAPExternalServiceDurationTotal    = tricorder.NewGeometricBucketer(5, 5000.0).NewCumulativeDistribution()
+	tricorderStorageExternalServiceDurationTotal = tricorder.NewGeometricBucketer(1, 2000.0).NewCumulativeDistribution()
+	tricorderVIPExternalServiceDurationTotal     = tricorder.NewGeometricBucketer(5, 5000.0).NewCumulativeDistribution()
+
 	certDurationHistogram = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "keymaster_cert_duration",
@@ -155,6 +160,16 @@ func metricLogExternalServiceDuration(service string, val float64) {
 	metricsMutex.Lock()
 	defer metricsMutex.Unlock()
 	externalServiceDurationTotal.WithLabelValues(service).Observe(val)
+	switch service {
+	case "ldap":
+		tricorderLDAPExternalServiceDurationTotal.Add(val)
+	case "vip":
+		tricorderVIPExternalServiceDurationTotal.Add(val)
+	case "storage-read":
+		tricorderStorageExternalServiceDurationTotal.Add(val)
+	case "storage-save":
+		tricorderStorageExternalServiceDurationTotal.Add(val)
+	}
 }
 
 func metricLogCertDuration(certType string, stage string, val float64) {
@@ -1720,6 +1735,24 @@ func init() {
 	prometheus.MustRegister(authOperationCounter)
 	prometheus.MustRegister(externalServiceDurationTotal)
 	prometheus.MustRegister(certDurationHistogram)
+	tricorder.RegisterMetric(
+		"keymaster/externalServiceDuration/LDAP",
+		tricorderLDAPExternalServiceDurationTotal,
+		units.Millisecond,
+		//tricorder.None,
+		"Time for external LDAP server to perform operation(ms)")
+	tricorder.RegisterMetric(
+		"keymaster/externalServiceDuration/VIP",
+		tricorderVIPExternalServiceDurationTotal,
+		units.Millisecond,
+		//tricorder.None,
+		"Time for external VIP server to perform operation(ms)")
+	tricorder.RegisterMetric(
+		"keymaster/externalServiceDuration/Storage",
+		tricorderStorageExternalServiceDurationTotal,
+		units.Millisecond,
+		//tricorder.None,
+		"Time for external Storage server to perform operation(ms)")
 }
 
 func main() {
