@@ -8,6 +8,7 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
@@ -159,11 +160,19 @@ func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.S
 	if err != nil {
 		return nil, err
 	}
+	sum := sha256.Sum256([]byte(commonName))
+	signedCN, err := caPriv.Sign(rand.Reader, sum[:], crypto.SHA256)
+	if err != nil {
+		return nil, err
+	}
+	sigSum := sha256.Sum256(signedCN)
+	sig := base64.StdEncoding.EncodeToString(sigSum[:])
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
 			CommonName:   commonName,
 			Organization: []string{organization},
+			SerialNumber: sig,
 		},
 		NotBefore: notBefore,
 		NotAfter:  notAfter,
