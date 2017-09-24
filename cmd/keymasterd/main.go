@@ -156,19 +156,20 @@ func metricLogAuthOperation(clientType string, authType string, success bool) {
 	authOperationCounter.WithLabelValues(clientType, authType, validStr).Inc()
 }
 
-func metricLogExternalServiceDuration(service string, val float64) {
+func metricLogExternalServiceDuration(service string, duration time.Duration) {
+	val := duration.Seconds() * 1000
 	metricsMutex.Lock()
 	defer metricsMutex.Unlock()
 	externalServiceDurationTotal.WithLabelValues(service).Observe(val)
 	switch service {
 	case "ldap":
-		tricorderLDAPExternalServiceDurationTotal.Add(val)
+		tricorderLDAPExternalServiceDurationTotal.Add(duration)
 	case "vip":
-		tricorderVIPExternalServiceDurationTotal.Add(val)
+		tricorderVIPExternalServiceDurationTotal.Add(duration)
 	case "storage-read":
-		tricorderStorageExternalServiceDurationTotal.Add(val)
+		tricorderStorageExternalServiceDurationTotal.Add(duration)
 	case "storage-save":
-		tricorderStorageExternalServiceDurationTotal.Add(val)
+		tricorderStorageExternalServiceDurationTotal.Add(duration)
 	}
 }
 
@@ -262,7 +263,7 @@ func checkUserPassword(username string, password string, config AppConfigFile, r
 			continue
 		}
 
-		metricLogExternalServiceDuration("ldap", time.Since(start).Seconds()*1000)
+		metricLogExternalServiceDuration("ldap", time.Since(start))
 
 		// the ldap exchange was successful (user might be invaid)
 		metricLogAuthOperation(clientType, "password", valid)
@@ -1187,7 +1188,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	metricLogExternalServiceDuration("vip", time.Since(start).Seconds()*1000)
+	metricLogExternalServiceDuration("vip", time.Since(start))
 
 	//
 	metricLogAuthOperation(getClientType(r), proto.AuthTypeSymantecVIP, valid)
@@ -1733,17 +1734,17 @@ func init() {
 	prometheus.MustRegister(externalServiceDurationTotal)
 	prometheus.MustRegister(certDurationHistogram)
 	tricorder.RegisterMetric(
-		"keymaster/external_service_duration/LDAP",
+		"keymaster/external-service-duration/LDAP",
 		tricorderLDAPExternalServiceDurationTotal,
 		units.Millisecond,
 		"Time for external LDAP server to perform operation(ms)")
 	tricorder.RegisterMetric(
-		"keymaster/external_service_duration/VIP",
+		"keymaster/external-service-duration/VIP",
 		tricorderVIPExternalServiceDurationTotal,
 		units.Millisecond,
 		"Time for external VIP server to perform operation(ms)")
 	tricorder.RegisterMetric(
-		"keymaster/external_service_duration/Storage",
+		"keymaster/external-service-duration/storage",
 		tricorderStorageExternalServiceDurationTotal,
 		units.Millisecond,
 		"Time for external Storage server to perform operation(ms)")

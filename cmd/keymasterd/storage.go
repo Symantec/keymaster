@@ -140,7 +140,7 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 		}
 
 	}
-	metricLogExternalServiceDuration("storage-read", time.Since(start).Seconds()*1000)
+	metricLogExternalServiceDuration("storage-read", time.Since(start))
 
 	logger.Debugf(10, "profile bytes len=%d", len(profileBytes))
 	//gobReader := bytes.NewReader(fileBytes)
@@ -187,6 +187,6 @@ func (state *RuntimeState) SaveUserProfile(username string, profile *userProfile
 	if err != nil {
 		return err
 	}
-	metricLogExternalServiceDuration("storage-save", time.Since(start).Seconds()*1000)
+	metricLogExternalServiceDuration("storage-save", time.Since(start))
 	return nil
 }
