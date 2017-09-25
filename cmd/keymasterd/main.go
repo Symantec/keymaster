@@ -684,9 +684,10 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 	}
 
 	var cert string
+	var certBytes []byte
 	switch r.Method {
 	case "GET":
-		cert, err = certgen.GenSSHCertFileStringFromSSSDPublicKey(targetUser, signer, state.HostIdentity, duration)
+		cert, certBytes, err = certgen.GenSSHCertFileStringFromSSSDPublicKey(targetUser, signer, state.HostIdentity, duration)
 		if err != nil {
 			http.NotFound(w, r)
 			return
@@ -716,7 +717,7 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 
 		}
 
-		cert, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity, duration)
+		cert, certBytes, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity, duration)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			logger.Printf("signUserPubkey Err")
@@ -728,6 +729,7 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 		return
 
 	}
+	certNotifier.PublishSSH(certBytes)
 	metricLogCertDuration("ssh", "granted", float64(duration.Seconds()))
 
 	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
@@ -783,6 +785,7 @@ func (state *RuntimeState) postAuthX509CertHandler(
 			logger.Printf("Cannot Generate x509cert")
 			return
 		}
+		certNotifier.PublishX509(derCert)
 		cert = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derCert}))
 
 	default:
