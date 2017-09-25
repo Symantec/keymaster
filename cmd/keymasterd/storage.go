@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const userProfilePrefix = "profile_"
@@ -118,6 +119,7 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 	var defaultProfile userProfile
 	defaultProfile.U2fAuthData = make(map[int64]*u2fAuthData)
 	//load from DB
+	start := time.Now()
 	stmtText := loadUserProfileStmt[state.dbType]
 	stmt, err := state.db.Prepare(stmtText)
 	if err != nil {
@@ -138,6 +140,8 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 		}
 
 	}
+	metricLogExternalServiceDuration("storage-read", time.Since(start))
+
 	logger.Debugf(10, "profile bytes len=%d", len(profileBytes))
 	//gobReader := bytes.NewReader(fileBytes)
 	gobReader := bytes.NewReader(profileBytes)
@@ -163,6 +167,7 @@ func (state *RuntimeState) SaveUserProfile(username string, profile *userProfile
 		return err
 	}
 
+	start := time.Now()
 	//insert into DB
 	tx, err := state.db.Begin()
 	if err != nil {
@@ -182,5 +187,6 @@ func (state *RuntimeState) SaveUserProfile(username string, profile *userProfile
 	if err != nil {
 		return err
 	}
+	metricLogExternalServiceDuration("storage-save", time.Since(start))
 	return nil
 }
