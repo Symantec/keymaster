@@ -41,38 +41,40 @@ func (n *CertNotifier) serveHTTP(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if hijacker, ok := w.(http.Hijacker); !ok {
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
-	} else {
-		conn, bufRw, err := hijacker.Hijack()
-		if err != nil {
-			n.logger.Println("certmon hijacking ", req.RemoteAddr, ": ",
+	}
+	conn, bufRw, err := hijacker.Hijack()
+	if err != nil {
+		n.logger.Println("certmon hijacking ", req.RemoteAddr, ": ",
+			err.Error())
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	defer conn.Close()
+	defer bufRw.Flush()
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		if err := tcpConn.SetKeepAlive(true); err != nil {
+			n.logger.Println("error setting keepalive: ", err.Error())
+			return
+		}
+		if err := tcpConn.SetKeepAlivePeriod(time.Minute * 5); err != nil {
+			n.logger.Println("error setting keepalive period: ",
 				err.Error())
 			return
 		}
-		defer conn.Close()
-		defer bufRw.Flush()
-		if tcpConn, ok := conn.(*net.TCPConn); ok {
-			if err := tcpConn.SetKeepAlive(true); err != nil {
-				n.logger.Println("error setting keepalive: ", err.Error())
-				return
-			}
-			if err := tcpConn.SetKeepAlivePeriod(time.Minute * 5); err != nil {
-				n.logger.Println("error setting keepalive period: ",
-					err.Error())
-				return
-			}
-		}
-		_, err = io.WriteString(conn, "HTTP/1.0 "+certmon.ConnectString+"\n\n")
-		if err != nil {
-			n.logger.Println("error writing connect message: ", err.Error())
-			return
-		}
-		n.logger.Println("certmon client connected")
-		n.handleConnection(bufRw)
 	}
+	_, err = io.WriteString(conn, "HTTP/1.0 "+certmon.ConnectString+"\n\n")
+	if err != nil {
+		n.logger.Println("error writing connect message: ", err.Error())
+		return
+	}
+	n.logger.Println("certmon client connected")
+	n.handleConnection(bufRw)
 }
 
 func (n *CertNotifier) handleConnection(rw *bufio.ReadWriter) {
