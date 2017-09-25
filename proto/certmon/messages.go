@@ -1,6 +1,9 @@
 package certmon
 
 const (
+	ConnectString = "200 Connected to keymaster certmon service"
+	HttpPath      = "/certmon"
+
 	CertTypeSSH  = 0
 	CertTypeX509 = 1
 )
