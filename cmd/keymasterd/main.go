@@ -16,9 +16,11 @@ import (
 	"fmt"
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/serverlogger"
+	"github.com/Symantec/keymaster/keymasterd/certnotifier"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
+	"github.com/Symantec/keymaster/proto/certmon"
 	"github.com/Symantec/tricorder/go/healthserver"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/units"
@@ -147,6 +149,8 @@ var (
 	)
 
 	logger log.DebugLogger
+	// TODO(rgooch): Pass this in rather than use a global variable.
+	certNotifier *certnotifier.CertNotifier
 )
 
 func metricLogAuthOperation(clientType string, authType string, success bool) {
@@ -1784,6 +1788,8 @@ func main() {
 		return
 	}
 
+	// TODO(rgooch): Pass this in rather than use a global variable.
+	certNotifier = certnotifier.New(logger)
 	runtimeState, err := loadVerifyConfigFile(*configFilename)
 	if err != nil {
 		panic(err)
@@ -1848,7 +1854,7 @@ func main() {
 
 	isReady := <-runtimeState.SignerIsReady
 	if isReady != true {
-		panic("got bad singer ready data")
+		panic("got bad signer ready data")
 	}
 
 	serviceSrv := &http.Server{
@@ -1858,6 +1864,7 @@ func main() {
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 	}
 
+	http.Handle(certmon.HttpPath, certNotifier)
 	err = serviceSrv.ListenAndServeTLS(
 		runtimeState.Config.Base.TLSCertFilename,
 		runtimeState.Config.Base.TLSKeyFilename)
