@@ -1145,8 +1145,12 @@ func (state *RuntimeState) logoutHandler(w http.ResponseWriter, r *http.Request)
 		}
 		state.Mutex.Unlock()
 	}
-	//redirect to login
-	http.Redirect(w, r, profilePath, 302)
+	// clear cookie auth Cookie
+	expiration := time.Unix(0, 0)
+	clearAuthCookie := http.Cookie{Name: authCookieName, Value: "", Expires: expiration, Path: "/", HttpOnly: true, Secure: true}
+	http.SetCookie(w, &clearAuthCookie)
+	// redirect to root
+	http.Redirect(w, r, "/", 302)
 }
 
 ///
