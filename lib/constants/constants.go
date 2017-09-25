@@ -1,8 +1,8 @@
 package constants
 
 const (
-	KeymasterAdminPortNumber   = 6920
-	KeymasterServicePortNumber = 443
+	DefaultKeymasterAdminPortNumber   = 6920
+	DefaultKeymasterServicePortNumber = 443
 
-	CertmonPortNumber = 6921
+	DefaultCertmonPortNumber = 6921
 )
