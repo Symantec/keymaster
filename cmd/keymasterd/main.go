@@ -23,6 +23,7 @@ import (
 	"github.com/Symantec/keymaster/proto/certmon"
 	"github.com/Symantec/tricorder/go/healthserver"
 	"github.com/Symantec/tricorder/go/tricorder"
+	"github.com/Symantec/tricorder/go/tricorder/units"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/tstranex/u2f"
 	"golang.org/x/crypto/openpgp"
@@ -34,7 +35,7 @@ import (
 	"io/ioutil"
 	//"net"
 	"net/http"
-	//"net/url"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -118,10 +119,69 @@ var (
 		},
 		[]string{"username", "type"},
 	)
+	authOperationCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "keymaster_auth_operation_counter",
+			Help: "Keymaster_auth_operation_counter",
+		},
+		[]string{"client_type", "type", "result"},
+	)
+
+	externalServiceDurationTotal = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "keymaster_external_service_request_duration",
+			Help:    "Total amount of time spent non-errored external checks in ms",
+			Buckets: []float64{5, 7.5, 10, 15, 25, 50, 75, 100, 150, 250, 500, 750, 1000, 1500, 2500, 5000},
+		},
+		[]string{"service_name"},
+	)
+	tricorderLDAPExternalServiceDurationTotal    = tricorder.NewGeometricBucketer(5, 5000.0).NewCumulativeDistribution()
+	tricorderStorageExternalServiceDurationTotal = tricorder.NewGeometricBucketer(1, 2000.0).NewCumulativeDistribution()
+	tricorderVIPExternalServiceDurationTotal     = tricorder.NewGeometricBucketer(5, 5000.0).NewCumulativeDistribution()
+
+	certDurationHistogram = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "keymaster_cert_duration",
+			Help:    "Duration of certs in seconds",
+			Buckets: []float64{15, 30, 60, 120, 300, 600, 3600, 7200, 36000, 57600, 72000, 86400, 172800},
+		},
+		[]string{"cert_type", "stage"},
+	)
+
 	logger log.DebugLogger
 	// TODO(rgooch): Pass this in rather than use a global variable.
 	certNotifier *certnotifier.CertNotifier
 )
+
+func metricLogAuthOperation(clientType string, authType string, success bool) {
+	validStr := strconv.FormatBool(success)
+	metricsMutex.Lock()
+	defer metricsMutex.Unlock()
+	authOperationCounter.WithLabelValues(clientType, authType, validStr).Inc()
+}
+
+func metricLogExternalServiceDuration(service string, duration time.Duration) {
+	val := duration.Seconds() * 1000
+	metricsMutex.Lock()
+	defer metricsMutex.Unlock()
+	externalServiceDurationTotal.WithLabelValues(service).Observe(val)
+	switch service {
+	case "ldap":
+		tricorderLDAPExternalServiceDurationTotal.Add(duration)
+	case "vip":
+		tricorderVIPExternalServiceDurationTotal.Add(duration)
+	case "storage-read":
+		tricorderStorageExternalServiceDurationTotal.Add(duration)
+	case "storage-save":
+		tricorderStorageExternalServiceDurationTotal.Add(duration)
+	}
+}
+
+func metricLogCertDuration(certType string, stage string, val float64) {
+	metricsMutex.Lock()
+	defer metricsMutex.Unlock()
+	certDurationHistogram.WithLabelValues(certType, stage).Observe(val)
+}
 
 func getHostIdentity() (string, error) {
 	return os.Hostname()
@@ -186,10 +246,8 @@ func convertToBindDN(username string, bind_pattern string) string {
 	return fmt.Sprintf(bind_pattern, username)
 }
 
-func checkUserPassword(username string, password string, config AppConfigFile) (bool, error) {
-	//if username == "camilo_viecco1" && password == "pass" {
-	//	return true, nil
-	//}
+func checkUserPassword(username string, password string, config AppConfigFile, r *http.Request) (bool, error) {
+	clientType := getClientType(r)
 
 	const timeoutSecs = 3
 	bindDN := convertToBindDN(username, config.Ldap.Bind_Pattern)
@@ -202,13 +260,19 @@ func checkUserPassword(username string, password string, config AppConfigFile) (
 			logger.Printf("Failed to parse ldapurl '%s'", ldapUrl)
 			continue
 		}
-		vaild, err := authutil.CheckLDAPUserPassword(*u, bindDN, password, timeoutSecs, nil)
+		start := time.Now()
+		valid, err := authutil.CheckLDAPUserPassword(*u, bindDN, password, timeoutSecs, nil)
 		if err != nil {
 			logger.Debugf(1, "Error checking LDAP user password url= %s", ldapUrl)
 			continue
 		}
+
+		metricLogExternalServiceDuration("ldap", time.Since(start))
+
 		// the ldap exchange was successful (user might be invaid)
-		return vaild, nil
+		metricLogAuthOperation(clientType, "password", valid)
+
+		return valid, nil
 
 	}
 	if config.Base.HtpasswdFilename != "" {
@@ -221,8 +285,10 @@ func checkUserPassword(username string, password string, config AppConfigFile) (
 		if err != nil {
 			return false, err
 		}
+		metricLogAuthOperation(clientType, "password", valid)
 		return valid, nil
 	}
+	metricLogAuthOperation(clientType, "password", false)
 	return false, nil
 }
 
@@ -246,6 +312,25 @@ func browserSupportsU2F(r *http.Request) bool {
 		return true
 	}
 	return false
+}
+
+func getClientType(r *http.Request) string {
+	if r == nil {
+		return "unknown"
+	}
+
+	preferredAcceptType := getPreferredAcceptType(r)
+	switch preferredAcceptType {
+	case "text/html":
+		return "browser"
+	case "application/json":
+		if len(r.Referer()) > 1 {
+			return "browser"
+		}
+		return "cli"
+	default:
+		return "unknown"
+	}
 }
 
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.Request) error {
@@ -357,6 +442,24 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 
 // Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
 func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, requiredAuthType int) (string, int, error) {
+	// Check csrf
+	referer := r.Referer()
+	if len(referer) > 0 && len(r.Host) > 0 {
+		logger.Debugf(3, "ref =%s, host=%s", referer, r.Host)
+		refererURL, err := url.Parse(referer)
+		if err != nil {
+			return "", AuthTypeNone, err
+		}
+		logger.Debugf(3, "refHost =%s, host=%s", refererURL.Host, r.Host)
+		if refererURL.Host != r.Host {
+			logger.Printf("CSRF detected.... rejecting with a 400")
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+			err := errors.New("CSRF detected... rejecting")
+			return "", AuthTypeNone, err
+
+		}
+	}
+
 	// We first check for cookies
 	var authCookie *http.Cookie
 	for _, cookie := range r.Cookies() {
@@ -384,7 +487,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		state.Mutex.Lock()
 		config := state.Config
 		state.Mutex.Unlock()
-		valid, err := checkUserPassword(user, pass, config)
+		valid, err := checkUserPassword(user, pass, config, r)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			return "", AuthTypeNone, err
@@ -537,6 +640,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form (duration)")
 			return
 		}
+		metricLogCertDuration("unparsed", "requested", float64(newDuration.Seconds()))
 		if newDuration > duration {
 			logger.Println(err)
 			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form (invalid duration)")
@@ -624,6 +728,8 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 		return
 
 	}
+	metricLogCertDuration("ssh", "granted", float64(duration.Seconds()))
+
 	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", cert)
@@ -684,6 +790,8 @@ func (state *RuntimeState) postAuthX509CertHandler(
 		return
 
 	}
+	metricLogCertDuration("x509", "granted", float64(duration.Seconds()))
+
 	w.Header().Set("Content-Disposition", `attachment; filename="userCert.pem"`)
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "%s", cert)
@@ -921,7 +1029,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	valid, err := checkUserPassword(username, password, state.Config)
+	valid, err := checkUserPassword(username, password, state.Config, r)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
@@ -1094,12 +1202,19 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing OTP value")
 	}
 
+	start := time.Now()
 	valid, err := state.Config.SymantecVIP.Client.ValidateUserOTP(authUser, otpValue)
 	if err != nil {
 		logger.Println(err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
 		return
 	}
+
+	metricLogExternalServiceDuration("vip", time.Since(start))
+
+	//
+	metricLogAuthOperation(getClientType(r), proto.AuthTypeSymantecVIP, valid)
+
 	if !valid {
 		logger.Printf("Invalid OTP value login for %s", authUser)
 		// TODO if client is html then do a redirect back to vipLoginPage
@@ -1408,6 +1523,8 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 	for i, u2fReg := range profile.U2fAuthData {
 		newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *profile.U2fAuthChallenge, u2fReg.Counter)
 		if authErr == nil {
+			metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, true)
+
 			logger.Printf("newCounter: %d", newCounter)
 			//counter = newCounter
 			u2fReg.Counter = newCounter
@@ -1439,6 +1556,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
+	metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, false)
 
 	logger.Printf("VerifySignResponse error: %v", err)
 	http.Error(w, "error verifying response", http.StatusInternalServerError)
@@ -1634,6 +1752,24 @@ func Usage() {
 
 func init() {
 	prometheus.MustRegister(certGenCounter)
+	prometheus.MustRegister(authOperationCounter)
+	prometheus.MustRegister(externalServiceDurationTotal)
+	prometheus.MustRegister(certDurationHistogram)
+	tricorder.RegisterMetric(
+		"keymaster/external-service-duration/LDAP",
+		tricorderLDAPExternalServiceDurationTotal,
+		units.Millisecond,
+		"Time for external LDAP server to perform operation(ms)")
+	tricorder.RegisterMetric(
+		"keymaster/external-service-duration/VIP",
+		tricorderVIPExternalServiceDurationTotal,
+		units.Millisecond,
+		"Time for external VIP server to perform operation(ms)")
+	tricorder.RegisterMetric(
+		"keymaster/external-service-duration/storage",
+		tricorderStorageExternalServiceDurationTotal,
+		units.Millisecond,
+		"Time for external Storage server to perform operation(ms)")
 }
 
 func main() {
