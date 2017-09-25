@@ -8,9 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Symantec/Dominator/lib/log/debuglogger"
+	"github.com/Symantec/keymaster/keymasterd/certnotifier"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"io"
 	"io/ioutil"
+	stdlog "log"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -120,6 +123,12 @@ var loginFailValues = []loginTestVector{
 	loginTestVector{Username: &emptyStringConst, Password: &validPasswordConst},
 	loginTestVector{Username: nil, Password: &validPasswordConst},
 	loginTestVector{Username: &validUsernameConst, Password: nil},
+}
+
+func init() {
+	slogger := stdlog.New(os.Stderr, "", stdlog.LstdFlags)
+	logger = debuglogger.New(slogger)
+	certNotifier = certnotifier.New(logger)
 }
 
 func createKeyBodyRequest(method, urlStr, filedata, durationString string) (*http.Request, error) {

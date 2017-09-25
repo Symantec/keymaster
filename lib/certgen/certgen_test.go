@@ -162,7 +162,7 @@ func TestGenSSHCertFileStringGenerateSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := GenSSHCertFileString(username, testUserPublicKey, goodSigner, hostIdentity, testDuration)
+	c, _, err := GenSSHCertFileString(username, testUserPublicKey, goodSigner, hostIdentity, testDuration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestGenSSHCertFileStringGenerateFailBadPublicKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = GenSSHCertFileString(username, "ThisIsNOTAPublicKey", goodSigner, hostIdentity, testDuration)
+	_, _, err = GenSSHCertFileString(username, "ThisIsNOTAPublicKey", goodSigner, hostIdentity, testDuration)
 	if err == nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestGenSSHCertFileStringFromSSSDPublicKeySuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = GenSSHCertFileStringFromSSSDPublicKey(username, goodSigner, hostIdentity, testDuration)
+	_, _, err = GenSSHCertFileStringFromSSSDPublicKey(username, goodSigner, hostIdentity, testDuration)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestGenSSHCertFileStringFromSSSDPublicKeyFailUserWithNoSSSDPublicKey(t *tes
 		t.Fatal(err)
 	}
 
-	_, err = GenSSHCertFileStringFromSSSDPublicKey("THISISANINVALIDUSER-FOOBARBAZ", goodSigner, hostIdentity, testDuration)
+	_, _, err = GenSSHCertFileStringFromSSSDPublicKey("THISISANINVALIDUSER-FOOBARBAZ", goodSigner, hostIdentity, testDuration)
 	if err == nil {
 		t.Fatal(err)
 	}

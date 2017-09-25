@@ -44,10 +44,10 @@ func goCertToFileString(c ssh.Certificate, username string) (string, error) {
 }
 
 // gen_user_cert a username and key, returns a short lived cert for that user
-func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer, host_identity string, duration time.Duration) (string, error) {
+func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer, host_identity string, duration time.Duration) (string, []byte, error) {
 	userKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(userPubKey))
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	keyIdentity := host_identity + "_" + username
 
@@ -73,26 +73,26 @@ func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer,
 
 	err = cert.SignCert(bytes.NewReader(cert.Marshal()), signer)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	certString, err := goCertToFileString(cert, username)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return certString, nil
+	return certString, cert.Marshal(), nil
 }
 
-func GenSSHCertFileStringFromSSSDPublicKey(userName string, signer ssh.Signer, hostIdentity string, duration time.Duration) (string, error) {
+func GenSSHCertFileStringFromSSSDPublicKey(userName string, signer ssh.Signer, hostIdentity string, duration time.Duration) (string, []byte, error) {
 
 	userPubKey, err := GetUserPubKeyFromSSSD(userName)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	cert, err := GenSSHCertFileString(userName, userPubKey, signer, hostIdentity, duration)
+	cert, certBytes, err := GenSSHCertFileString(userName, userPubKey, signer, hostIdentity, duration)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return cert, err
+	return cert, certBytes, err
 }
 
 /// X509 section
