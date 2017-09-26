@@ -1,6 +1,4 @@
-package main
-
-// This file contains common utilities for keymaster.
+package util
 
 import (
 	"bytes"
@@ -18,11 +16,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/user"
 	"time"
 )
 
-// getUserCreds prompts the user for thier password and returns it.
+const rsaKeySize = 2048
+
 func getUserCreds(userName string) (password []byte, err error) {
 	fmt.Printf("Password for %s: ", userName)
 	password, err = gopass.GetPasswd()
@@ -33,18 +31,10 @@ func getUserCreds(userName string) (password []byte, err error) {
 	return password, nil
 }
 
-// getUserHomeDir returns the user's home directory.
-func getUserHomeDir(usr *user.User) (string, error) {
-	// TODO: verify on Windows... see: http://stackoverflow.com/questions/7922270/obtain-users-home-directory
-	return usr.HomeDir, nil
-}
-
-// genKeyPair uses internal golang functions to be portable
-// mostly comes from: http://stackoverflow.com/questions/21151714/go-generate-an-ssh-public-key
 func genKeyPair(
 	privateKeyPath string, identity string, logger log.Logger) (
 	crypto.Signer, string, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, RSAKeySize)
+	privateKey, err := rsa.GenerateKey(rand.Reader, rsaKeySize)
 	if err != nil {
 		return nil, "", err
 	}
@@ -79,8 +69,6 @@ func genKeyPair(
 	return privateKey, pubKeyPath, ioutil.WriteFile(pubKeyPath, pubKeyBuffer.Bytes(), 0644)
 }
 
-// getHttpClient returns an http client instance to use given a
-// particular TLS configuration.
 func getHttpClient(tlsConfig *tls.Config) (*http.Client, error) {
 	clientTransport := &http.Transport{
 		TLSClientConfig: tlsConfig,

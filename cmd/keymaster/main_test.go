@@ -1,19 +1,16 @@
 package main
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"github.com/Symantec/Dominator/lib/log/testlogger"
-	"github.com/Symantec/keymaster/lib/certgen"
+	"github.com/Symantec/keymaster/lib/client/util"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"io/ioutil"
 	"net/http"
 	"os"
-	"os/user"
 	"testing"
 )
 
@@ -153,53 +150,6 @@ func init() {
 	//http.Serve(ln, nil)
 }
 
-func TestGenKeyPairSuccess(t *testing.T) {
-	tmpfile, err := ioutil.TempFile("", "test_genKeyPair_")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer os.Remove(tmpfile.Name()) // clean up
-
-	_, _, err = genKeyPair(tmpfile.Name(), "test", testlogger.New(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	fileBytes, err := ioutil.ReadFile(tmpfile.Name())
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = certgen.GetSignerFromPEMBytes(fileBytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	//TODO: verify written signer matches our signer.
-}
-
-func TestGenKeyPairFailNoPerms(t *testing.T) {
-	_, _, err := genKeyPair("/proc/something", "test", testlogger.New(t))
-	if err == nil {
-		t.Logf("Should have failed")
-		t.Fatal(err)
-	}
-}
-
-func TestGetUserHomeDirSuccess(t *testing.T) {
-	usr, err := user.Current()
-	if err != nil {
-		t.Logf("cannot get current user info")
-		t.Fatal(err)
-	}
-	homeDir, err := getUserHomeDir(usr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(homeDir) < 1 {
-		t.Fatal("invalid homedir")
-
-	}
-}
-
 func createTempFileWithStringContent(prefix string, content string) (f *os.File, err error) {
 	f, err = ioutil.TempFile("", prefix)
 	if err != nil {
@@ -278,7 +228,7 @@ func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
 	if !ok {
 		t.Fatal("cannot add certs to certpool")
 	}
-	privateKey, err := rsa.GenerateKey(rand.Reader, RSAKeySize)
+	privateKey, err := util.GenerateKey()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +247,7 @@ func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
 }
 
 func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, RSAKeySize)
+	privateKey, err := util.GenerateKey()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,39 +265,11 @@ func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
 	}
 }
 
-func TestGetParseURLEnvVariable(t *testing.T) {
-	testName := "TEST_ENV_KEYMASTER_11111"
-	os.Setenv(testName, "http://localhost:12345")
-	val, err := getParseURLEnvVariable(testName)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if val == nil {
-		t.Fatal("Should have found value")
-	}
-
-	//Not a URL
-	/*
-		os.Setenv(testName, "")
-		if err == nil {
-			t.Fatal("should have failed to parse")
-		}
-	*/
-
-	//Unexistent
-	val, err = getParseURLEnvVariable("Foobar")
-	if val != nil {
-		t.Fatal("SHOULD not have found anything ")
-	}
-	//
-
-}
-
 // ------------WARN-------- Next name copied from https://github.com/howeyc/gopass/blob/master/pass_test.go for using
 //  gopass checks
 func TestPipe(t *testing.T) {
 	_, err := pipeToStdin("password\n")
-	password, err := getUserCreds("userame")
+	password, err := util.GetUserCreds("userame")
 	if err != nil {
 		t.Fatal(err)
 	}

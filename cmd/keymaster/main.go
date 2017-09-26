@@ -22,6 +22,7 @@ import (
 	// server side:
 	"github.com/tstranex/u2f"
 
+	"github.com/Symantec/keymaster/lib/client/util"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 
 	"golang.org/x/crypto/ssh"
@@ -41,7 +42,6 @@ import (
 )
 
 const DefaultKeysLocation = "/.ssh/"
-const RSAKeySize = 2048
 const FilePrefix = "keymaster"
 
 const ClientDataAuthenticationTypeValue = "navigator.id.getAssertion"
@@ -425,7 +425,7 @@ func getCertsFromServer(
 	skip2fa bool,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, err error) {
 	//First Do Login
-	client, err := getHttpClient(tlsConfig)
+	client, err := util.GetHttpClient(tlsConfig)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -613,7 +613,7 @@ func getConfigFromHost(
 	rootCAs *x509.CertPool,
 	logger log.Logger) error {
 	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
-	client, err := getHttpClient(tlsConfig)
+	client, err := util.GetHttpClient(tlsConfig)
 	if err != nil {
 		return err
 	}
@@ -685,7 +685,7 @@ func main() {
 	}
 	userName := usr.Username
 
-	homeDir, err := getUserHomeDir(usr)
+	homeDir, err := util.GetUserHomeDir(usr)
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -734,7 +734,7 @@ func main() {
 	}
 
 	tempPrivateKeyPath := filepath.Join(homeDir, DefaultKeysLocation, "keymaster-temp")
-	signer, tempPublicKeyPath, err := genKeyPair(
+	signer, tempPublicKeyPath, err := util.GenKeyPair(
 		tempPrivateKeyPath, userName+"@keymaster", logger)
 	if err != nil {
 		logger.Fatal(err)
@@ -742,7 +742,7 @@ func main() {
 	defer os.Remove(tempPrivateKeyPath)
 	defer os.Remove(tempPublicKeyPath)
 
-	password, err := getUserCreds(userName)
+	password, err := util.GetUserCreds(userName)
 	if err != nil {
 		logger.Fatal(err)
 	}
