@@ -163,7 +163,7 @@ func (m *Monitor) monitor(conn net.Conn, closeChannel <-chan struct{},
 	}()
 	reader := bufio.NewReader(conn)
 	for {
-		if receiveData, err := m.receive(reader); err != nil {
+		if receiveData, err := receive(reader); err != nil {
 			if closed {
 				return nil
 			}
@@ -179,7 +179,7 @@ func (m *Monitor) monitor(conn net.Conn, closeChannel <-chan struct{},
 	return nil
 }
 
-func (m *Monitor) receive(reader io.Reader) (receiveType, error) {
+func receive(reader io.Reader) (receiveType, error) {
 	var rd receiveType
 	if err := binary.Read(reader, binary.BigEndian, &rd.certType); err != nil {
 		return rd, err
