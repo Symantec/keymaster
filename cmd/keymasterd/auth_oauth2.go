@@ -149,6 +149,7 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 		Attributes  map[string][]string `json:"attributes"`
 	}
 
+	logger.Debugf(3, "Userinfo body:'%s'", string(body))
 	err = json.Unmarshal(body, &data)
 	if err != nil {
 		logger.Printf("failed to unmarshall userinfo to fetch %s ", body)
@@ -157,7 +158,7 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 	}
 
 	// The Name field could also be useful
-	//logger.Printf("%+v", data)
+	logger.Debugf(2, "%+v", data)
 
 	// Check if name is there..
 	//Make new auth cookie
@@ -170,12 +171,15 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 
 	// TODO: we need a more robust way to get the username and to add some filters. This
 	// mechanism is ok for 0.2 but not for 0.3.
-	components := strings.Split(data.Email, "@")
-	if len(components[0]) < 1 {
-		http.Error(w, "Email from userinfo is invalid: ", http.StatusInternalServerError)
-		return
+	username := data.Login
+	if username == "" {
+		components := strings.Split(data.Email, "@")
+		if len(components[0]) < 1 {
+			http.Error(w, "Email from userinfo is invalid: ", http.StatusInternalServerError)
+			return
+		}
+		username = strings.ToLower(components[0])
 	}
-	username := strings.ToLower(components[0])
 
 	// TODO: we should enhance oath2 to limit who can login by either full username OR
 	// source domain.
