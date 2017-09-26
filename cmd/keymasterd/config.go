@@ -246,7 +246,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	}
 
 	//
-	if runtimeState.Config.Base.HideStandardLogin == true && runtimeState.Config.Oauth2.Enabled == false {
+	if runtimeState.Config.Base.HideStandardLogin && !runtimeState.Config.Oauth2.Enabled {
 		err := errors.New("invalid configuration... cannot hide std login without enabling oath2")
 		return runtimeState, err
 	}
