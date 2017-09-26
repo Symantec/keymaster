@@ -46,11 +46,11 @@ func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 		X509RawCertChannel: x509RawCertChannel,
 		X509CertChannel:    x509CertChannel,
 	}
-	go monitor.forever(logger)
+	go monitor.monitorForever(logger)
 	return monitor, nil
 }
 
-func (m *Monitor) forever(logger log.Logger) {
+func (m *Monitor) monitorForever(logger log.Logger) {
 	for ; ; time.Sleep(time.Minute * 5) {
 		m.updateNotifierList(logger)
 	}
