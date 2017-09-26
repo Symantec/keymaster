@@ -39,8 +39,7 @@ type baseConfig struct {
 	KerberosRealm               string   `yaml:"kerberos_realm"`
 	DataDirectory               string   `yaml:"data_directory"`
 	SharedDataDirectory         string   `yaml:"shared_data_directory"`
-	DocumentationURL            string   `yaml:"documentation_url"`
-	ClientDownloadURL           string   `yaml:"client_download_url"`
+	HideStandardLogin           bool     `yaml:"hide_standard_login"`
 	AllowedAuthBackendsForCerts []string `yaml:"allowed_auth_backends_for_certs"`
 	AllowedAuthBackendsForWebUI []string `yaml:"allowed_auth_backends_for_webui"`
 }
@@ -244,6 +243,12 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			return runtimeState, err
 		}
 		runtimeState.Config.SymantecVIP.Client = &client
+	}
+
+	//
+	if runtimeState.Config.Base.HideStandardLogin == true && runtimeState.Config.Oauth2.Enabled == false {
+		err := errors.New("invalid configuration... cannot hide std login without enabling oath2")
+		return runtimeState, err
 	}
 
 	//Load extra templates

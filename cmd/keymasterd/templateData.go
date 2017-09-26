@@ -35,7 +35,7 @@ type loginPageTemplateData struct {
 	AuthUsername string
 	JSSources    []string
 	ShowOauth2   bool
-	DocsURL      string
+	HideStdLogin bool
 }
 
 //Should be a template
@@ -53,21 +53,23 @@ const loginFormText = `
     <body>
     <div style="min-height:100%;position:relative;">
     {{template "header" .}}
-    <div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
+        <div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
         <h2> Keymaster Login </h2>
 	{{if .ShowOauth2}}
 	<p>
 	<a href="/auth/oauth2/login"> Oauth2 Login </a>
 	</p>
         {{end}}
+	{{if not .HideStdLogin}}
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/login" method="post">
             <p>Username: <INPUT TYPE="text" NAME="username" SIZE=18></p>
             <p>Password: <INPUT TYPE="password" NAME="password" SIZE=18></p>
             <p><input type="submit" value="Submit" /></p>
         </form>
+	{{end}}
 	</div>
-	{{template "footer" . }}
-	</div>
+    {{template "footer" . }}
+    </div>
     </body>
 </html>
 {{end}}

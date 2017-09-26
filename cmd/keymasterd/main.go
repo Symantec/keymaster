@@ -356,8 +356,9 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.R
 func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter, r *http.Request) error {
 	//footerText := state.getFooterText()
 	displayData := loginPageTemplateData{
-		Title:      "Keymaster Login",
-		ShowOauth2: state.Config.Oauth2.Enabled}
+		Title:        "Keymaster Login",
+		ShowOauth2:   state.Config.Oauth2.Enabled,
+		HideStdLogin: state.Config.Base.HideStandardLogin}
 	err := state.htmlTemplate.ExecuteTemplate(w, "loginPage", displayData)
 	if err != nil {
 		logger.Printf("Failed to execute %v", err)
