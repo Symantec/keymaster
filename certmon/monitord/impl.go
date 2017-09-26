@@ -131,7 +131,7 @@ func (m *Monitor) connect(rawConn net.Conn) (net.Conn, error) {
 		return nil, err
 	}
 	io.WriteString(conn, "CONNECT "+certmon.HttpPath+" HTTP/1.0\n\n")
-	// Require successful HTTP response before switching to SRPC protocol.
+	// Require successful HTTP response before enabling communications.
 	resp, err := http.ReadResponse(bufio.NewReader(conn),
 		&http.Request{Method: "CONNECT"})
 	if err != nil {
