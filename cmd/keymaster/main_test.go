@@ -8,7 +8,6 @@ import (
 	"github.com/Symantec/Dominator/lib/log/testlogger"
 	"github.com/Symantec/keymaster/lib/client/util"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"testing"
@@ -96,13 +95,6 @@ GuCdIOQpn0IWClccTMjwc0AhJStSckNdSUQcsRl6LRnRHa3oCIs3hxnkiEHYch6e
 dcxWzhBDbzeIV9SvcTwLx/ghQg==
 -----END PRIVATE KEY-----`
 
-const simpleValidConfigFile = `base:
-    gen_cert_urls: "https://localhost:33443/"
-`
-
-const invalidConfigFileNoGenUrls = `base:
-    `
-
 const testUserPublicKey = `ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDI09fpMWTeYw7/EO/+FywS/sghNXdTeTWxX7K2N17owsQJX8s76LGVIdVeYrWg4QSmYlpf6EVSCpx/fbCazrsG7FJVTRhExzFbRT9asmvzS+viXSbSvnavhOz/paihyaMsVPKVv24vF6MOs8DgfwehcKCPjKoIPnlYXZaZcy05KOcZmsvYu2kNOP6sSjDFF+ru+T+DLp3DUGw+MPr45IuR7iDnhXhklqyUn0d7ou0rOHXz9GdHIzpr+DAoQGmTDkpbQEo067Rjfu406gYL8pVFD1F7asCjU39llQCcU/HGyPym5fa29Nubw0dzZZXGZUVFalxo02YMM7P9I6ZjeCsv cviecco@example.com`
 
 func getTLSconfig() (*tls.Config, error) {
@@ -148,78 +140,6 @@ func init() {
 	http.HandleFunc("/", handler)
 	go srv.ListenAndServeTLS("", "")
 	//http.Serve(ln, nil)
-}
-
-func createTempFileWithStringContent(prefix string, content string) (f *os.File, err error) {
-	f, err = ioutil.TempFile("", prefix)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err = f.Write([]byte(content)); err != nil {
-		os.Remove(f.Name())
-		return nil, err
-	}
-	return f, nil
-}
-
-func TestLoadVerifyConfigFileSuccess(t *testing.T) {
-	tmpfile, err := createTempFileWithStringContent("test_LoadVerifyConfig", simpleValidConfigFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	defer os.Remove(tmpfile.Name()) // clean up
-
-	if err := tmpfile.Close(); err != nil {
-		t.Fatal(err)
-	}
-	_, err = loadVerifyConfigFile(tmpfile.Name())
-
-	if err != nil {
-		t.Fatal(err)
-	}
-	// TODO: validate loaded file contents
-}
-
-func TestLoadVerifyConfigFileFailNotYAML(t *testing.T) {
-	tmpfile, err := createTempFileWithStringContent("test_LoadVerifyConfigFail_", "Some random string")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(tmpfile.Name()) // clean up
-	if err := tmpfile.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = loadVerifyConfigFile(tmpfile.Name())
-	if err == nil {
-		t.Fatal("Should have failed not a YAML file")
-	}
-}
-
-func TestLoadVerifyConfigFileFailNoGenCertUrls(t *testing.T) {
-	tmpfile, err := createTempFileWithStringContent("test_LoadVerifyConfigFail_", invalidConfigFileNoGenUrls)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(tmpfile.Name()) // clean up
-	if err := tmpfile.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = loadVerifyConfigFile(tmpfile.Name())
-	if err == nil {
-		t.Fatal("Should have failed no genurls in config")
-	}
-}
-
-func TestLoadVerifyConfigFileFailNoSuchFile(t *testing.T) {
-	_, err := loadVerifyConfigFile("NonExistentFile")
-	if err == nil {
-		t.Fatal("Success on loading Nonexistent File!")
-	}
-
 }
 
 func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
