@@ -444,20 +444,22 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 // Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
 func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, requiredAuthType int) (string, int, error) {
 	// Check csrf
-	referer := r.Referer()
-	if len(referer) > 0 && len(r.Host) > 0 {
-		logger.Debugf(3, "ref =%s, host=%s", referer, r.Host)
-		refererURL, err := url.Parse(referer)
-		if err != nil {
-			return "", AuthTypeNone, err
-		}
-		logger.Debugf(3, "refHost =%s, host=%s", refererURL.Host, r.Host)
-		if refererURL.Host != r.Host {
-			logger.Printf("CSRF detected.... rejecting with a 400")
-			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-			err := errors.New("CSRF detected... rejecting")
-			return "", AuthTypeNone, err
+	if r.Method != "GET" {
+		referer := r.Referer()
+		if len(referer) > 0 && len(r.Host) > 0 {
+			logger.Debugf(3, "ref =%s, host=%s", referer, r.Host)
+			refererURL, err := url.Parse(referer)
+			if err != nil {
+				return "", AuthTypeNone, err
+			}
+			logger.Debugf(3, "refHost =%s, host=%s", refererURL.Host, r.Host)
+			if refererURL.Host != r.Host {
+				logger.Printf("CSRF detected.... rejecting with a 400")
+				state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+				err := errors.New("CSRF detected... rejecting")
+				return "", AuthTypeNone, err
 
+			}
 		}
 	}
 
@@ -1612,7 +1614,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		displayData.RegisteredToken = append(displayData.RegisteredToken, deviceData)
 	}
 
-	logger.Printf("%v", displayData)
+	logger.Debugf(1, "%v", displayData)
 
 	err = state.htmlTemplate.ExecuteTemplate(w, "userProfilePage", displayData)
 	if err != nil {
