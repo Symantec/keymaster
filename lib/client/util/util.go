@@ -31,6 +31,7 @@ func getUserCreds(userName string) (password []byte, err error) {
 	return password, nil
 }
 
+// mostly comes from: http://stackoverflow.com/questions/21151714/go-generate-an-ssh-public-key
 func genKeyPair(
 	privateKeyPath string, identity string, logger log.Logger) (
 	crypto.Signer, string, error) {

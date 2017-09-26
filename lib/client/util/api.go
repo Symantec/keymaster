@@ -23,7 +23,6 @@ func GetUserHomeDir(usr *user.User) (string, error) {
 }
 
 // GenKeyPair uses internal golang functions to be portable
-// mostly comes from: http://stackoverflow.com/questions/21151714/go-generate-an-ssh-public-key
 func GenKeyPair(
 	privateKeyPath string, identity string, logger log.Logger) (
 	privateKey crypto.Signer, publicKeyPath string, err error) {
