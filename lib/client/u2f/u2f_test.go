@@ -1,4 +1,4 @@
-package main
+package u2f
 
 import (
 	"crypto/tls"
@@ -9,7 +9,6 @@ import (
 	"github.com/Symantec/keymaster/lib/client/util"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"net/http"
-	"os"
 	"testing"
 )
 
@@ -153,7 +152,7 @@ func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	skipu2f := true
-	_, _, err = getCertFromTargetUrls(
+	_, _, err = GetCertFromTargetUrls(
 		privateKey,
 		"username",
 		[]byte("password"),
@@ -172,7 +171,7 @@ func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
 		t.Fatal(err)
 	}
 	skipu2f := true
-	_, _, err = getCertFromTargetUrls(
+	_, _, err = GetCertFromTargetUrls(
 		privateKey,
 		"username",
 		[]byte("password"),
@@ -183,39 +182,4 @@ func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
 	if err == nil {
 		t.Fatal("Should have failed to connect untrusted CA")
 	}
-}
-
-// ------------WARN-------- Next name copied from https://github.com/howeyc/gopass/blob/master/pass_test.go for using
-//  gopass checks
-func TestPipe(t *testing.T) {
-	_, err := pipeToStdin("password\n")
-	password, err := util.GetUserCreds("userame")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(password) != "password" {
-		t.Fatal("password Does NOT match")
-	}
-
-}
-
-// ------------WARN--------------
-// THE next two functions are litierly copied from: https://github.com/howeyc/gopass/blob/master/pass_test.go
-// pipeToStdin pipes the given string onto os.Stdin by replacing it with an
-// os.Pipe.  The write end of the pipe is closed so that EOF is read after the
-// final byte.
-func pipeToStdin(s string) (int, error) {
-	pipeReader, pipeWriter, err := os.Pipe()
-	if err != nil {
-		fmt.Println("Error getting os pipes:", err)
-		os.Exit(1)
-	}
-	os.Stdin = pipeReader
-	w, err := pipeWriter.WriteString(s)
-	pipeWriter.Close()
-	return w, err
-}
-
-func pipeBytesToStdin(b []byte) (int, error) {
-	return pipeToStdin(string(b))
 }
