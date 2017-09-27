@@ -1,6 +1,5 @@
-// Package u2f contains routines for doing 2 factor authentication and getting
-//a short lived certificate.
-package u2f
+// Package twofa contains routines for getting short lived certificate.
+package twofa
 
 import (
 	"crypto"

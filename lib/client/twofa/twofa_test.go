@@ -1,4 +1,4 @@
-package u2f
+package twofa
 
 import (
 	"crypto/tls"
