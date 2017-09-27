@@ -22,11 +22,11 @@ import (
 	// server side:
 	"github.com/tstranex/u2f"
 
+	"github.com/Symantec/keymaster/lib/client/config"
 	"github.com/Symantec/keymaster/lib/client/util"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 
 	"golang.org/x/crypto/ssh"
-	"gopkg.in/yaml.v2"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
@@ -46,15 +46,6 @@ const FilePrefix = "keymaster"
 
 const ClientDataAuthenticationTypeValue = "navigator.id.getAssertion"
 
-type baseConfig struct {
-	Gen_Cert_URLS string `yaml:"gen_cert_urls"`
-	Username      string `yaml:"username"`
-}
-
-type AppConfigFile struct {
-	Base baseConfig
-}
-
 var (
 	// Must be a global variable in the data segment so that the build
 	// process can inject the version number on the fly when building the
@@ -72,32 +63,6 @@ var (
 	noU2F          = flag.Bool("noU2F", false, "Don't use U2F as second factor")
 	noVIPAccess    = flag.Bool("noVIPAccess", false, "Don't use VIPAccess as second factor")
 )
-
-func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
-	var config AppConfigFile
-	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
-		err = errors.New("No config file: please re-run with -configHost")
-		return config, err
-	}
-	source, err := ioutil.ReadFile(configFilename)
-	if err != nil {
-		err = errors.New("cannot read config file")
-		return config, err
-	}
-	err = yaml.Unmarshal(source, &config)
-	if err != nil {
-		err = errors.New("Cannot parse config file")
-		return config, err
-	}
-
-	if len(config.Base.Gen_Cert_URLS) < 1 {
-		err = errors.New("Invalid Config file... no place get the certs")
-		return config, err
-	}
-	// TODO: ensure all enpoints are https urls
-
-	return config, nil
-}
 
 // This is now copy-paste from the server test side... probably make public and reuse.
 func createKeyBodyRequest(method, urlStr, filedata string) (*http.Request, error) {
@@ -605,43 +570,6 @@ func getCertFromTargetUrls(
 	return sshCert, x509Cert, nil
 }
 
-const hostConfigPath = "/public/clientConfig"
-
-func getConfigFromHost(
-	configFilename string,
-	hostname string,
-	rootCAs *x509.CertPool,
-	logger log.Logger) error {
-	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
-	client, err := util.GetHttpClient(tlsConfig)
-	if err != nil {
-		return err
-	}
-	configUrl := "https://" + hostname + hostConfigPath
-	/*
-		req, err := http.NewRequest("GET", configUrl, nil)
-		if err != nil {
-			return err
-		}
-	*/
-	resp, err := client.Get(configUrl)
-	if err != nil {
-		logger.Printf("got error from req")
-		logger.Println(err)
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		logger.Printf("got error from getconfig call %s", resp)
-		return err
-	}
-	configData, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-	return ioutil.WriteFile(configFilename, configData, 0644)
-}
-
 func Usage() {
 	fmt.Fprintf(
 		os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
@@ -698,13 +626,13 @@ func main() {
 	}
 
 	if len(*configHost) > 1 {
-		err = getConfigFromHost(*configFilename, *configHost, rootCAs, logger)
+		err = config.GetConfigFromHost(*configFilename, *configHost, rootCAs, logger)
 		if err != nil {
 			logger.Fatal(err)
 		}
 	} else if len(defaultConfigHost) > 1 { // if there is a configHost AND there is NO config file, create one
 		if _, err := os.Stat(*configFilename); os.IsNotExist(err) {
-			err = getConfigFromHost(
+			err = config.GetConfigFromHost(
 				*configFilename, defaultConfigHost, rootCAs, logger)
 			if err != nil {
 				logger.Fatal(err)
@@ -712,7 +640,7 @@ func main() {
 		}
 	}
 
-	config, err := loadVerifyConfigFile(*configFilename)
+	config, err := config.LoadVerifyConfigFile(*configFilename)
 	if err != nil {
 		logger.Fatal(err)
 	}
