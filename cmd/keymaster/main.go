@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/cmdlogger"
 
 	"github.com/Symantec/keymaster/lib/client/config"
@@ -38,22 +39,7 @@ var (
 	checkDevices   = flag.Bool("checkDevices", false, "CheckU2F devices in your system")
 )
 
-func Usage() {
-	fmt.Fprintf(
-		os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
-	flag.PrintDefaults()
-}
-
-func main() {
-	flag.Usage = Usage
-	flag.Parse()
-	logger := cmdlogger.New()
-
-	if *checkDevices {
-		u2f.CheckU2FDevices(logger)
-		return
-	}
-
+func maybeGetRootCas(logger log.Logger) *x509.CertPool {
 	var rootCAs *x509.CertPool
 	if len(*rootCAFilename) > 1 {
 		caData, err := ioutil.ReadFile(*rootCAFilename)
@@ -67,22 +53,29 @@ func main() {
 		}
 
 	}
+	return rootCAs
+}
 
+func getUserNameAndHomeDir(logger log.Logger) (userName, homeDir string) {
 	usr, err := user.Current()
 	if err != nil {
 		logger.Printf("cannot get current user info")
 		logger.Fatal(err)
 	}
-	userName := usr.Username
+	userName = usr.Username
 
-	homeDir, err := util.GetUserHomeDir(usr)
+	homeDir, err = util.GetUserHomeDir(usr)
 	if err != nil {
 		logger.Fatal(err)
 	}
+	return
+}
 
+func loadConfigFile(rootCAs *x509.CertPool, logger log.Logger) (
+	configContents config.AppConfigFile) {
 	configPath, _ := filepath.Split(*configFilename)
 
-	err = os.MkdirAll(configPath, 0755)
+	err := os.MkdirAll(configPath, 0755)
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -102,27 +95,27 @@ func main() {
 		}
 	}
 
-	config, err := config.LoadVerifyConfigFile(*configFilename)
+	configContents, err = config.LoadVerifyConfigFile(*configFilename)
 	if err != nil {
 		logger.Fatal(err)
 	}
+	return
+}
 
-	if len(config.Base.Username) > 0 {
-		userName = config.Base.Username
-	}
-	// command line always wins over pref or config
-	if *cliUsername != "" {
-		userName = *cliUsername
-	}
-
-	//sshPath := homeDir + "/.ssh/"
+func setupCerts(
+	rootCAs *x509.CertPool,
+	userName,
+	homeDir string,
+	configContents config.AppConfigFile,
+	logger log.DebugLogger) {
+	// create dirs
 	privateKeyPath := filepath.Join(homeDir, DefaultKeysLocation, FilePrefix)
 	sshConfigPath, _ := filepath.Split(privateKeyPath)
-	err = os.MkdirAll(sshConfigPath, 0700)
+	err := os.MkdirAll(sshConfigPath, 0700)
 	if err != nil {
 		logger.Fatal(err)
 	}
-
+	// get signer
 	tempPrivateKeyPath := filepath.Join(homeDir, DefaultKeysLocation, "keymaster-temp")
 	signer, tempPublicKeyPath, err := util.GenKeyPair(
 		tempPrivateKeyPath, userName+"@keymaster", logger)
@@ -131,17 +124,18 @@ func main() {
 	}
 	defer os.Remove(tempPrivateKeyPath)
 	defer os.Remove(tempPublicKeyPath)
-
+	// Get user creds
 	password, err := util.GetUserCreds(userName)
 	if err != nil {
 		logger.Fatal(err)
 	}
 
+	// Get the certs
 	sshCert, x509Cert, err := twofa.GetCertFromTargetUrls(
 		signer,
 		userName,
 		password,
-		strings.Split(config.Base.Gen_Cert_URLS, ","),
+		strings.Split(configContents.Base.Gen_Cert_URLS, ","),
 		rootCAs,
 		false,
 		logger)
@@ -186,7 +180,6 @@ func main() {
 		err := errors.New("Could not write ssh cert")
 		logger.Fatal(err)
 	}
-
 	logger.Printf("Success")
 	if _, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
 		// TODO(rgooch): Parse certificate to get actual lifetime.
@@ -194,4 +187,35 @@ func main() {
 		cmd := exec.Command("ssh-add", "-t", lifetime, privateKeyPath)
 		cmd.Run()
 	}
+}
+
+func Usage() {
+	fmt.Fprintf(
+		os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
+	flag.PrintDefaults()
+}
+
+func main() {
+	flag.Usage = Usage
+	flag.Parse()
+	logger := cmdlogger.New()
+
+	if *checkDevices {
+		u2f.CheckU2FDevices(logger)
+		return
+	}
+
+	rootCAs := maybeGetRootCas(logger)
+	userName, homeDir := getUserNameAndHomeDir(logger)
+	config := loadConfigFile(rootCAs, logger)
+
+	// Adjust user name
+	if len(config.Base.Username) > 0 {
+		userName = config.Base.Username
+	}
+	// command line always wins over pref or config
+	if *cliUsername != "" {
+		userName = *cliUsername
+	}
+	setupCerts(rootCAs, userName, homeDir, config, logger)
 }
