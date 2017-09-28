@@ -1,6 +1,7 @@
 package util
 
 import (
+	"fmt"
 	"github.com/Symantec/Dominator/lib/log/testlogger"
 	"github.com/Symantec/keymaster/lib/certgen"
 	"io/ioutil"
@@ -82,4 +83,35 @@ func TestGetParseURLEnvVariable(t *testing.T) {
 	}
 	//
 
+}
+
+// ------------WARN-------- Next name copied from https://github.com/howeyc/gopass/blob/master/pass_test.go for using
+//  gopass checks
+func TestPipe(t *testing.T) {
+	_, err := pipeToStdin("password\n")
+	password, err := GetUserCreds("userame")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(password) != "password" {
+		t.Fatal("password Does NOT match")
+	}
+
+}
+
+// ------------WARN--------------
+// THE next two functions are litierly copied from: https://github.com/howeyc/gopass/blob/master/pass_test.go
+// pipeToStdin pipes the given string onto os.Stdin by replacing it with an
+// os.Pipe.  The write end of the pipe is closed so that EOF is read after the
+// final byte.
+func pipeToStdin(s string) (int, error) {
+	pipeReader, pipeWriter, err := os.Pipe()
+	if err != nil {
+		fmt.Println("Error getting os pipes:", err)
+		os.Exit(1)
+	}
+	os.Stdin = pipeReader
+	w, err := pipeWriter.WriteString(s)
+	pipeWriter.Close()
+	return w, err
 }

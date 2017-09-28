@@ -1,0 +1,39 @@
+// Package u2f contains routines for doing 2 factor authentication and getting
+//a short lived certificate.
+package u2f
+
+import (
+	"crypto"
+	"crypto/x509"
+	"flag"
+	"github.com/Symantec/Dominator/lib/log"
+	"time"
+)
+
+var (
+	// Duration of generated cert. Default 16 hours.
+	Duration = flag.Duration("duration", 16*time.Hour, "Duration of the requested certificates in golang duration format (ex: 30s, 5m, 12h)")
+	// If set, Do not use U2F as second factor
+	noU2F = flag.Bool("noU2F", false, "Don't use U2F as second factor")
+	// If set, Do not use VIPAccess as second factor.
+	noVIPAccess = flag.Bool("noVIPAccess", false, "Don't use VIPAccess as second factor")
+)
+
+// CheckU2FDevices checks the U2F devices and terminates the application by
+// calling Fatal on the passed logger if the U2F devices cannot be read.
+func CheckU2FDevices(logger log.Logger) {
+	checkU2FDevices(logger)
+}
+
+// GetCertFromTargetUrls gets a signed cert from the given target URLs.
+func GetCertFromTargetUrls(
+	signer crypto.Signer,
+	userName string,
+	password []byte,
+	targetUrls []string,
+	rootCAs *x509.CertPool,
+	skipu2f bool,
+	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, err error) {
+	return getCertFromTargetUrls(
+		signer, userName, password, targetUrls, rootCAs, skipu2f, logger)
+}
