@@ -71,26 +71,8 @@ func getUserNameAndHomeDir(logger log.Logger) (userName, homeDir string) {
 	return
 }
 
-func Usage() {
-	fmt.Fprintf(
-		os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
-	flag.PrintDefaults()
-}
-
-func main() {
-	flag.Usage = Usage
-	flag.Parse()
-	logger := cmdlogger.New()
-
-	if *checkDevices {
-		u2f.CheckU2FDevices(logger)
-		return
-	}
-
-	rootCAs := maybeGetRootCas(logger)
-	userName, homeDir := getUserNameAndHomeDir(logger)
-
-	// Do config file stuff
+func loadConfigFile(rootCAs *x509.CertPool, logger log.Logger) (
+	configContents config.AppConfigFile) {
 	configPath, _ := filepath.Split(*configFilename)
 
 	err := os.MkdirAll(configPath, 0755)
@@ -113,10 +95,32 @@ func main() {
 		}
 	}
 
-	config, err := config.LoadVerifyConfigFile(*configFilename)
+	configContents, err = config.LoadVerifyConfigFile(*configFilename)
 	if err != nil {
 		logger.Fatal(err)
 	}
+	return
+}
+
+func Usage() {
+	fmt.Fprintf(
+		os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
+	flag.PrintDefaults()
+}
+
+func main() {
+	flag.Usage = Usage
+	flag.Parse()
+	logger := cmdlogger.New()
+
+	if *checkDevices {
+		u2f.CheckU2FDevices(logger)
+		return
+	}
+
+	rootCAs := maybeGetRootCas(logger)
+	userName, homeDir := getUserNameAndHomeDir(logger)
+	config := loadConfigFile(rootCAs, logger)
 
 	// Adjust user name
 	if len(config.Base.Username) > 0 {
@@ -130,7 +134,7 @@ func main() {
 	//sshPath := homeDir + "/.ssh/"
 	privateKeyPath := filepath.Join(homeDir, DefaultKeysLocation, FilePrefix)
 	sshConfigPath, _ := filepath.Split(privateKeyPath)
-	err = os.MkdirAll(sshConfigPath, 0700)
+	err := os.MkdirAll(sshConfigPath, 0700)
 	if err != nil {
 		logger.Fatal(err)
 	}
