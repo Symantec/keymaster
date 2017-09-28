@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/cmdlogger"
 
 	"github.com/Symantec/keymaster/lib/client/config"
@@ -38,6 +39,23 @@ var (
 	checkDevices   = flag.Bool("checkDevices", false, "CheckU2F devices in your system")
 )
 
+func maybeGetRootCas(logger log.Logger) *x509.CertPool {
+	var rootCAs *x509.CertPool
+	if len(*rootCAFilename) > 1 {
+		caData, err := ioutil.ReadFile(*rootCAFilename)
+		if err != nil {
+			logger.Printf("Failed to read caFilename")
+			logger.Fatal(err)
+		}
+		rootCAs = x509.NewCertPool()
+		if !rootCAs.AppendCertsFromPEM(caData) {
+			logger.Fatal("cannot append file data")
+		}
+
+	}
+	return rootCAs
+}
+
 func Usage() {
 	fmt.Fprintf(
 		os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
@@ -54,20 +72,9 @@ func main() {
 		return
 	}
 
-	var rootCAs *x509.CertPool
-	if len(*rootCAFilename) > 1 {
-		caData, err := ioutil.ReadFile(*rootCAFilename)
-		if err != nil {
-			logger.Printf("Failed to read caFilename")
-			logger.Fatal(err)
-		}
-		rootCAs = x509.NewCertPool()
-		if !rootCAs.AppendCertsFromPEM(caData) {
-			logger.Fatal("cannot append file data")
-		}
+	rootCAs := maybeGetRootCas(logger)
 
-	}
-
+	// Get user name and home dir
 	usr, err := user.Current()
 	if err != nil {
 		logger.Printf("cannot get current user info")
@@ -80,6 +87,7 @@ func main() {
 		logger.Fatal(err)
 	}
 
+	// Do config file stuff
 	configPath, _ := filepath.Split(*configFilename)
 
 	err = os.MkdirAll(configPath, 0755)
@@ -107,6 +115,7 @@ func main() {
 		logger.Fatal(err)
 	}
 
+	// Adjust user name
 	if len(config.Base.Username) > 0 {
 		userName = config.Base.Username
 	}
