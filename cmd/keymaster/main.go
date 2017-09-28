@@ -56,6 +56,21 @@ func maybeGetRootCas(logger log.Logger) *x509.CertPool {
 	return rootCAs
 }
 
+func getUserNameAndHomeDir(logger log.Logger) (userName, homeDir string) {
+	usr, err := user.Current()
+	if err != nil {
+		logger.Printf("cannot get current user info")
+		logger.Fatal(err)
+	}
+	userName = usr.Username
+
+	homeDir, err = util.GetUserHomeDir(usr)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	return
+}
+
 func Usage() {
 	fmt.Fprintf(
 		os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
@@ -73,24 +88,12 @@ func main() {
 	}
 
 	rootCAs := maybeGetRootCas(logger)
-
-	// Get user name and home dir
-	usr, err := user.Current()
-	if err != nil {
-		logger.Printf("cannot get current user info")
-		logger.Fatal(err)
-	}
-	userName := usr.Username
-
-	homeDir, err := util.GetUserHomeDir(usr)
-	if err != nil {
-		logger.Fatal(err)
-	}
+	userName, homeDir := getUserNameAndHomeDir(logger)
 
 	// Do config file stuff
 	configPath, _ := filepath.Split(*configFilename)
 
-	err = os.MkdirAll(configPath, 0755)
+	err := os.MkdirAll(configPath, 0755)
 	if err != nil {
 		logger.Fatal(err)
 	}
