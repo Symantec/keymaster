@@ -18,12 +18,6 @@ var (
 	noVIPAccess = flag.Bool("noVIPAccess", false, "Don't use VIPAccess as second factor")
 )
 
-// CheckU2FDevices checks the U2F devices and terminates the application by
-// calling Fatal on the passed logger if the U2F devices cannot be read.
-func CheckU2FDevices(logger log.Logger) {
-	checkU2FDevices(logger)
-}
-
 // GetCertFromTargetUrls gets a signed cert from the given target URLs.
 func GetCertFromTargetUrls(
 	signer crypto.Signer,
