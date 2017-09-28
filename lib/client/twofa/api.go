@@ -1,6 +1,5 @@
-// Package u2f contains routines for doing 2 factor authentication and getting
-//a short lived certificate.
-package u2f
+// Package twofa contains routines for getting short lived certificate.
+package twofa
 
 import (
 	"crypto"
@@ -18,12 +17,6 @@ var (
 	// If set, Do not use VIPAccess as second factor.
 	noVIPAccess = flag.Bool("noVIPAccess", false, "Don't use VIPAccess as second factor")
 )
-
-// CheckU2FDevices checks the U2F devices and terminates the application by
-// calling Fatal on the passed logger if the U2F devices cannot be read.
-func CheckU2FDevices(logger log.Logger) {
-	checkU2FDevices(logger)
-}
 
 // GetCertFromTargetUrls gets a signed cert from the given target URLs.
 func GetCertFromTargetUrls(

@@ -8,7 +8,8 @@ import (
 	"github.com/Symantec/Dominator/lib/log/cmdlogger"
 
 	"github.com/Symantec/keymaster/lib/client/config"
-	"github.com/Symantec/keymaster/lib/client/u2f"
+	"github.com/Symantec/keymaster/lib/client/twofa"
+	"github.com/Symantec/keymaster/lib/client/twofa/u2f"
 	"github.com/Symantec/keymaster/lib/client/util"
 
 	"io/ioutil"
@@ -136,7 +137,7 @@ func main() {
 		logger.Fatal(err)
 	}
 
-	sshCert, x509Cert, err := u2f.GetCertFromTargetUrls(
+	sshCert, x509Cert, err := twofa.GetCertFromTargetUrls(
 		signer,
 		userName,
 		password,
@@ -189,7 +190,7 @@ func main() {
 	logger.Printf("Success")
 	if _, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
 		// TODO(rgooch): Parse certificate to get actual lifetime.
-		lifetime := fmt.Sprintf("%ds", uint64((*u2f.Duration).Seconds()))
+		lifetime := fmt.Sprintf("%ds", uint64((*twofa.Duration).Seconds()))
 		cmd := exec.Command("ssh-add", "-t", lifetime, privateKeyPath)
 		cmd.Run()
 	}
