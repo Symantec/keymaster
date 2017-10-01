@@ -117,12 +117,12 @@ var validPasswordConst = "password"
 var emptyStringConst = ""
 
 var loginFailValues = []loginTestVector{
-	loginTestVector{Username: &validUsernameConst, Password: &validUsernameConst}, //bad password
-	loginTestVector{Username: &validPasswordConst, Password: &validPasswordConst}, //bad username
-	loginTestVector{Username: &validUsernameConst, Password: &emptyStringConst},
-	loginTestVector{Username: &emptyStringConst, Password: &validPasswordConst},
-	loginTestVector{Username: nil, Password: &validPasswordConst},
-	loginTestVector{Username: &validUsernameConst, Password: nil},
+	{Username: &validUsernameConst, Password: &validUsernameConst}, //bad password
+	{Username: &validPasswordConst, Password: &validPasswordConst}, //bad username
+	{Username: &validUsernameConst, Password: &emptyStringConst},
+	{Username: &emptyStringConst, Password: &validPasswordConst},
+	{Username: nil, Password: &validPasswordConst},
+	{Username: &validUsernameConst, Password: nil},
 }
 
 func init() {
