@@ -1,10 +1,11 @@
 package certnotifier
 
 import (
-	"github.com/Symantec/Dominator/lib/log"
-	"github.com/Symantec/keymaster/proto/certmon"
 	"net/http"
 	"sync"
+
+	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/keymaster/proto/certmon"
 )
 
 type CertNotifier struct {

@@ -2,9 +2,10 @@ package monitord
 
 import (
 	"crypto/x509"
+	"io"
+
 	"github.com/Symantec/Dominator/lib/log"
 	"golang.org/x/crypto/ssh"
-	"io"
 )
 
 type Monitor struct {

@@ -4,20 +4,11 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
-	"github.com/Symantec/Dominator/lib/log"
-	// client side (interface with hardware)
-	"github.com/flynn/u2f/u2fhid"
-	// server side:
-	"crypto/x509"
 	"errors"
 	"fmt"
-	"github.com/Symantec/keymaster/lib/client/twofa/u2f"
-	"github.com/Symantec/keymaster/lib/client/twofa/vip"
-	"github.com/Symantec/keymaster/lib/client/util"
-	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
-	"golang.org/x/crypto/ssh"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
@@ -25,6 +16,14 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/keymaster/lib/client/twofa/u2f"
+	"github.com/Symantec/keymaster/lib/client/twofa/vip"
+	"github.com/Symantec/keymaster/lib/client/util"
+	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
+	"github.com/flynn/u2f/u2fhid" // client side (interface with hardware)
+	"golang.org/x/crypto/ssh"
 )
 
 const clientDataAuthenticationTypeValue = "navigator.id.getAssertion"

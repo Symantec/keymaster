@@ -6,14 +6,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"github.com/Symantec/Dominator/lib/log"
-	"github.com/flynn/u2f/u2fhid"
-	"github.com/flynn/u2f/u2ftoken"
-	"github.com/tstranex/u2f"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"time"
+
+	"github.com/Symantec/Dominator/lib/log"
+	"github.com/flynn/u2f/u2fhid"
+	"github.com/flynn/u2f/u2ftoken"
+	"github.com/tstranex/u2f"
 )
 
 const clientDataAuthenticationTypeValue = "navigator.id.getAssertion"

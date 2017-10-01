@@ -3,9 +3,10 @@ package main
 import (
 	"bytes"
 	"crypto/x509"
-	"golang.org/x/crypto/ssh"
 	"os"
 	"os/exec"
+
+	"golang.org/x/crypto/ssh"
 )
 
 func processRawCert(command string, cert []byte) error {

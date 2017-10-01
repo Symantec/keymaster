@@ -4,12 +4,13 @@ import (
 	"bufio"
 	"encoding/binary"
 	"errors"
-	"github.com/Symantec/Dominator/lib/log"
-	"github.com/Symantec/keymaster/proto/certmon"
 	"io"
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/keymaster/proto/certmon"
 )
 
 const (

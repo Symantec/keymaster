@@ -3,8 +3,9 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"github.com/Symantec/Dominator/lib/html"
 	"net/http"
+
+	"github.com/Symantec/Dominator/lib/html"
 )
 
 type adminDashboardType struct {

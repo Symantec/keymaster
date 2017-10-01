@@ -2,12 +2,13 @@ package main
 
 import (
 	"flag"
+	"text/template"
+
 	"github.com/Symantec/Dominator/lib/log/serverlogger"
 	"github.com/Symantec/keymaster/certmon/httpd"
 	"github.com/Symantec/keymaster/certmon/monitord"
 	"github.com/Symantec/keymaster/lib/constants"
 	"github.com/Symantec/tricorder/go/tricorder"
-	"text/template"
 )
 
 var (

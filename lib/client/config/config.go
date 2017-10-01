@@ -4,11 +4,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"io/ioutil"
+	"os"
+
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/keymaster/lib/client/util"
 	"gopkg.in/yaml.v2"
-	"io/ioutil"
-	"os"
 )
 
 func loadVerifyConfigFile(configFilename string) (AppConfigFile, error) {

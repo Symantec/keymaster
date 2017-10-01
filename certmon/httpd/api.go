@@ -2,10 +2,11 @@ package httpd
 
 import (
 	"fmt"
-	"github.com/Symantec/keymaster/certmon/monitord"
 	"io"
 	"net"
 	"net/http"
+
+	"github.com/Symantec/keymaster/certmon/monitord"
 )
 
 type HtmlWriter interface {

@@ -2,8 +2,9 @@
 package u2f
 
 import (
-	"github.com/Symantec/Dominator/lib/log"
 	"net/http"
+
+	"github.com/Symantec/Dominator/lib/log"
 )
 
 // CheckU2FDevices checks the U2F devices and terminates the application by

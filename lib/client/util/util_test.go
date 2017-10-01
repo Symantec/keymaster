@@ -2,12 +2,13 @@ package util
 
 import (
 	"fmt"
-	"github.com/Symantec/Dominator/lib/log/testlogger"
-	"github.com/Symantec/keymaster/lib/certgen"
 	"io/ioutil"
 	"os"
 	"os/user"
 	"testing"
+
+	"github.com/Symantec/Dominator/lib/log/testlogger"
+	"github.com/Symantec/keymaster/lib/certgen"
 )
 
 func TestGenKeyPairSuccess(t *testing.T) {

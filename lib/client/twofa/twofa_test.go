@@ -5,11 +5,12 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"testing"
+
 	"github.com/Symantec/Dominator/lib/log/testlogger"
 	"github.com/Symantec/keymaster/lib/client/util"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
-	"net/http"
-	"testing"
 )
 
 const rootCAPem = `-----BEGIN CERTIFICATE-----

@@ -2,8 +2,9 @@
 package vip
 
 import (
-	"github.com/Symantec/Dominator/lib/log"
 	"net/http"
+
+	"github.com/Symantec/Dominator/lib/log"
 )
 
 // DoVIPAuthenticate performs two factor authentication with Symantec VIP

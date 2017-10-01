@@ -5,20 +5,19 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/Symantec/Dominator/lib/log"
-	"github.com/Symantec/Dominator/lib/log/cmdlogger"
-
-	"github.com/Symantec/keymaster/lib/client/config"
-	"github.com/Symantec/keymaster/lib/client/twofa"
-	"github.com/Symantec/keymaster/lib/client/twofa/u2f"
-	"github.com/Symantec/keymaster/lib/client/util"
-
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strings"
+
+	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/Dominator/lib/log/cmdlogger"
+	"github.com/Symantec/keymaster/lib/client/config"
+	"github.com/Symantec/keymaster/lib/client/twofa"
+	"github.com/Symantec/keymaster/lib/client/twofa/u2f"
+	"github.com/Symantec/keymaster/lib/client/util"
 )
 
 const DefaultKeysLocation = "/.ssh/"

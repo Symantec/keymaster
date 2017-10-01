@@ -9,14 +9,15 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"github.com/Symantec/Dominator/lib/log"
-	"github.com/howeyc/gopass"
-	"golang.org/x/crypto/ssh"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
 	"time"
+
+	"github.com/Symantec/Dominator/lib/log"
+	"github.com/howeyc/gopass"
+	"golang.org/x/crypto/ssh"
 )
 
 const rsaKeySize = 2048

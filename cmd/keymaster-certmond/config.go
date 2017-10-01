@@ -1,10 +1,11 @@
 package main
 
 import (
-	"github.com/Symantec/keymaster/lib/constants"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"text/template"
+
+	"github.com/Symantec/keymaster/lib/constants"
+	"gopkg.in/yaml.v2"
 )
 
 func loadConfig(filename string) (*configurationType, error) {
