@@ -6,9 +6,10 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
-	"github.com/Symantec/Dominator/lib/log"
 	"net/http"
 	"os/user"
+
+	"github.com/Symantec/Dominator/lib/log"
 )
 
 // GetUserCreds prompts the user for thier password and returns it.

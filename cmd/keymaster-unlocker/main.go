@@ -4,13 +4,14 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
-	"github.com/Symantec/Dominator/lib/log/cmdlogger"
-	"github.com/howeyc/gopass"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
+
+	"github.com/Symantec/Dominator/lib/log/cmdlogger"
+	"github.com/howeyc/gopass"
 )
 
 var (

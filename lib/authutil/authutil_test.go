@@ -3,12 +3,13 @@ package authutil
 import (
 	"crypto/tls"
 	"crypto/x509"
-	ldap "github.com/vjeantet/ldapserver"
 	"log"
 	"net"
 	"net/url"
 	"testing"
 	"time"
+
+	ldap "github.com/vjeantet/ldapserver"
 )
 
 /* To generate certs, I used all data here should expire around Jan 1 2037:

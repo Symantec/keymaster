@@ -6,12 +6,12 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
-	"golang.org/x/crypto/ssh"
-	//"strings"
 	"os"
 	"os/user"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
 /*

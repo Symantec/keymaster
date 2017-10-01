@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"github.com/Symantec/Dominator/lib/log"
-	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -13,6 +11,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 )
 
 func doVIPAuthenticate(

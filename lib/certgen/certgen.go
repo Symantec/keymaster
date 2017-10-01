@@ -15,13 +15,12 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
-	"golang.org/x/crypto/ssh"
+	"fmt"
 	"math/big"
-	//"os"
 	"os/exec"
 	"time"
 
-	"fmt"
+	"golang.org/x/crypto/ssh"
 )
 
 // GetUserPubKeyFromSSSD user authorized keys content based on the running sssd configuration

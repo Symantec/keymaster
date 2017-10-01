@@ -10,13 +10,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"github.com/Symantec/keymaster/lib/vip"
-	"github.com/howeyc/gopass"
-	"golang.org/x/crypto/openpgp"
-	"golang.org/x/crypto/openpgp/armor"
-	"golang.org/x/crypto/ssh"
-	"golang.org/x/oauth2"
-	"gopkg.in/yaml.v2"
 	"html/template"
 	"io/ioutil"
 	"math/big"
@@ -24,6 +17,14 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/Symantec/keymaster/lib/vip"
+	"github.com/howeyc/gopass"
+	"golang.org/x/crypto/openpgp"
+	"golang.org/x/crypto/openpgp/armor"
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/oauth2"
+	"gopkg.in/yaml.v2"
 )
 
 type baseConfig struct {

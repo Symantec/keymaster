@@ -5,12 +5,13 @@ import (
 	"database/sql"
 	"encoding/gob"
 	"errors"
-	_ "github.com/lib/pq"
-	_ "github.com/mattn/go-sqlite3"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	_ "github.com/lib/pq"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 const userProfilePrefix = "profile_"

@@ -3,12 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"golang.org/x/net/context"
-	//"golang.org/x/oauth2"
 	"io/ioutil"
 	"net/http"
 	"strings"
 	"time"
+
+	"golang.org/x/net/context"
 )
 
 const maxAgeSecondsRedirCookie = 120

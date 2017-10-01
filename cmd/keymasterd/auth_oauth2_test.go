@@ -3,14 +3,15 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/Symantec/Dominator/lib/log/debuglogger"
-	"golang.org/x/net/context"
-	"golang.org/x/oauth2"
 	stdlog "log"
 	"net/http"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/Symantec/Dominator/lib/log/debuglogger"
+	"golang.org/x/net/context"
+	"golang.org/x/oauth2"
 )
 
 func handler(w http.ResponseWriter, r *http.Request) {

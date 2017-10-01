@@ -5,8 +5,9 @@ import (
 	"crypto"
 	"crypto/x509"
 	"flag"
-	"github.com/Symantec/Dominator/lib/log"
 	"time"
+
+	"github.com/Symantec/Dominator/lib/log"
 )
 
 var (

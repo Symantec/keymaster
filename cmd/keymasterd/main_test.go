@@ -4,13 +4,9 @@ import (
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
-	//"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Symantec/Dominator/lib/log/debuglogger"
-	"github.com/Symantec/keymaster/keymasterd/certnotifier"
-	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"io"
 	"io/ioutil"
 	stdlog "log"
@@ -23,6 +19,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Symantec/Dominator/lib/log/debuglogger"
+	"github.com/Symantec/keymaster/keymasterd/certnotifier"
+	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 )
 
 // copied from lib/certgen/cergen_test.go

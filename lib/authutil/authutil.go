@@ -4,14 +4,15 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
-	"github.com/foomo/htpasswd"
-	"golang.org/x/crypto/bcrypt"
-	"gopkg.in/ldap.v2"
 	"log"
 	"net"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/foomo/htpasswd"
+	"golang.org/x/crypto/bcrypt"
+	"gopkg.in/ldap.v2"
 )
 
 func CheckHtpasswdUserPassword(username string, password string, htpasswdBytes []byte) (bool, error) {

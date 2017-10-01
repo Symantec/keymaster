@@ -2,6 +2,7 @@ package config
 
 import (
 	"crypto/x509"
+
 	"github.com/Symantec/Dominator/lib/log"
 )
 

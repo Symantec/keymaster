@@ -7,15 +7,16 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/Symantec/Dominator/lib/log"
-	"github.com/Symantec/Dominator/lib/log/prefixlogger"
-	"github.com/Symantec/keymaster/proto/certmon"
-	"golang.org/x/crypto/ssh"
 	"io"
 	"net"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/Dominator/lib/log/prefixlogger"
+	"github.com/Symantec/keymaster/proto/certmon"
+	"golang.org/x/crypto/ssh"
 )
 
 const bufferLength = 16
