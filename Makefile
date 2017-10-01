@@ -49,3 +49,9 @@ tar:	${BINARY}-${VERSION}.tar.gz
 
 test:	init-config-host
 	go test -v ./...
+
+format:
+	gofmt -s -w .
+
+format-imports:
+	goimports -w .
