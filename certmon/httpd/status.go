@@ -39,4 +39,5 @@ func (s state) statusHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func (s state) writeDashboard(writer io.Writer) {
+	fmt.Fprintln(writer, `<a href="showActivity">Show activity</a><br>`)
 }

@@ -2,9 +2,11 @@ package main
 
 import (
 	"flag"
+	"path"
 	"text/template"
 
 	"github.com/Symantec/Dominator/lib/log/serverlogger"
+	"github.com/Symantec/keymaster/certmon/eventrecorder"
 	"github.com/Symantec/keymaster/certmon/httpd"
 	"github.com/Symantec/keymaster/certmon/monitord"
 	"github.com/Symantec/keymaster/lib/constants"
@@ -16,6 +18,8 @@ var (
 		constants.DefaultKeymasterCertmonConfigFile, "Configuration file")
 	portNum = flag.Uint("portNum", constants.DefaultCertmonPortNumber,
 		"Port number to allocate and listed on for HTTP/RPC")
+	stateDir = flag.String("stateDir",
+		constants.DefaultKeymasterCertmonStateDir, "Saved state directory")
 )
 
 type configurationType struct {
@@ -41,6 +45,11 @@ func main() {
 	if err != nil {
 		logger.Fatalf("Cannot load configuration: %s\n", err)
 	}
+	recorder, err := eventrecorder.New(path.Join(*stateDir, "events.gob"),
+		logger)
+	if err != nil {
+		logger.Fatalf("Cannot start event recorder: %s\n", err)
+	}
 	monitor, err := monitord.New(configuration.KeymasterServerHostname,
 		configuration.KeymasterServerPortNum, logger)
 	if err != nil {
@@ -48,16 +57,18 @@ func main() {
 	}
 	httpd.AddHtmlWriter(monitor)
 	httpd.AddHtmlWriter(logger)
-	if err = httpd.StartServer(*portNum, monitor, true); err != nil {
+	if err = httpd.StartServer(*portNum, recorder, monitor, true); err != nil {
 		logger.Fatalf("Unable to create http server: %s\n", err)
 	}
 	for {
 		select {
 		case cert := <-monitor.SshCertChannel:
+			recorder.SshCertChannel <- cert
 			configuration.SshCertParametersCommand.processSshCert(cert)
 		case cert := <-monitor.SshRawCertChannel:
 			processRawCert(configuration.SshCertRawCommand, cert)
 		case cert := <-monitor.X509CertChannel:
+			recorder.X509CertChannel <- cert
 			configuration.X509CertParametersCommand.processX509Cert(cert)
 		case cert := <-monitor.X509RawCertChannel:
 			processRawCert(configuration.X509CertRawCommand, cert)

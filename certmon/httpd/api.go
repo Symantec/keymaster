@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 
+	"github.com/Symantec/keymaster/certmon/eventrecorder"
 	"github.com/Symantec/keymaster/certmon/monitord"
 )
 
@@ -16,16 +17,19 @@ type HtmlWriter interface {
 var htmlWriters []HtmlWriter
 
 type state struct {
-	monitor *monitord.Monitor
+	eventRecorder *eventrecorder.EventRecorder
+	monitor       *monitord.Monitor
 }
 
-func StartServer(portNum uint, monitor *monitord.Monitor, daemon bool) error {
+func StartServer(portNum uint, eventRecorder *eventrecorder.EventRecorder,
+	monitor *monitord.Monitor, daemon bool) error {
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", portNum))
 	if err != nil {
 		return err
 	}
-	myState := state{monitor}
+	myState := state{eventRecorder, monitor}
 	http.HandleFunc("/", myState.statusHandler)
+	http.HandleFunc("/showActivity", myState.showActivityHandler)
 	if daemon {
 		go http.Serve(listener, nil)
 	} else {
