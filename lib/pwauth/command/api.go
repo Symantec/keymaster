@@ -14,6 +14,9 @@ type PasswordAuthenticator struct {
 // user is command and args may contain optional arguments to pass after the
 // username. Log messages are written to logger. A new *PasswordAuthenticator is
 // returned if the command exists, else an error is returned.
+// The command should exit with 0 for a successful authentication, 1 if the
+// authentication is not successful (bad username/password) and any other value
+// if an error occurs.
 func New(command string, args []string, logger log.Logger) (
 	*PasswordAuthenticator, error) {
 	return newAuthenticator(command, args, logger)
