@@ -30,6 +30,7 @@ import (
 	"github.com/Symantec/keymaster/keymasterd/certnotifier"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
+	"github.com/Symantec/keymaster/lib/pwauth"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"github.com/Symantec/keymaster/proto/certmon"
 	"github.com/Symantec/tricorder/go/healthserver"
@@ -92,11 +93,12 @@ type RuntimeState struct {
 	SignerIsReady       chan bool
 	Mutex               sync.Mutex
 	//userProfile         map[string]userProfile
-	pendingOauth2  map[string]pendingAuth2Request
-	storageRWMutex sync.RWMutex
-	db             *sql.DB
-	dbType         string
-	htmlTemplate   *template.Template
+	pendingOauth2   map[string]pendingAuth2Request
+	storageRWMutex  sync.RWMutex
+	db              *sql.DB
+	dbType          string
+	htmlTemplate    *template.Template
+	passwordChecker pwauth.PasswordAuthenticator
 }
 
 const redirectPath = "/auth/oauth2/callback"
@@ -244,7 +246,7 @@ func convertToBindDN(username string, bind_pattern string) string {
 	return fmt.Sprintf(bind_pattern, username)
 }
 
-func checkUserPassword(username string, password string, config AppConfigFile, r *http.Request) (bool, error) {
+func checkUserPassword(username string, password string, config AppConfigFile, passwordChecker pwauth.PasswordAuthenticator, r *http.Request) (bool, error) {
 	clientType := getClientType(r)
 
 	const timeoutSecs = 3
@@ -284,6 +286,15 @@ func checkUserPassword(username string, password string, config AppConfigFile, r
 			return false, err
 		}
 		metricLogAuthOperation(clientType, "password", valid)
+		return valid, nil
+	}
+	if passwordChecker != nil {
+		logger.Debugf(3, "checking auth with cmd")
+		valid, err := passwordChecker.PasswordAuthenticate(username, []byte(password))
+		if err != nil {
+			return false, err
+		}
+		logger.Debugf(3, "cmd output = %d", valid)
 		return valid, nil
 	}
 	metricLogAuthOperation(clientType, "password", false)
@@ -488,7 +499,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		state.Mutex.Lock()
 		config := state.Config
 		state.Mutex.Unlock()
-		valid, err := checkUserPassword(user, pass, config, r)
+		valid, err := checkUserPassword(user, pass, config, state.passwordChecker, r)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			return "", AuthTypeNone, err
@@ -1033,7 +1044,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	valid, err := checkUserPassword(username, password, state.Config, r)
+	valid, err := checkUserPassword(username, password, state.Config, state.passwordChecker, r)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
