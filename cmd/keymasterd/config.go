@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Symantec/keymaster/lib/pwauth/command"
 	"github.com/Symantec/keymaster/lib/vip"
 	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/openpgp"
@@ -35,6 +36,7 @@ type baseConfig struct {
 	//RequiredAuthForCert         string   `yaml:"required_auth_for_cert"`
 	SSHCAFilename               string   `yaml:"ssh_ca_filename"`
 	HtpasswdFilename            string   `yaml:"htpasswd_filename"`
+	ExternalAuthCmd             string   `yaml:"external_auth_command"`
 	ClientCAFilename            string   `yaml:"client_ca_filename"`
 	HostIdentity                string   `yaml:"host_identity"`
 	KerberosRealm               string   `yaml:"kerberos_realm"`
@@ -256,6 +258,14 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	err = runtimeState.loadTemplates()
 	if err != nil {
 		return runtimeState, err
+	}
+
+	// ExtAuthCommand
+	if len(runtimeState.Config.Base.ExternalAuthCmd) > 0 {
+		runtimeState.passwordChecker, err = command.New(runtimeState.Config.Base.ExternalAuthCmd, nil, logger)
+		if err != nil {
+			return runtimeState, err
+		}
 	}
 
 	logger.Debugf(1, "End of config initialization: %+v", runtimeState)
