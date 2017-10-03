@@ -6,4 +6,5 @@ const (
 
 	DefaultCertmonPortNumber          = 6921
 	DefaultKeymasterCertmonConfigFile = "/etc/keymaster-certmond/config.yml"
+	DefaultKeymasterCertmonStateDir   = "/var/lib/keymaster-certmond"
 )

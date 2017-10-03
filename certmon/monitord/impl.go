@@ -220,7 +220,6 @@ func (m *Monitor) notify(data receiveType, logger log.Logger) {
 		// 	}
 		// }
 	case certmon.CertTypeX509:
-		logger.Println("Received X509 certificate")
 		select { // Non-blocking notification.
 		case m.x509RawCertChannel <- data.certData:
 		default:
@@ -228,6 +227,8 @@ func (m *Monitor) notify(data receiveType, logger log.Logger) {
 		if x509Cert, err := x509.ParseCertificate(data.certData); err != nil {
 			logger.Println(err)
 		} else {
+			logger.Printf("Received X509 certificate for: %s\n",
+				x509Cert.Subject.CommonName)
 			select { // Non-blocking notification.
 			case m.x509CertChannel <- x509Cert:
 			default:
