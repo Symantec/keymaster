@@ -54,9 +54,13 @@ func loadEvents(filename string) (map[string]*eventsListType, error) {
 		return nil, err
 	}
 	eventsMap := make(map[string]*eventsListType, len(events))
+	minCreateTime := uint64(time.Now().Add(-durationMonth).Unix())
 	for username, eventsSlice := range events {
 		eventsList := &eventsListType{}
 		for _, savedEvent := range eventsSlice {
+			if savedEvent.CreateTime < minCreateTime {
+				continue
+			}
 			event := &eventType{
 				EventType: savedEvent,
 				older:     eventsList.newest,
