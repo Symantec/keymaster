@@ -76,7 +76,7 @@ func writeUser(writer io.Writer, username string,
 	maxLifetime := time.Duration(-1)
 	lifetimes := make([]int, 0, len(events))
 	for _, event := range events {
-		age := time.Unix(int64(event.CreateTime), 0).Sub(now)
+		age := now.Sub(time.Unix(int64(event.CreateTime), 0))
 		lifetime := time.Duration(event.LifetimeSeconds) * time.Second
 		lifetimes = append(lifetimes, int(event.LifetimeSeconds))
 		if age <= durationDay {
