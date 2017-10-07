@@ -19,7 +19,13 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-const bufferLength = 16
+const (
+	bufferLength = 16
+)
+
+var (
+	ErrorKeymasterDaemonNotReady = errors.New("keymasterd not ready")
+)
 
 func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 	logger log.Logger) (*Monitor, error) {
@@ -82,10 +88,18 @@ func (m *Monitor) updateNotifierList(logger log.Logger) {
 func (m *Monitor) startMonitoring(ip string, closeChannel <-chan struct{},
 	logger log.Logger) {
 	addr := fmt.Sprintf("%s:%d", ip, m.keymasterServerPortNum)
+	reportedNotReady := false
 	for ; ; time.Sleep(time.Second) {
 		conn, err := m.dialAndConnect(addr)
 		if err != nil {
-			if !strings.Contains(err.Error(), "connection refused") {
+			if strings.Contains(err.Error(), "connection refused") {
+				reportedNotReady = false
+			} else if err == ErrorKeymasterDaemonNotReady {
+				if !reportedNotReady {
+					logger.Println(err)
+					reportedNotReady = true
+				}
+			} else {
 				logger.Println(err)
 			}
 			time.Sleep(time.Second * 4)
@@ -134,7 +148,7 @@ func (m *Monitor) connect(rawConn net.Conn) (net.Conn, error) {
 		return nil, err
 	}
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, errors.New("keymasterd not ready")
+		return nil, ErrorKeymasterDaemonNotReady
 	}
 	if resp.Status != eventmon.ConnectString {
 		return nil, errors.New("unexpected HTTP response: " + resp.Status)
