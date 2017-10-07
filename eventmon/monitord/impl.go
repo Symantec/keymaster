@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,16 +15,11 @@ import (
 
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/prefixlogger"
-	"github.com/Symantec/keymaster/proto/certmon"
+	"github.com/Symantec/keymaster/proto/eventmon"
 	"golang.org/x/crypto/ssh"
 )
 
 const bufferLength = 16
-
-type receiveType struct {
-	certType uint32
-	certData []byte
-}
 
 func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 	logger log.Logger) (*Monitor, error) {
@@ -131,7 +126,7 @@ func (m *Monitor) connect(rawConn net.Conn) (net.Conn, error) {
 	if err := conn.Handshake(); err != nil {
 		return nil, err
 	}
-	io.WriteString(conn, "CONNECT "+certmon.HttpPath+" HTTP/1.0\n\n")
+	io.WriteString(conn, "CONNECT "+eventmon.HttpPath+" HTTP/1.0\n\n")
 	// Require successful HTTP response before enabling communications.
 	resp, err := http.ReadResponse(bufio.NewReader(conn),
 		&http.Request{Method: "CONNECT"})
@@ -139,9 +134,9 @@ func (m *Monitor) connect(rawConn net.Conn) (net.Conn, error) {
 		return nil, err
 	}
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, errors.New("keymaster not ready")
+		return nil, errors.New("keymasterd not ready")
 	}
-	if resp.Status != certmon.ConnectString {
+	if resp.Status != eventmon.ConnectString {
 		return nil, errors.New("unexpected HTTP response: " + resp.Status)
 	}
 	return conn, nil
@@ -164,7 +159,7 @@ func (m *Monitor) monitor(conn net.Conn, closeChannel <-chan struct{},
 	}()
 	reader := bufio.NewReader(conn)
 	for {
-		if receiveData, err := receive(reader); err != nil {
+		if receiveData, err := receiveV0(reader); err != nil {
 			if closed {
 				return nil
 			}
@@ -180,38 +175,27 @@ func (m *Monitor) monitor(conn net.Conn, closeChannel <-chan struct{},
 	return nil
 }
 
-func receive(reader io.Reader) (receiveType, error) {
-	var rd receiveType
-	if err := binary.Read(reader, binary.BigEndian, &rd.certType); err != nil {
-		return rd, err
+func receiveV0(reader io.Reader) (eventmon.EventV0, error) {
+	var event eventmon.EventV0
+	decoder := json.NewDecoder(reader)
+	if err := decoder.Decode(&event); err != nil {
+		return eventmon.EventV0{}, err
 	}
-	var certLength uint64
-	if err := binary.Read(reader, binary.BigEndian, &certLength); err != nil {
-		return rd, err
-	}
-	rd.certData = make([]byte, certLength)
-	if nRead, err := reader.Read(rd.certData); err != nil {
-		return rd, err
-	} else {
-		if nRead != int(certLength) {
-			return rd, errors.New("short read")
-		}
-	}
-	return rd, nil
+	return event, nil
 }
 
 func (m *Monitor) writeHtml(writer io.Writer) {
 }
 
-func (m *Monitor) notify(data receiveType, logger log.Logger) {
-	switch data.certType {
-	case certmon.CertTypeSSH:
+func (m *Monitor) notify(event eventmon.EventV0, logger log.Logger) {
+	switch event.Type {
+	case eventmon.EventTypeSSHCert:
 		logger.Println("Received SSH certificate")
 		select { // Non-blocking notification.
-		case m.sshRawCertChannel <- data.certData:
+		case m.sshRawCertChannel <- event.CertData:
 		default:
 		}
-		// if sshCert, err := ssh.ParseCertificate(data.certData); err != nil {
+		// if sshCert, err := ssh.ParseCertificate(event.CertData); err != nil {
 		// 	logger.Println(err)
 		// } else {
 		// 	select { // Non-blocking notification.
@@ -219,12 +203,12 @@ func (m *Monitor) notify(data receiveType, logger log.Logger) {
 		// 	default:
 		// 	}
 		// }
-	case certmon.CertTypeX509:
+	case eventmon.EventTypeX509Cert:
 		select { // Non-blocking notification.
-		case m.x509RawCertChannel <- data.certData:
+		case m.x509RawCertChannel <- event.CertData:
 		default:
 		}
-		if x509Cert, err := x509.ParseCertificate(data.certData); err != nil {
+		if x509Cert, err := x509.ParseCertificate(event.CertData); err != nil {
 			logger.Println(err)
 		} else {
 			logger.Printf("Received X509 certificate for: %s\n",
@@ -235,6 +219,6 @@ func (m *Monitor) notify(data receiveType, logger log.Logger) {
 			}
 		}
 	default:
-		logger.Printf("Invalid cert type: %d\n", data.certType)
+		logger.Printf("Invalid event type: %s\n", event.Type)
 	}
 }

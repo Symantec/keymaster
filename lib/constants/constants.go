@@ -4,7 +4,7 @@ const (
 	DefaultKeymasterAdminPortNumber   = 6920
 	DefaultKeymasterServicePortNumber = 443
 
-	DefaultCertmonPortNumber          = 6921
-	DefaultKeymasterCertmonConfigFile = "/etc/keymaster-certmond/config.yml"
-	DefaultKeymasterCertmonStateDir   = "/var/lib/keymaster-certmond"
+	DefaultEventmonPortNumber          = 6921
+	DefaultKeymasterEventmonConfigFile = "/etc/keymaster-eventmond/config.yml"
+	DefaultKeymasterEventmonStateDir   = "/var/lib/keymaster-eventmond"
 )
