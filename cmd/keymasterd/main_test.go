@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/Symantec/Dominator/lib/log/debuglogger"
-	"github.com/Symantec/keymaster/keymasterd/certnotifier"
+	"github.com/Symantec/keymaster/keymasterd/eventnotifier"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 )
 
@@ -128,7 +128,7 @@ var loginFailValues = []loginTestVector{
 func init() {
 	slogger := stdlog.New(os.Stderr, "", stdlog.LstdFlags)
 	logger = debuglogger.New(slogger)
-	certNotifier = certnotifier.New(logger)
+	eventNotifier = eventnotifier.New(logger)
 }
 
 func createKeyBodyRequest(method, urlStr, filedata, durationString string) (*http.Request, error) {
