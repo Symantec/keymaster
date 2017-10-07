@@ -1,37 +1,37 @@
 #! /bin/bash --posix
 
 ### BEGIN INIT INFO
-# Provides:		keymaster-certmond
+# Provides:		keymaster-eventmond
 # Required-Start:	$local_fs $network $syslog
 # Required-Stop:	$local_fs $network $syslog
 # Default-Start:	2 3 4 5
 # Default-Stop:		0 1 6
-# Short-Description:	Keymaster certificate monitor server
+# Short-Description:	Keymaster event monitor server
 ### END INIT INFO
 
-# /etc/init.d/keymaster-certmond: start and stop the Keymaster cert monitor
+# /etc/init.d/keymaster-eventmond: start and stop the Keymaster event monitor
 
 . /lib/lsb/init-functions
 
 umask 022
 
-readonly default_log_dir='/var/log/keymaster-certmond'
-readonly default_config_file='/etc/keymaster-certmond/config.yml'
-readonly default_state_dir='/var/lib/keymaster-certmond'
+readonly default_log_dir='/var/log/keymaster-eventmond'
+readonly default_config_file='/etc/keymaster-eventmond/config.yml'
+readonly default_state_dir='/var/lib/keymaster-eventmond'
 
 CONFIG_FILE="$default_config_file"
-DAEMON='/usr/local/sbin/keymaster-certmond'
+DAEMON='/usr/local/sbin/keymaster-eventmond'
 LOG_DIR="$default_log_dir"
 LOG_QUOTA=
 LOGBUF_LINES=
-LOOP_PIDFILE='/var/run/keymaster-certmond.loop.pid'
-PIDFILE='/var/run/keymaster-certmond.pid'
+LOOP_PIDFILE='/var/run/keymaster-eventmond.loop.pid'
+PIDFILE='/var/run/keymaster-eventmond.pid'
 STATE_DIR="$default_state_dir"
-USERNAME='certmon'
+USERNAME='eventmon'
 
 PROG_ARGS=
 
-[ -f /etc/default/keymaster-certmond ] && . /etc/default/keymaster-certmond
+[ -f /etc/default/keymaster-eventmond ] && . /etc/default/keymaster-eventmond
 
 test -x "$DAEMON" || exit 0
 
@@ -79,11 +79,11 @@ start_loop ()
 
 case "$1" in
   start)
-	log_daemon_msg "Starting keymaster-certmond daemon" "keymaster-certmond" || true
+	log_daemon_msg "Starting keymaster-eventmond daemon" "keymaster-eventmond" || true
 	(start_loop < /dev/null &> /dev/null &)
 	;;
   stop)
-	log_daemon_msg "Stopping keymaster-certmond daemon" "keymaster-certmond" || true
+	log_daemon_msg "Stopping keymaster-eventmond daemon" "keymaster-eventmond" || true
 	[ -s "$LOOP_PIDFILE" ] && kill -KILL $(cat "$LOOP_PIDFILE")
 	[ -s "$PIDFILE" ]      && kill -TERM $(cat "$PIDFILE")
 	rm -f "$LOOP_PIDFILE" "$PIDFILE"
@@ -100,7 +100,7 @@ case "$1" in
 	;;
 
   *)
-	log_action_msg "Usage: /etc/init.d/keymaster-certmond {start|stop|reload|force-reload|restart}" || true
+	log_action_msg "Usage: /etc/init.d/keymaster-eventmond {start|stop|reload|force-reload|restart}" || true
 	exit 1
 esac
 

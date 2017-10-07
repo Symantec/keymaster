@@ -10,7 +10,7 @@ import (
 
 	"github.com/Symantec/Dominator/lib/format"
 	"github.com/Symantec/Dominator/lib/html"
-	"github.com/Symantec/keymaster/certmon/eventrecorder"
+	"github.com/Symantec/keymaster/eventmon/eventrecorder"
 )
 
 const (
@@ -22,7 +22,7 @@ const (
 func (s state) showActivityHandler(w http.ResponseWriter, req *http.Request) {
 	writer := bufio.NewWriter(w)
 	defer writer.Flush()
-	fmt.Fprintln(writer, "<title>keymaster-certmond activity report</title>")
+	fmt.Fprintln(writer, "<title>keymaster-eventmond activity report</title>")
 	fmt.Fprintln(writer, `<style>
                           table, th, td {
                           border-collapse: collapse;
@@ -30,7 +30,7 @@ func (s state) showActivityHandler(w http.ResponseWriter, req *http.Request) {
                           </style>`)
 	fmt.Fprintln(writer, "<body>")
 	fmt.Fprintln(writer, "<center>")
-	fmt.Fprintln(writer, "<h1>keymaster-certmond activity report</h1>")
+	fmt.Fprintln(writer, "<h1>keymaster-eventmond activity report</h1>")
 	fmt.Fprintln(writer, "</center>")
 	s.writeActivity(writer)
 	fmt.Fprintln(writer, "<hr>")

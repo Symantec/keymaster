@@ -27,12 +27,12 @@ import (
 
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/serverlogger"
-	"github.com/Symantec/keymaster/keymasterd/certnotifier"
+	"github.com/Symantec/keymaster/keymasterd/eventnotifier"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
 	"github.com/Symantec/keymaster/lib/pwauth"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
-	"github.com/Symantec/keymaster/proto/certmon"
+	"github.com/Symantec/keymaster/proto/eventmon"
 	"github.com/Symantec/tricorder/go/healthserver"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/units"
@@ -150,7 +150,7 @@ var (
 
 	logger log.DebugLogger
 	// TODO(rgooch): Pass this in rather than use a global variable.
-	certNotifier *certnotifier.CertNotifier
+	eventNotifier *eventnotifier.EventNotifier
 )
 
 func metricLogAuthOperation(clientType string, authType string, success bool) {
@@ -741,7 +741,7 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 		return
 
 	}
-	certNotifier.PublishSSH(certBytes)
+	eventNotifier.PublishSSH(certBytes)
 	metricLogCertDuration("ssh", "granted", float64(duration.Seconds()))
 
 	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
@@ -797,7 +797,7 @@ func (state *RuntimeState) postAuthX509CertHandler(
 			logger.Printf("Cannot Generate x509cert")
 			return
 		}
-		certNotifier.PublishX509(derCert)
+		eventNotifier.PublishX509(derCert)
 		cert = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derCert}))
 
 	default:
@@ -1804,7 +1804,7 @@ func main() {
 	}
 
 	// TODO(rgooch): Pass this in rather than use a global variable.
-	certNotifier = certnotifier.New(logger)
+	eventNotifier = eventnotifier.New(logger)
 	runtimeState, err := loadVerifyConfigFile(*configFilename)
 	if err != nil {
 		panic(err)
@@ -1879,12 +1879,15 @@ func main() {
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 	}
 
-	http.Handle(certmon.HttpPath, certNotifier)
+	http.Handle(eventmon.HttpPath, eventNotifier)
+	go func() {
+		time.Sleep(time.Millisecond * 10)
+		healthserver.SetReady()
+	}()
 	err = serviceSrv.ListenAndServeTLS(
 		runtimeState.Config.Base.TLSCertFilename,
 		runtimeState.Config.Base.TLSKeyFilename)
 	if err != nil {
 		panic(err)
 	}
-	healthserver.SetReady()
 }
