@@ -10,7 +10,7 @@ import (
 
 	"github.com/Symantec/Dominator/lib/format"
 	"github.com/Symantec/Dominator/lib/html"
-	"github.com/Symantec/keymaster/eventmon/recorder"
+	"github.com/Symantec/keymaster/eventmon/eventrecorder"
 )
 
 const (

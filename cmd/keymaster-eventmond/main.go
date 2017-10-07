@@ -6,9 +6,9 @@ import (
 	"text/template"
 
 	"github.com/Symantec/Dominator/lib/log/serverlogger"
+	"github.com/Symantec/keymaster/eventmon/eventrecorder"
 	"github.com/Symantec/keymaster/eventmon/httpd"
 	"github.com/Symantec/keymaster/eventmon/monitord"
-	"github.com/Symantec/keymaster/eventmon/recorder"
 	"github.com/Symantec/keymaster/lib/constants"
 	"github.com/Symantec/tricorder/go/tricorder"
 )
