@@ -1839,6 +1839,10 @@ func main() {
 	serviceMux.HandleFunc(oauth2LoginBeginPath, runtimeState.oauth2DoRedirectoToProviderHandler)
 	serviceMux.HandleFunc(redirectPath, runtimeState.oauth2RedirectPathHandler)
 	serviceMux.HandleFunc(clientConfHandlerPath, runtimeState.serveClientConfHandler)
+
+	serviceMux.HandleFunc(idpOpenIDCConfigurationDocumentPath, runtimeState.idpOpenIDCDiscoveryHandler)
+	serviceMux.HandleFunc(idpOpenIDCJWKSPath, runtimeState.idpOpenIDCJWKSHandler)
+
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 
 	cfg := &tls.Config{
