@@ -27,6 +27,7 @@ import (
 
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/serverlogger"
+	"github.com/Symantec/Dominator/lib/srpc"
 	"github.com/Symantec/keymaster/keymasterd/eventnotifier"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
@@ -86,6 +87,7 @@ type RuntimeState struct {
 	SSHCARawFileContent []byte
 	Signer              crypto.Signer
 	ClientCAPool        *x509.CertPool
+	SrpcCAPool          *x509.CertPool
 	HostIdentity        string
 	KerberosRealm       *string
 	caCertDer           []byte
@@ -1856,6 +1858,11 @@ func main() {
 		Addr:         runtimeState.Config.Base.AdminAddress,
 		TLSConfig:    cfg,
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
+	}
+	if runtimeState.SrpcCAPool != nil {
+		srpc.RegisterServerTlsConfig(
+			&tls.Config{ClientCAs: runtimeState.SrpcCAPool},
+			true)
 	}
 	go func(msg string) {
 		err := adminSrv.ListenAndServeTLS(
