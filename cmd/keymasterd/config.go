@@ -461,7 +461,6 @@ func generateCerts(configDir string, config *baseConfig, rsaKeySize int) error {
 	caTemplate.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth}
 	caTemplate.Subject = pkix.Name{Organization: []string{"Acme Co CA"}}
 	adminCACertFilename := configDir + "/adminCA.pem"
-	srpcCACertFilename := "/etc/ssl/CA.pem"
 	caDer, err := generateCertAndWriteToFile(adminCACertFilename, &caTemplate, &caTemplate, &adminCAKey.PublicKey, adminCAKey)
 	if err != nil {
 		logger.Fatalf("Failed to create certificate: %s", err)
@@ -486,7 +485,6 @@ func generateCerts(configDir string, config *baseConfig, rsaKeySize int) error {
 	config.TLSKeyFilename = serverKeyFilename
 	config.TLSCertFilename = serverCertFilename
 	config.ClientCAFilename = adminCACertFilename
-	config.SrpcCAFilename = srpcCACertFilename
 	return nil
 }
 
