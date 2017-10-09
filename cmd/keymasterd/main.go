@@ -87,7 +87,6 @@ type RuntimeState struct {
 	SSHCARawFileContent []byte
 	Signer              crypto.Signer
 	ClientCAPool        *x509.CertPool
-	SrpcCAPool          *x509.CertPool
 	HostIdentity        string
 	KerberosRealm       *string
 	caCertDer           []byte
@@ -1859,11 +1858,9 @@ func main() {
 		TLSConfig:    cfg,
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 	}
-	if runtimeState.SrpcCAPool != nil {
-		srpc.RegisterServerTlsConfig(
-			&tls.Config{ClientCAs: runtimeState.SrpcCAPool},
-			true)
-	}
+	srpc.RegisterServerTlsConfig(
+		&tls.Config{ClientCAs: runtimeState.ClientCAPool},
+		true)
 	go func(msg string) {
 		err := adminSrv.ListenAndServeTLS(
 			runtimeState.Config.Base.TLSCertFilename,

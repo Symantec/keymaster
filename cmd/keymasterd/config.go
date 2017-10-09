@@ -38,7 +38,6 @@ type baseConfig struct {
 	HtpasswdFilename            string   `yaml:"htpasswd_filename"`
 	ExternalAuthCmd             string   `yaml:"external_auth_command"`
 	ClientCAFilename            string   `yaml:"client_ca_filename"`
-	SrpcCAFilename              string   `yaml:"srpc_ca_filename"`
 	HostIdentity                string   `yaml:"host_identity"`
 	KerberosRealm               string   `yaml:"kerberos_realm"`
 	DataDirectory               string   `yaml:"data_directory"`
@@ -187,22 +186,6 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		}
 		logger.Debugf(3, "client ca file loaded")
 
-	}
-	if runtimeState.Config.Base.SrpcCAFilename != "" {
-		buffer, err := exitsAndCanRead(runtimeState.Config.Base.SrpcCAFilename,
-			"client CA file")
-		if err != nil {
-			logger.Printf("Cannot load SRPC CA File")
-			return runtimeState, err
-		}
-		runtimeState.SrpcCAPool = x509.NewCertPool()
-		ok := runtimeState.SrpcCAPool.AppendCertsFromPEM(buffer)
-		if !ok {
-			err = errors.New("Cannot append any certs from SRPC CA file")
-			return runtimeState, err
-		}
-		runtimeState.ClientCAPool.AppendCertsFromPEM(buffer)
-		logger.Debugf(3, "SRPC ca file loaded")
 	}
 	if strings.HasPrefix(string(runtimeState.SSHCARawFileContent[:]), "-----BEGIN RSA PRIVATE KEY-----") {
 		signer, err := getSignerFromPEMBytes(runtimeState.SSHCARawFileContent)
