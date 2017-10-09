@@ -7,7 +7,9 @@ function checkError(resp) {
     if (!('errorCode' in resp)) {
       return false;
     }
-    if (resp.errorCode === u2f.ErrorCodes['OK']) {
+
+    //if (resp.errorCode === u2f.ErrorCodes['OK']) {
+    if (resp.errorCode == 0) {
       return false;
     }
     var msg = 'U2F error code ' + resp.errorCode;
