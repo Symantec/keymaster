@@ -172,13 +172,14 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	}
 
 	if len(runtimeState.Config.Base.ClientCAFilename) > 0 {
-		clientCAbuffer, err := exitsAndCanRead(runtimeState.Config.Base.ClientCAFilename, "client CA file")
+		buffer, err := exitsAndCanRead(
+			runtimeState.Config.Base.ClientCAFilename, "client CA file")
 		if err != nil {
 			logger.Printf("Cannot load client CA File")
 			return runtimeState, err
 		}
 		runtimeState.ClientCAPool = x509.NewCertPool()
-		ok := runtimeState.ClientCAPool.AppendCertsFromPEM(clientCAbuffer)
+		ok := runtimeState.ClientCAPool.AppendCertsFromPEM(buffer)
 		if !ok {
 			err = errors.New("Cannot append any certs from Client CA file")
 			return runtimeState, err

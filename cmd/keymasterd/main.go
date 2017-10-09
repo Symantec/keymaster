@@ -27,6 +27,7 @@ import (
 
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/serverlogger"
+	"github.com/Symantec/Dominator/lib/srpc"
 	"github.com/Symantec/keymaster/keymasterd/eventnotifier"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
@@ -1857,6 +1858,9 @@ func main() {
 		TLSConfig:    cfg,
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 	}
+	srpc.RegisterServerTlsConfig(
+		&tls.Config{ClientCAs: runtimeState.ClientCAPool},
+		true)
 	go func(msg string) {
 		err := adminSrv.ListenAndServeTLS(
 			runtimeState.Config.Base.TLSCertFilename,
