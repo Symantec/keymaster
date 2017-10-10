@@ -27,12 +27,13 @@ import (
 
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/serverlogger"
-	"github.com/Symantec/keymaster/keymasterd/certnotifier"
+	"github.com/Symantec/Dominator/lib/srpc"
+	"github.com/Symantec/keymaster/keymasterd/eventnotifier"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
 	"github.com/Symantec/keymaster/lib/pwauth"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
-	"github.com/Symantec/keymaster/proto/certmon"
+	"github.com/Symantec/keymaster/proto/eventmon"
 	"github.com/Symantec/tricorder/go/healthserver"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/units"
@@ -150,7 +151,7 @@ var (
 
 	logger log.DebugLogger
 	// TODO(rgooch): Pass this in rather than use a global variable.
-	certNotifier *certnotifier.CertNotifier
+	eventNotifier *eventnotifier.EventNotifier
 )
 
 func metricLogAuthOperation(clientType string, authType string, success bool) {
@@ -320,6 +321,16 @@ func browserSupportsU2F(r *http.Request) bool {
 	if strings.Contains(r.UserAgent(), "Chrome/") {
 		return true
 	}
+	if strings.Contains(r.UserAgent(), "Presto/") {
+		return true
+	}
+	//Once FF support reaches main we can remove these silly checks
+	if strings.Contains(r.UserAgent(), "Firefox/57") ||
+		strings.Contains(r.UserAgent(), "Firefox/58") ||
+		strings.Contains(r.UserAgent(), "Firefox/59") ||
+		strings.Contains(r.UserAgent(), "Firefox/6") {
+		return true
+	}
 	return false
 }
 
@@ -343,10 +354,10 @@ func getClientType(r *http.Request) string {
 }
 
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.Request) error {
-	JSSources := []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js"}
+	JSSources := []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js"}
 	showU2F := browserSupportsU2F(r)
 	if showU2F {
-		JSSources = []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js", "/static/webui-2fa-u2f.js"}
+		JSSources = []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/webui-2fa-u2f.js"}
 	}
 	displayData := secondFactorAuthTemplateData{
 		Title:     "Keymaster 2FA Auth",
@@ -440,7 +451,7 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("X-XSS-Protection", "1")
 	//w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self' code.jquery.com; connect-src 'self'; img-src 'self'; style-src 'self';")
-	w.Header().Set("Content-Security-Policy", "default-src 'self' code.jquery.com; style-src 'self' fonts.googleapis.com 'unsafe-inline'; font-src fonts.gstatic.com fonts.googleapis.com")
+	w.Header().Set("Content-Security-Policy", "default-src 'self' ;style-src 'self' fonts.googleapis.com 'unsafe-inline'; font-src fonts.gstatic.com fonts.googleapis.com")
 
 	if signerIsNull {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -741,7 +752,7 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 		return
 
 	}
-	certNotifier.PublishSSH(certBytes)
+	eventNotifier.PublishSSH(certBytes)
 	metricLogCertDuration("ssh", "granted", float64(duration.Seconds()))
 
 	w.Header().Set("Content-Disposition", `attachment; filename="id_rsa-cert.pub"`)
@@ -797,7 +808,7 @@ func (state *RuntimeState) postAuthX509CertHandler(
 			logger.Printf("Cannot Generate x509cert")
 			return
 		}
-		certNotifier.PublishX509(derCert)
+		eventNotifier.PublishX509(derCert)
 		cert = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derCert}))
 
 	default:
@@ -1601,10 +1612,10 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 
 	}
 
-	JSSources := []string{"//code.jquery.com/jquery-1.12.4.min.js"}
+	JSSources := []string{"/static/jquery-1.12.4.patched.min.js"}
 	showU2F := browserSupportsU2F(r)
 	if showU2F {
-		JSSources = []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js", "/static/keymaster-u2f.js"}
+		JSSources = []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/keymaster-u2f.js"}
 	}
 
 	displayData := profilePageTemplateData{
@@ -1804,7 +1815,7 @@ func main() {
 	}
 
 	// TODO(rgooch): Pass this in rather than use a global variable.
-	certNotifier = certnotifier.New(logger)
+	eventNotifier = eventnotifier.New(logger)
 	runtimeState, err := loadVerifyConfigFile(*configFilename)
 	if err != nil {
 		panic(err)
@@ -1861,6 +1872,9 @@ func main() {
 		TLSConfig:    cfg,
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 	}
+	srpc.RegisterServerTlsConfig(
+		&tls.Config{ClientCAs: runtimeState.ClientCAPool},
+		true)
 	go func(msg string) {
 		err := adminSrv.ListenAndServeTLS(
 			runtimeState.Config.Base.TLSCertFilename,
@@ -1883,12 +1897,15 @@ func main() {
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 	}
 
-	http.Handle(certmon.HttpPath, certNotifier)
+	http.Handle(eventmon.HttpPath, eventNotifier)
+	go func() {
+		time.Sleep(time.Millisecond * 10)
+		healthserver.SetReady()
+	}()
 	err = serviceSrv.ListenAndServeTLS(
 		runtimeState.Config.Base.TLSCertFilename,
 		runtimeState.Config.Base.TLSKeyFilename)
 	if err != nil {
 		panic(err)
 	}
-	healthserver.SetReady()
 }

@@ -16,7 +16,7 @@ func (s state) statusHandler(w http.ResponseWriter, req *http.Request) {
 	}
 	writer := bufio.NewWriter(w)
 	defer writer.Flush()
-	fmt.Fprintln(writer, "<title>keymaster-certmond status page</title>")
+	fmt.Fprintln(writer, "<title>keymaster-eventmond status page</title>")
 	fmt.Fprintln(writer, `<style>
                           table, th, td {
                           border-collapse: collapse;
@@ -24,7 +24,7 @@ func (s state) statusHandler(w http.ResponseWriter, req *http.Request) {
                           </style>`)
 	fmt.Fprintln(writer, "<body>")
 	fmt.Fprintln(writer, "<center>")
-	fmt.Fprintln(writer, "<h1>keymaster-certmond status page</h1>")
+	fmt.Fprintln(writer, "<h1>keymaster-eventmond status page</h1>")
 	fmt.Fprintln(writer, "</center>")
 	html.WriteHeaderWithRequest(writer, req)
 	fmt.Fprintln(writer, "<h3>")

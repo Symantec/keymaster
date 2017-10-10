@@ -1,31 +1,31 @@
-package certnotifier
+package eventnotifier
 
 import (
 	"bufio"
-	"encoding/binary"
-	"errors"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
 	"time"
 
 	"github.com/Symantec/Dominator/lib/log"
-	"github.com/Symantec/keymaster/proto/certmon"
+	"github.com/Symantec/keymaster/proto/eventmon"
 )
 
 const (
 	bufferLength = 16
 )
 
-func newCertNotifier(logger log.DebugLogger) *CertNotifier {
-	return &CertNotifier{
+func newEventNotifier(logger log.DebugLogger) *EventNotifier {
+	channels := make(map[chan<- eventmon.EventV0]chan<- eventmon.EventV0)
+	return &EventNotifier{
 		logger:           logger,
-		transmitChannels: make(map[chan<- transmitType]chan<- transmitType),
+		transmitChannels: channels,
 	}
 }
 
-func (n *CertNotifier) publish(certType uint32, certData []byte) {
-	transmitData := transmitType{certType, certData}
+func (n *EventNotifier) publishCert(certType string, certData []byte) {
+	transmitData := eventmon.EventV0{certType, certData}
 	n.mutex.Lock()
 	defer n.mutex.Unlock()
 	for ch := range n.transmitChannels {
@@ -36,7 +36,7 @@ func (n *CertNotifier) publish(certType uint32, certData []byte) {
 	}
 }
 
-func (n *CertNotifier) serveHTTP(w http.ResponseWriter, req *http.Request) {
+func (n *EventNotifier) serveHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.Method != "CONNECT" {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -50,7 +50,7 @@ func (n *CertNotifier) serveHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 	conn, bufRw, err := hijacker.Hijack()
 	if err != nil {
-		n.logger.Println("certmon hijacking ", req.RemoteAddr, ": ",
+		n.logger.Println("eventmon hijacking ", req.RemoteAddr, ": ",
 			err.Error())
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -69,17 +69,17 @@ func (n *CertNotifier) serveHTTP(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
-	_, err = io.WriteString(conn, "HTTP/1.0 "+certmon.ConnectString+"\n\n")
+	_, err = io.WriteString(conn, "HTTP/1.0 "+eventmon.ConnectString+"\n\n")
 	if err != nil {
 		n.logger.Println("error writing connect message: ", err.Error())
 		return
 	}
-	n.logger.Println("certmon client connected")
+	n.logger.Println("eventmon client connected")
 	n.handleConnection(bufRw)
 }
 
-func (n *CertNotifier) handleConnection(rw *bufio.ReadWriter) {
-	transmitChannel := make(chan transmitType, bufferLength)
+func (n *EventNotifier) handleConnection(rw *bufio.ReadWriter) {
+	transmitChannel := make(chan eventmon.EventV0, bufferLength)
 	closeChannel := getCloseNotifier(rw)
 	n.mutex.Lock()
 	n.transmitChannels[transmitChannel] = transmitChannel
@@ -92,13 +92,13 @@ func (n *CertNotifier) handleConnection(rw *bufio.ReadWriter) {
 	for {
 		select {
 		case transmitData := <-transmitChannel:
-			if err := transmit(rw, transmitData); err != nil {
+			if err := transmitV0(rw, transmitData); err != nil {
 				n.logger.Println(err)
 				return
 			}
 		case err := <-closeChannel:
 			if err == io.EOF {
-				n.logger.Println("certmon client disconnected")
+				n.logger.Println("eventmon client disconnected")
 				return
 			}
 			n.logger.Println(err)
@@ -111,23 +111,10 @@ func (n *CertNotifier) handleConnection(rw *bufio.ReadWriter) {
 	}
 }
 
-func transmit(writer io.Writer, data transmitType) error {
-	err := binary.Write(writer, binary.BigEndian, data.certType)
-	if err != nil {
-		return err
-	}
-	length := uint64(len(data.certData))
-	if err := binary.Write(writer, binary.BigEndian, length); err != nil {
-		return err
-	}
-	nWritten, err := writer.Write(data.certData)
-	if err != nil {
-		return err
-	}
-	if nWritten < int(length) {
-		return errors.New("short write")
-	}
-	return nil
+func transmitV0(writer io.Writer, event eventmon.EventV0) error {
+	encoder := json.NewEncoder(writer)
+	encoder.SetIndent("", "   ")
+	return encoder.Encode(event)
 }
 
 func getCloseNotifier(reader io.Reader) <-chan error {

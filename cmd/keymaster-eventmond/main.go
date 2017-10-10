@@ -6,20 +6,20 @@ import (
 	"text/template"
 
 	"github.com/Symantec/Dominator/lib/log/serverlogger"
-	"github.com/Symantec/keymaster/certmon/eventrecorder"
-	"github.com/Symantec/keymaster/certmon/httpd"
-	"github.com/Symantec/keymaster/certmon/monitord"
+	"github.com/Symantec/keymaster/eventmon/eventrecorder"
+	"github.com/Symantec/keymaster/eventmon/httpd"
+	"github.com/Symantec/keymaster/eventmon/monitord"
 	"github.com/Symantec/keymaster/lib/constants"
 	"github.com/Symantec/tricorder/go/tricorder"
 )
 
 var (
 	configFile = flag.String("configFile",
-		constants.DefaultKeymasterCertmonConfigFile, "Configuration file")
-	portNum = flag.Uint("portNum", constants.DefaultCertmonPortNumber,
+		constants.DefaultKeymasterEventmonConfigFile, "Configuration file")
+	portNum = flag.Uint("portNum", constants.DefaultEventmonPortNumber,
 		"Port number to allocate and listed on for HTTP/RPC")
 	stateDir = flag.String("stateDir",
-		constants.DefaultKeymasterCertmonStateDir, "Saved state directory")
+		constants.DefaultKeymasterEventmonStateDir, "Saved state directory")
 )
 
 type configurationType struct {
