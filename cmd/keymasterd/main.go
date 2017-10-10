@@ -321,6 +321,16 @@ func browserSupportsU2F(r *http.Request) bool {
 	if strings.Contains(r.UserAgent(), "Chrome/") {
 		return true
 	}
+	if strings.Contains(r.UserAgent(), "Presto/") {
+		return true
+	}
+	//Once FF support reaches main we can remove these silly checks
+	if strings.Contains(r.UserAgent(), "Firefox/57") ||
+		strings.Contains(r.UserAgent(), "Firefox/58") ||
+		strings.Contains(r.UserAgent(), "Firefox/59") ||
+		strings.Contains(r.UserAgent(), "Firefox/6") {
+		return true
+	}
 	return false
 }
 
@@ -344,10 +354,10 @@ func getClientType(r *http.Request) string {
 }
 
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.Request) error {
-	JSSources := []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js"}
+	JSSources := []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js"}
 	showU2F := browserSupportsU2F(r)
 	if showU2F {
-		JSSources = []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js", "/static/webui-2fa-u2f.js"}
+		JSSources = []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/webui-2fa-u2f.js"}
 	}
 	displayData := secondFactorAuthTemplateData{
 		Title:     "Keymaster 2FA Auth",
@@ -441,7 +451,7 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("X-XSS-Protection", "1")
 	//w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self' code.jquery.com; connect-src 'self'; img-src 'self'; style-src 'self';")
-	w.Header().Set("Content-Security-Policy", "default-src 'self' code.jquery.com; style-src 'self' fonts.googleapis.com 'unsafe-inline'; font-src fonts.gstatic.com fonts.googleapis.com")
+	w.Header().Set("Content-Security-Policy", "default-src 'self' ;style-src 'self' fonts.googleapis.com 'unsafe-inline'; font-src fonts.gstatic.com fonts.googleapis.com")
 
 	if signerIsNull {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -1602,10 +1612,10 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 
 	}
 
-	JSSources := []string{"//code.jquery.com/jquery-1.12.4.min.js"}
+	JSSources := []string{"/static/jquery-1.12.4.patched.min.js"}
 	showU2F := browserSupportsU2F(r)
 	if showU2F {
-		JSSources = []string{"//code.jquery.com/jquery-1.12.4.min.js", "/static/u2f-api.js", "/static/keymaster-u2f.js"}
+		JSSources = []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/keymaster-u2f.js"}
 	}
 
 	displayData := profilePageTemplateData{
