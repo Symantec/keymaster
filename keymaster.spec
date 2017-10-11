@@ -1,6 +1,6 @@
 Name:           keymaster
-Version:        0.3.2
-Release:        1%{?dist}
+Version:        0.5.1
+Release:        2%{?dist}
 Summary:        Short term access certificate generator and client
 
 #Group:
@@ -30,15 +30,22 @@ make
 
 %install
 #%make_install
-%{__install} -Dp -m0755 bin/keymaster %{buildroot}%{_sbindir}/keymaster
-%{__install} -Dp -m0755 bin/prodme %{buildroot}%{_bindir}/prodme
-%{__install} -Dp -m0755 bin/keymaster-unlocker %{buildroot}%{_bindir}/keymaster-unlocker
+%{__install} -Dp -m0755 ~/go/bin/keymasterd %{buildroot}%{_sbindir}/keymasterd
+%{__install} -Dp -m0755 ~/go/bin/keymaster %{buildroot}%{_bindir}/keymaster
+%{__install} -Dp -m0755 ~/go/bin/keymaster-unlocker %{buildroot}%{_bindir}/keymaster-unlocker
 install -d %{buildroot}/usr/lib/systemd/system
 install -p -m 0644 misc/startup/keymaster.service %{buildroot}/usr/lib/systemd/system/keymaster.service
-install -d %{buildroot}/%{_datarootdir}/keymaster/static_files/
-install -p -m 0644 cmd/ssh_usercert_gen/static_files/u2f-api.js  %{buildroot}/%{_datarootdir}/keymaster/static_files/u2f-api.js
-install -p -m 0644 cmd/ssh_usercert_gen/static_files/keymaster-u2f.js  %{buildroot}/%{_datarootdir}/keymaster/static_files/keymaster-u2f.js
-
+install -d %{buildroot}/%{_datarootdir}/keymasterd/static_files/
+install -p -m 0644 cmd/keymasterd/static_files/u2f-api.js  %{buildroot}/%{_datarootdir}/keymasterd/static_files/u2f-api.js
+install -p -m 0644 cmd/keymasterd/static_files/keymaster-u2f.js  %{buildroot}/%{_datarootdir}/keymasterd/static_files/keymaster-u2f.js
+install -p -m 0644 cmd/keymasterd/static_files/webui-2fa-u2f.js  %{buildroot}/%{_datarootdir}/keymasterd/static_files/webui-2fa-u2f.js
+install -p -m 0644 cmd/keymasterd/static_files/keymaster.css  %{buildroot}/%{_datarootdir}/keymasterd/static_files/keymaster.css
+install -p -m 0644 cmd/keymasterd/static_files/jquery-1.12.4.patched.min.js %{buildroot}/%{_datarootdir}/keymasterd/static_files/jquery-1.12.4.patched.min.js
+install -d %{buildroot}/%{_datarootdir}/keymasterd/customization_data/templates
+install -p -m 0644 cmd/keymasterd/customization_data/templates/header_extra.tmpl %{buildroot}/%{_datarootdir}/keymasterd/customization_data/templates/header_extra.tmpl
+install -p -m 0644 cmd/keymasterd/customization_data/templates/footer_extra.tmpl %{buildroot}/%{_datarootdir}/keymasterd/customization_data/templates/footer_extra.tmpl
+install -d %{buildroot}/%{_datarootdir}/keymasterd/customization_data/web_resources
+install -p -m 0644 cmd/keymasterd/customization_data/web_resources/customization.css %{buildroot}/%{_datarootdir}/keymasterd/customization_data/web_resources/customization.css
 %pre
 /usr/bin/getent passwd keymaster || useradd -d /var/lib/keymaster -s /bin/false -U -r  keymaster
 
@@ -54,12 +61,13 @@ systemctl daemon-reload
 
 %files
 #%doc
-%{_sbindir}/keymaster
-%{_bindir}/prodme
+%{_sbindir}/keymasterd
+%{_bindir}/keymaster
 %{_bindir}/keymaster-unlocker
 /usr/lib/systemd/system/keymaster.service
-%{_datarootdir}/keymaster/static_files/*
-
+%{_datarootdir}/keymasterd/static_files/*
+%config(noreplace) %{_datarootdir}/keymasterd/customization_data/web_resources/*
+%config(noreplace) %{_datarootdir}/keymasterd/customization_data/templates/*
 %changelog
 
 

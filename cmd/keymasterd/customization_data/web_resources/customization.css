@@ -1,0 +1,30 @@
+.header {
+font-size: 95%;
+height:35px;
+color: #f4f4f4;
+background-color: #213c60; /*Symantec yelllow: #FDBB30*/
+width:100%;
+}
+
+.header a:link {
+	font-size: 85%;
+	color: #FDBB30
+}
+.header a:visited {
+	font-size: 85%;
+	color:  #FDBB30
+	}
+
+.header_extra{
+	font-size: 140%;
+	padding-left: 1.2em;
+	line-height:normal;
+}
+
+.footer {
+    font-size: 95%;
+    height:60px; 
+    position:absolute;
+    width:100%;
+    bottom:0;
+}

@@ -1,5 +1,9 @@
 language: go
 
+# github.com/flynn/hid is broken on go1.9 on MacOS X, so pin to go1.8.
+go:
+    - 1.8
+
 os:
     - linux
     - osx
@@ -14,3 +18,5 @@ before_install:
     - cd ${SYMANTEC_PROJECT_DIR}
 
 install: make get-deps
+
+script: make all test

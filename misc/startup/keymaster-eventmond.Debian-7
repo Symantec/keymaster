@@ -1,0 +1,107 @@
+#! /bin/bash --posix
+
+### BEGIN INIT INFO
+# Provides:		keymaster-eventmond
+# Required-Start:	$local_fs $network $syslog
+# Required-Stop:	$local_fs $network $syslog
+# Default-Start:	2 3 4 5
+# Default-Stop:		0 1 6
+# Short-Description:	Keymaster event monitor server
+### END INIT INFO
+
+# /etc/init.d/keymaster-eventmond: start and stop the Keymaster event monitor
+
+. /lib/lsb/init-functions
+
+umask 022
+
+readonly default_log_dir='/var/log/keymaster-eventmond'
+readonly default_config_file='/etc/keymaster-eventmond/config.yml'
+readonly default_state_dir='/var/lib/keymaster-eventmond'
+
+CONFIG_FILE="$default_config_file"
+DAEMON='/usr/local/sbin/keymaster-eventmond'
+LOG_DIR="$default_log_dir"
+LOG_QUOTA=
+LOGBUF_LINES=
+LOOP_PIDFILE='/var/run/keymaster-eventmond.loop.pid'
+PIDFILE='/var/run/keymaster-eventmond.pid'
+STATE_DIR="$default_state_dir"
+USERNAME='eventmon'
+
+PROG_ARGS=
+
+[ -f /etc/default/keymaster-eventmond ] && . /etc/default/keymaster-eventmond
+
+test -x "$DAEMON" || exit 0
+
+export PATH="${PATH:+$PATH:}/usr/local/bin:/usr/local/sbin:/usr/sbin:/sbin"
+
+mkdir -m 0755 -p "$LOG_DIR" "$STATE_DIR"
+chown "$USERNAME" "$LOG_DIR" "$STATE_DIR"
+
+if [ -n "$CONFIG_FILE" ] && [ "$CONFIG_FILE" != "$default_config_file" ]; then
+    PROG_ARGS="$PROG_ARGS -configFile=$CONFIG_FILE"
+fi
+
+if [ -n "$LOG_DIR" ] && [ "$LOG_DIR" != "$default_log_dir" ]; then
+    PROG_ARGS="$PROG_ARGS -logDir=$LOG_DIR"
+fi
+
+if [ -n "$LOG_QUOTA" ]; then
+    PROG_ARGS="$PROG_ARGS -logQuota=$LOG_QUOTA"
+fi
+
+if [ -n "$LOGBUF_LINES" ]; then
+    PROG_ARGS="$PROG_ARGS -logbufLines=$LOGBUF_LINES"
+fi
+
+if [ -n "$STATE_DIR" ] && [ "$STATE_DIR" != "$default_state_dir" ]; then
+    PROG_ARGS="$PROG_ARGS -stateDir=$STATE_DIR"
+fi
+
+do_start ()
+{
+    start-stop-daemon --start --quiet --pidfile "$PIDFILE" \
+		      --exec "$DAEMON" --chuid "$USERNAME" --make-pidfile -- \
+		      $PROG_ARGS
+}
+
+start_loop ()
+{
+    echo "$BASHPID" > "$LOOP_PIDFILE"
+    while true; do
+	do_start
+	rm -f "$PIDFILE"
+	sleep 1
+    done
+}
+
+case "$1" in
+  start)
+	log_daemon_msg "Starting keymaster-eventmond daemon" "keymaster-eventmond" || true
+	(start_loop < /dev/null &> /dev/null &)
+	;;
+  stop)
+	log_daemon_msg "Stopping keymaster-eventmond daemon" "keymaster-eventmond" || true
+	[ -s "$LOOP_PIDFILE" ] && kill -KILL $(cat "$LOOP_PIDFILE")
+	[ -s "$PIDFILE" ]      && kill -TERM $(cat "$PIDFILE")
+	rm -f "$LOOP_PIDFILE" "$PIDFILE"
+	;;
+
+  reload|force-reload)
+	$0 stop
+	$0 start
+	;;
+
+  restart)
+	$0 stop
+	$0 start
+	;;
+
+  *)
+	log_action_msg "Usage: /etc/init.d/keymaster-eventmond {start|stop|reload|force-reload|restart}" || true
+	exit 1
+esac
+
+exit 0

@@ -8,22 +8,20 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/base64"
 	"encoding/pem"
 	"errors"
-	"golang.org/x/crypto/ssh"
+	"fmt"
 	"math/big"
-	//"os"
 	"os/exec"
 	"time"
 
-	"fmt"
+	"golang.org/x/crypto/ssh"
 )
-
-const numValidHours = 24
 
 // GetUserPubKeyFromSSSD user authorized keys content based on the running sssd configuration
 func GetUserPubKeyFromSSSD(username string) (string, error) {
@@ -45,15 +43,15 @@ func goCertToFileString(c ssh.Certificate, username string) (string, error) {
 }
 
 // gen_user_cert a username and key, returns a short lived cert for that user
-func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer, host_identity string) (string, error) {
+func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer, host_identity string, duration time.Duration) (string, []byte, error) {
 	userKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(userPubKey))
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	keyIdentity := host_identity + "_" + username
 
 	currentEpoch := uint64(time.Now().Unix())
-	expireEpoch := currentEpoch + (3600 * numValidHours)
+	expireEpoch := currentEpoch + uint64(duration.Seconds())
 
 	// The values of the permissions are taken from the default values used
 	// by ssh-keygen
@@ -74,26 +72,26 @@ func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer,
 
 	err = cert.SignCert(bytes.NewReader(cert.Marshal()), signer)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	certString, err := goCertToFileString(cert, username)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return certString, nil
+	return certString, cert.Marshal(), nil
 }
 
-func GenSSHCertFileStringFromSSSDPublicKey(userName string, signer ssh.Signer, hostIdentity string) (string, error) {
+func GenSSHCertFileStringFromSSSDPublicKey(userName string, signer ssh.Signer, hostIdentity string, duration time.Duration) (string, []byte, error) {
 
 	userPubKey, err := GetUserPubKeyFromSSSD(userName)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	cert, err := GenSSHCertFileString(userName, userPubKey, signer, hostIdentity)
+	cert, certBytes, err := GenSSHCertFileString(userName, userPubKey, signer, hostIdentity, duration)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return cert, err
+	return cert, certBytes, err
 }
 
 /// X509 section
@@ -161,11 +159,19 @@ func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.S
 	if err != nil {
 		return nil, err
 	}
+	sum := sha256.Sum256([]byte(commonName))
+	signedCN, err := caPriv.Sign(rand.Reader, sum[:], crypto.SHA256)
+	if err != nil {
+		return nil, err
+	}
+	sigSum := sha256.Sum256(signedCN)
+	sig := base64.StdEncoding.EncodeToString(sigSum[:])
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
 			CommonName:   commonName,
 			Organization: []string{organization},
+			SerialNumber: sig,
 		},
 		NotBefore: notBefore,
 		NotAfter:  notAfter,
@@ -247,12 +253,15 @@ func genSANExtension(userName string, kerberosRealm *string) (*pkix.Extension, e
 	return &sanExtension, nil
 }
 
-// returns an x509 cert that has the username in the common name, optionally if a kerberos Realm is present
-// it will also add a kerberos SAN exention for pkinit
-func GenUserX509Cert(userName string, userPub interface{}, caCert *x509.Certificate, caPriv crypto.Signer, kerberosRealm *string) ([]byte, error) {
+// returns an x509 cert that has the username in the common name,
+// optionally if a kerberos Realm is present it will also add a kerberos
+// SAN exention for pkinit
+func GenUserX509Cert(userName string, userPub interface{},
+	caCert *x509.Certificate, caPriv crypto.Signer,
+	kerberosRealm *string, duration time.Duration) ([]byte, error) {
 	//// Now do the actual work...
 	notBefore := time.Now()
-	notAfter := notBefore.Add(time.Duration(numValidHours) * time.Hour)
+	notAfter := notBefore.Add(duration)
 
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
