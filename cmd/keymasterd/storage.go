@@ -210,16 +210,9 @@ type loadUserProfileData struct {
 // If there a valid user profile returns: profile, true nil
 // If there is NO user profile returns default_object, false, nil
 // Any other case: nil, false, error
-func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfile, ok bool, err error) {
+func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfile, ok bool, fromCache bool, err error) {
 	var defaultProfile userProfile
 	defaultProfile.U2fAuthData = make(map[int64]*u2fAuthData)
-
-	timeout := make(chan bool, 1)
-
-	go func() {
-		time.Sleep(3 * time.Second)
-		timeout <- true
-	}()
 
 	ch := make(chan loadUserProfileData, 1)
 	start := time.Now()
@@ -240,40 +233,59 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 		//var profileBytes []byte
 		//err = stmt.QueryRow(username).Scan(&profileBytes)
 	}(username)
+	var profileBytes []byte
+	fromCache = false
 	select {
 	case dbMessage := <-ch:
 		err = dbMessage.Err
 		if err != nil {
 			if err.Error() == "sql: no rows in result set" {
 				logger.Printf("err='%s'", err)
-				return &defaultProfile, false, nil
+				return &defaultProfile, false, fromCache, nil
 			} else {
 				logger.Printf("Problem with db ='%s'", err)
-				return nil, false, err
+				return nil, false, fromCache, err
 			}
 
 		}
 		metricLogExternalServiceDuration("storage-read", time.Since(start))
-
-		logger.Debugf(10, "profile bytes len=%d", len(dbMessage.ProfileBytes))
-		//gobReader := bytes.NewReader(fileBytes)
-		gobReader := bytes.NewReader(dbMessage.ProfileBytes)
-		decoder := gob.NewDecoder(gobReader)
-		err = decoder.Decode(&defaultProfile)
-		if err != nil {
-			return nil, false, err
-		}
-		logger.Debugf(1, "loaded profile=%+v", defaultProfile)
-		return &defaultProfile, true, nil
-	case <-timeout:
+		profileBytes = dbMessage.ProfileBytes
+	case <-time.After(2 * time.Second):
 		logger.Printf("GOT a timeout")
-		err = errors.New("Loading Profile timeout")
-		return &defaultProfile, false, err
+		fromCache = true
+		// load from cache
+		stmtText := loadUserProfileStmt["sqlite"]
+		stmt, err := state.cacheDB.Prepare(stmtText)
+		if err != nil {
+			logger.Print("Error Preparing statement")
+			logger.Fatal(err)
+		}
+
+		defer stmt.Close()
+		err = stmt.QueryRow(username).Scan(&profileBytes)
+		if err != nil {
+			if err.Error() == "sql: no rows in result set" {
+				logger.Printf("err='%s'", err)
+				return &defaultProfile, false, true, nil
+			} else {
+				logger.Printf("Problem with db ='%s'", err)
+				return nil, false, true, err
+			}
+
+		}
+		logger.Printf("GOT data from db cache")
 
 	}
-	//logger.Debugf(1, "loaded profile=%+v", defaultProfile)
-	err = errors.New("somthing unexpected happened")
-	return &defaultProfile, false, err
+	logger.Debugf(10, "profile bytes len=%d", len(profileBytes))
+	//gobReader := bytes.NewReader(fileBytes)
+	gobReader := bytes.NewReader(profileBytes)
+	decoder := gob.NewDecoder(gobReader)
+	err = decoder.Decode(&defaultProfile)
+	if err != nil {
+		return nil, false, fromCache, err
+	}
+	logger.Debugf(1, "loaded profile=%+v", defaultProfile)
+	return &defaultProfile, true, fromCache, nil
 }
 
 var saveUserProfileStmt = map[string]string{
