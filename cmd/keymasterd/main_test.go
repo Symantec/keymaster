@@ -815,7 +815,7 @@ func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Todo... check against the FS.
-	profile, _, err = state.LoadUserProfile("username")
+	profile, _, _, err = state.LoadUserProfile("username")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -880,7 +880,7 @@ func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Todo... check against the FS.
-	profile, _, err = state.LoadUserProfile("username")
+	profile, _, _, err = state.LoadUserProfile("username")
 	if err != nil {
 		t.Fatal(err)
 	}
