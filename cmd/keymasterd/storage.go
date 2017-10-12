@@ -17,8 +17,18 @@ import (
 const userProfilePrefix = "profile_"
 const userProfileSuffix = ".gob"
 const profileDBFilename = "userProfiles.sqlite3"
+const cachedDBFilename = "cachedDB.sqlite3"
 
-func initDB(state *RuntimeState) error {
+func initDB(state *RuntimeState) (err error) {
+	logger.Debugf(3, "Top of initDB")
+	//open/create cache DB first
+	cacheDBFilename := filepath.Join(state.Config.Base.DataDirectory, cachedDBFilename)
+	state.cacheDB, err = initFileDBSQLite(cacheDBFilename, state.cacheDB)
+	if err != nil {
+		logger.Printf("Failure on creation of cacheDB")
+		return err
+	}
+
 	logger.Debugf(3, "storage=%s", state.Config.ProfileStorage.StorageUrl)
 	storageURL := state.Config.ProfileStorage.StorageUrl
 	if storageURL == "" {
@@ -30,6 +40,7 @@ func initDB(state *RuntimeState) error {
 		err := errors.New("Bad storage url string")
 		return err
 	}
+	go state.BackgroundDBCopy()
 	switch splitString[0] {
 	case "sqlite":
 		logger.Printf("doing sqlite")
@@ -43,7 +54,7 @@ func initDB(state *RuntimeState) error {
 		return err
 	}
 
-	err := errors.New("invalid state")
+	err = errors.New("invalid state")
 	return err
 
 }
@@ -68,36 +79,115 @@ func initDBPostgres(state *RuntimeState) (err error) {
 }
 
 // This call initializes the database if it does not exist.
-// TODO: update to handle multiple db types AND to perform auto-updates of the db.
 func initDBSQlite(state *RuntimeState) (err error) {
 	state.dbType = "sqlite"
 	dbFilename := filepath.Join(state.Config.Base.DataDirectory, profileDBFilename)
+	state.db, err = initFileDBSQLite(dbFilename, state.db)
+	return err
+}
+
+// This call initializes the database if it does not exist.
+// TODO: update  to perform auto-updates of the db.
+func initFileDBSQLite(dbFilename string, currentDB *sql.DB) (*sql.DB, error) {
+	//state.dbType = "sqlite"
+	//dbFilename := filepath.Join(state.Config.Base.DataDirectory, profileDBFilename)
 	if _, err := os.Stat(dbFilename); os.IsNotExist(err) {
 		//CREATE NEW DB
-		state.db, err = sql.Open("sqlite3", dbFilename)
+		fileDB, err := sql.Open("sqlite3", dbFilename)
 		if err != nil {
-			return err
+			logger.Printf("Failure creating new db: %s", dbFilename)
+			return nil, err
 		}
 		logger.Printf("post DB open")
 		// create profile table
 		sqlStmt := `create table user_profile (id integer not null primary key, username text unique, profile_data blob);`
-		_, err = state.db.Exec(sqlStmt)
+		_, err = fileDB.Exec(sqlStmt)
 		if err != nil {
 			logger.Printf("%q: %s\n", err, sqlStmt)
-			return err
+			return nil, err
 		}
 
-		return nil
+		return fileDB, nil
 	}
 
 	// try open the DB
-	if state.db == nil {
+	if currentDB == nil {
 
-		state.db, err = sql.Open("sqlite3", dbFilename)
+		fileDB, err := sql.Open("sqlite3", dbFilename)
 		if err != nil {
+			return nil, err
+		}
+		return fileDB, nil
+	}
+	return currentDB, nil
+}
+
+func (state *RuntimeState) BackgroundDBCopy() {
+	time.Sleep(time.Second * 3)
+	for {
+		logger.Printf("starting db copy")
+		err := copyDBIntoSQLite(state.db, state.cacheDB, "sqlite")
+		if err != nil {
+			logger.Printf("err='%s'", err)
+		} else {
+			logger.Printf("db copy success")
+		}
+		time.Sleep(time.Second * 300)
+	}
+
+}
+
+func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error {
+	if source == nil || destination == nil {
+		err := errors.New("nil databases")
+		return err
+	}
+	rows, err := source.Query("SELECT username,profile_data FROM user_profile")
+	if err != nil {
+		logger.Printf("err='%s'", err)
+		return err
+	}
+	defer rows.Close()
+
+	tx, err := destination.Begin()
+	if err != nil {
+		logger.Printf("err='%s'", err)
+		return err
+	}
+	stmtText := saveUserProfileStmt[destinationType]
+	stmt, err := tx.Prepare(stmtText)
+	if err != nil {
+		logger.Printf("err='%s'", err)
+		return err
+	}
+	defer stmt.Close()
+
+	for rows.Next() {
+		var (
+			username     string
+			profileBytes []byte
+		)
+		if err := rows.Scan(&username, &profileBytes); err != nil {
+			//log.Fatal(err)
+			logger.Printf("err='%s'", err)
 			return err
 		}
-		//defer state.db.Close()
+		_, err = stmt.Exec(username, profileBytes)
+		if err != nil {
+			logger.Printf("err='%s'", err)
+			return err
+		}
+		//fmt.Printf("%s is %d\n", name, age)
+	}
+	if err := rows.Err(); err != nil {
+		//log.Fatal(err)
+		logger.Printf("err='%s'", err)
+		return err
+	}
+	err = tx.Commit()
+	if err != nil {
+		logger.Printf("err='%s'", err)
+		return err
 	}
 	return nil
 }
@@ -109,9 +199,13 @@ var loadUserProfileStmt = map[string]string{
 
 /// Adding api to be load/save per user
 
-// Notice: each operation load/save should be atomic. For inital version we
-// are using a RWMutex to al least serialize writes and allow for some
-// read parallelism. Once SQL is implemented this RWMutex should be removed
+// Notice: each operation load/save should be atomic.
+
+type loadUserProfileData struct {
+	//fromDB       bool
+	ProfileBytes []byte
+	Err          error
+}
 
 // If there a valid user profile returns: profile, true nil
 // If there is NO user profile returns default_object, false, nil
@@ -119,40 +213,67 @@ var loadUserProfileStmt = map[string]string{
 func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfile, ok bool, err error) {
 	var defaultProfile userProfile
 	defaultProfile.U2fAuthData = make(map[int64]*u2fAuthData)
-	//load from DB
-	start := time.Now()
-	stmtText := loadUserProfileStmt[state.dbType]
-	stmt, err := state.db.Prepare(stmtText)
-	if err != nil {
-		logger.Print("Error Preparing statement")
-		logger.Fatal(err)
-	}
 
-	defer stmt.Close()
-	var profileBytes []byte
-	err = stmt.QueryRow(username).Scan(&profileBytes)
-	if err != nil {
-		if err.Error() == "sql: no rows in result set" {
-			logger.Printf("err='%s'", err)
-			return &defaultProfile, false, nil
-		} else {
-			logger.Printf("Problem with db ='%s'", err)
-			return nil, false, err
+	timeout := make(chan bool, 1)
+
+	go func() {
+		time.Sleep(3 * time.Second)
+		timeout <- true
+	}()
+
+	ch := make(chan loadUserProfileData, 1)
+	start := time.Now()
+	go func(username string) {
+		var profileMessage loadUserProfileData
+		//load from DB
+		//start := time.Now()
+		stmtText := loadUserProfileStmt[state.dbType]
+		stmt, err := state.db.Prepare(stmtText)
+		if err != nil {
+			logger.Print("Error Preparing statement")
+			logger.Fatal(err)
 		}
 
-	}
-	metricLogExternalServiceDuration("storage-read", time.Since(start))
+		defer stmt.Close()
+		profileMessage.Err = stmt.QueryRow(username).Scan(&profileMessage.ProfileBytes)
+		ch <- profileMessage
+		//var profileBytes []byte
+		//err = stmt.QueryRow(username).Scan(&profileBytes)
+	}(username)
+	select {
+	case dbMessage := <-ch:
+		err = dbMessage.Err
+		if err != nil {
+			if err.Error() == "sql: no rows in result set" {
+				logger.Printf("err='%s'", err)
+				return &defaultProfile, false, nil
+			} else {
+				logger.Printf("Problem with db ='%s'", err)
+				return nil, false, err
+			}
 
-	logger.Debugf(10, "profile bytes len=%d", len(profileBytes))
-	//gobReader := bytes.NewReader(fileBytes)
-	gobReader := bytes.NewReader(profileBytes)
-	decoder := gob.NewDecoder(gobReader)
-	err = decoder.Decode(&defaultProfile)
-	if err != nil {
-		return nil, false, err
+		}
+		metricLogExternalServiceDuration("storage-read", time.Since(start))
+
+		logger.Debugf(10, "profile bytes len=%d", len(dbMessage.ProfileBytes))
+		//gobReader := bytes.NewReader(fileBytes)
+		gobReader := bytes.NewReader(dbMessage.ProfileBytes)
+		decoder := gob.NewDecoder(gobReader)
+		err = decoder.Decode(&defaultProfile)
+		if err != nil {
+			return nil, false, err
+		}
+		logger.Debugf(1, "loaded profile=%+v", defaultProfile)
+		return &defaultProfile, true, nil
+	case <-timeout:
+		logger.Printf("GOT a timeout")
+		err = errors.New("Loading Profile timeout")
+		return &defaultProfile, false, err
+
 	}
-	logger.Debugf(1, "loaded profile=%+v", defaultProfile)
-	return &defaultProfile, true, nil
+	//logger.Debugf(1, "loaded profile=%+v", defaultProfile)
+	err = errors.New("somthing unexpected happened")
+	return &defaultProfile, false, err
 }
 
 var saveUserProfileStmt = map[string]string{

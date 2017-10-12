@@ -98,6 +98,7 @@ type RuntimeState struct {
 	storageRWMutex  sync.RWMutex
 	db              *sql.DB
 	dbType          string
+	cacheDB         *sql.DB
 	htmlTemplate    *template.Template
 	passwordChecker pwauth.PasswordAuthenticator
 }
