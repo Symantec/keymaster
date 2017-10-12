@@ -1,12 +1,74 @@
 # keymaster
-Short term certificate based identity system.
+Keymaster is usable short term certificate based identity system. With a primary goal to be a single-sign-on (with optional second factor with [Symantec Vip](https://vip.symantec.com/) or [U2F](https://fidoalliance.org/specifications/overview/) tokens) for CLI operations (both SSHD and TLS).
 
-Keymaster is a system which issues short-lived credentials (SSH certs,
-SSL certs, Kerberos tickets, API keys, etc.) to users and automation
-accounts. This system is easy to use, configure and administer.
+This system is easy to use, configure and administer.
+Keymaster is made of several components: keymaster (the client side binary used to get the certificates), keymasterd (the server side component used to generate the certs), eventmon (the auditing tool to observe and verify keymasterd operation), and keymaster-unlocker(which allows users to unlock keymasterd to start operations).
+
+From the user's perspective a single command is needed with no flags (after the first run). After running the client command successfully users get a 16h (or less) ssh and TLS certificates. On systems with a running [ssh-agent](https://en.wikipedia.org/wiki/Ssh-agent) the command also injects the certificate (with matching expiration time) so that no other interaction is needed to start using it with ssh.
+
+For the service operators it requires adding the keymaster certificates to the set of trusted certificates.
+
+In general the relationship between components is shown here:
+
+![keymaster-keymasterd interaction image](docs/keymaster-overview.png)
 
 Please see the
 [design document](https://docs.google.com/document/d/1AW3UROCJqTc3R4MLJXxmPUNS0OFNcsiQJ_Q4j--5tQE/pub) for more information.
+
+
+## Getting Started
+
+You can use the prebuilt binaries at the [releases page](https://github.com/Symantec/keymaster/releases) or you can build it from source. The rpm and deb packages contain both server and client binaries. The tarballs only contain the client side.
+
+### Building from Source
+
+#### Prerequisites
+* go >= 1.8
+* make
+* gcc
+
+For windows we have used [TDM-GCC (64 bit)](https://sourceforge.net/projects/tdm-gcc/) for both gcc and gnu-make.
+
+#### Building
+
+1. make get-deps
+2. make
+
+This will leave you with four binaries: keymasterd, keymaster,   keymaster-unlocker, and keymaster-eventmond.
+
+### Running
+
+#### keymasterd (server)
+
+##### Configuring
+You will need to create a new valid server config. Keymaster facilitates this
+with the options `-generateConfig  -alsoLogToStderr`. After running the keymaster binary with
+these option you will be left with a valid config with an encrypted master secret and self signed certificates SSL certificates. This config file will also be using an apache password file for user authentication.
+
+Notice: we have a current bug where the directory locations are not written correctly. For systems using this is equivalent of running keymasted from the cmd/keymasterd directory. For CentOS systems using the rpm the values should be   `data_directory: /var/lib/keymaster ` and `shared_data_directory: /usr/share/keymasterd/`.
+
+###### User password backends
+For password backend keymaster currently supports LDAP backends and apache
+password files. For LDAP the `bind_pattern` is a printf string where `%s` is
+the place where the username will be substituted. For example for an 389ds/openldap
+string might be: `"uid=%s,ou=People,dc=example,dc=com`.
+
+###### U2F token backend
+For u2f/profile backend keymaster supports SQLite and PostgreSQL. The
+`storage_url` field contains the connection information for the database.
+If no `storage_url` is defined keymaster will use an SQLite database located
+in the configured data directory for keymaster.
+
+En example of a postgresql url is:
+`postgresql://dbusername:dbpassword.example.com/keymasterdbname`
+
+###### Unlocking keymasted permanently
+By default the generated config will create an encrypted private key for the keymaster CA. For development, or if your trust model permits it, you can decrypt the private Key and leave it on the filesystem. The encrypted private key is an armored PGP file, so decryption is just `gpg -ad $Filename`. Once decrypted set the `ssh_ca_filename` field in the server config point to this new file.
+
+#### keymaster (client)
+The first run of the client requires you to specify the keymaterd server with the option `-configHost`. The client will then connect and store the configuration as provided by the server. Keymaster's always use TLS, but for testing you can use the `-rootCAFilename` option to specify a custom (say self signed) cert for testing. The keymaster clients will use the running OS CA store by default.
+
+
 
 ## Contributions
 
@@ -40,6 +102,8 @@ Attention:  Product Legal Support Team
 Mountain View, CA 94043
 
 Please be sure to keep a signed copy for your records.
+
+
 
 ## LICENSE
 
