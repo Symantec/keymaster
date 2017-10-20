@@ -1501,17 +1501,6 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	state.localAuthData[authUser] = localAuth
 	state.Mutex.Unlock()
 
-	/*
-		profile.U2fAuthChallenge = c
-
-		err = state.SaveUserProfile(authUser, profile)
-		if err != nil {
-			logger.Printf("Saving profile error: %v", err)
-			http.Error(w, "error", http.StatusInternalServerError)
-			return
-		}
-	*/
-
 	req := c.SignRequest(registrations)
 	logger.Debugf(3, "Sign request: %+v", req)
 
@@ -1574,19 +1563,18 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "registration missing", http.StatusBadRequest)
 		return
 	}
-	/*
-		if profile.U2fAuthChallenge == nil {
-			http.Error(w, "challenge missing", http.StatusBadRequest)
-			return
-		}
-	*/
+
 	if registrations == nil {
 		http.Error(w, "registration missing", http.StatusBadRequest)
 		return
 	}
 	state.Mutex.Lock()
-	localAuth := state.localAuthData[authUser]
+	localAuth, ok := state.localAuthData[authUser]
 	state.Mutex.Unlock()
+	if !ok {
+		http.Error(w, "challenge missing", http.StatusBadRequest)
+		return
+	}
 
 	//var err error
 	for i, u2fReg := range profile.U2fAuthData {
@@ -1656,13 +1644,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		return
 
 	}
-	/*
-		if fromCache {
-			logger.Printf("DB is being cached and requesting registration aborting it")
-			http.Error(w, "db backend is offline for writes", http.StatusServiceUnavailable)
-			return
-		}
-	*/
+
 	JSSources := []string{"/static/jquery-1.12.4.patched.min.js"}
 	showU2F := browserSupportsU2F(r)
 	if showU2F {
