@@ -1588,12 +1588,37 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 	http.Error(w, "error verifying response", http.StatusInternalServerError)
 }
 
+func (state *RuntimeState) IsAdminUser(user string) bool {
+	for _, adminUser := range state.Config.Base.Admins {
+		if user == adminUser {
+			return true
+		}
+	}
+	return false
+}
+
 const profilePath = "/profile/"
+
+func profileURI(authUser, effectiveUser string) string {
+	if authUser == effectiveUser {
+		return profilePath
+	}
+	return profilePath + effectiveUser
+}
 
 func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
+	// /profile/<assumed user>
+	// pieces[0] == "" pieces[1] = "profile" pieces[2] == <assumed user>
+	pieces := strings.Split(r.URL.Path, "/")
+
+	var assumedUser string
+	if len(pieces) >= 3 {
+		assumedUser = pieces[2]
+	}
+
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
@@ -1603,8 +1628,16 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 
 		return
 	}
+
+	if assumedUser == "" {
+		assumedUser = authUser
+	} else if !state.IsAdminUser(authUser) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	//find the user token
-	profile, _, err := state.LoadUserProfile(authUser)
+	profile, _, err := state.LoadUserProfile(assumedUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1619,7 +1652,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	displayData := profilePageTemplateData{
-		Username:     authUser,
+		Username:     assumedUser,
 		AuthUsername: authUser,
 		Title:        "Keymaster User Profile",
 		ShowU2F:      showU2F,
@@ -1672,8 +1705,10 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	}
 	logger.Debugf(3, "Form: %+v", r.Form)
 
+	effectiveUser := r.Form.Get("username")
+
 	// Check params
-	if r.Form.Get("username") != authUser {
+	if !state.IsAdminUser(authUser) && effectiveUser != authUser {
 		logger.Printf("bad username authUser=%s requested=%s", authUser, r.Form.Get("username"))
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
@@ -1687,7 +1722,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	}
 
 	//Do a redirect
-	profile, _, err := state.LoadUserProfile(authUser)
+	profile, _, err := state.LoadUserProfile(effectiveUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1726,7 +1761,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 		return
 	}
 
-	err = state.SaveUserProfile(authUser, profile)
+	err = state.SaveUserProfile(effectiveUser, profile)
 	if err != nil {
 		logger.Printf("Saving profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1737,7 +1772,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	returnAcceptType := getPreferredAcceptType(r)
 	switch returnAcceptType {
 	case "text/html":
-		http.Redirect(w, r, profilePath, 302)
+		http.Redirect(w, r, profileURI(authUser, effectiveUser), 302)
 	default:
 		w.WriteHeader(200)
 		fmt.Fprintf(w, "Success!")
