@@ -229,6 +229,12 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 		}
 
 		defer stmt.Close()
+		// if the remoteDBQueryTimeout == 0 this means we are actuallty trying
+		// to force the cached db. In single core systems, we need to ensure this
+		// goroutine yields to sthis sleep is necesary
+		if state.remoteDBQueryTimeout == 0 {
+			time.Sleep(10 * time.Millisecond)
+		}
 		profileMessage.Err = stmt.QueryRow(username).Scan(&profileMessage.ProfileBytes)
 		ch <- profileMessage
 	}(username)
