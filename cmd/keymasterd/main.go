@@ -1603,14 +1603,6 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 				}
 				state.Mutex.Unlock()
 			}
-			/*
-				err = state.SaveUserProfile(authUser, profile)
-				if err != nil {
-					logger.Printf("Saving profile error: %v", err)
-					http.Error(w, "error", http.StatusInternalServerError)
-					return
-				}
-			*/
 			// TODO: update local cookie state
 			w.Write([]byte("success"))
 			return
