@@ -73,7 +73,12 @@ type u2fAuthData struct {
 type userProfile struct {
 	U2fAuthData           map[int64]*u2fAuthData
 	RegistrationChallenge *u2f.Challenge
-	U2fAuthChallenge      *u2f.Challenge
+	//U2fAuthChallenge      *u2f.Challenge
+}
+
+type localUserData struct {
+	U2fAuthChallenge *u2f.Challenge
+	ExpiresAt        time.Time
 }
 
 type pendingAuth2Request struct {
@@ -91,15 +96,18 @@ type RuntimeState struct {
 	KerberosRealm       *string
 	caCertDer           []byte
 	authCookie          map[string]authInfo
+	localAuthData       map[string]localUserData
 	SignerIsReady       chan bool
 	Mutex               sync.Mutex
 	//userProfile         map[string]userProfile
-	pendingOauth2   map[string]pendingAuth2Request
-	storageRWMutex  sync.RWMutex
-	db              *sql.DB
-	dbType          string
-	htmlTemplate    *template.Template
-	passwordChecker pwauth.PasswordAuthenticator
+	pendingOauth2        map[string]pendingAuth2Request
+	storageRWMutex       sync.RWMutex
+	db                   *sql.DB
+	dbType               string
+	cacheDB              *sql.DB
+	remoteDBQueryTimeout time.Duration
+	htmlTemplate         *template.Template
+	passwordChecker      pwauth.PasswordAuthenticator
 }
 
 const redirectPath = "/auth/oauth2/callback"
@@ -233,11 +241,22 @@ func (state *RuntimeState) performStateCleanup(secsBetweenCleanup int) {
 		}
 		finalPendingSize := len(state.pendingOauth2)
 
+		//localAuthData
+		initPendingLocal := len(state.localAuthData)
+		for key, localAuth := range state.localAuthData {
+			if localAuth.ExpiresAt.Before(time.Now()) {
+				delete(state.localAuthData, key)
+			}
+		}
+		finalPendingLocal := len(state.localAuthData)
+
 		state.Mutex.Unlock()
 		logger.Debugf(3, "Auth Cookie sizes: before:(%d) after (%d)\n",
 			initAuthSize, finalAuthSize)
 		logger.Debugf(3, "Pending Cookie sizes: before(%d) after(%d)",
 			initPendingSize, finalPendingSize)
+		logger.Debugf(3, "Pending Cookie sizes: before(%d) after(%d)",
+			initPendingLocal, finalPendingLocal)
 		time.Sleep(time.Duration(secsBetweenCleanup) * time.Second)
 	}
 
@@ -966,7 +985,7 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 }
 
 func (state *RuntimeState) userHasU2FTokens(username string) (bool, error) {
-	profile, ok, err := state.LoadUserProfile(username)
+	profile, ok, _, err := state.LoadUserProfile(username)
 	if err != nil {
 		return false, err
 	}
@@ -1327,12 +1346,17 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	profile, _, err := state.LoadUserProfile(authUser)
+	profile, _, fromCache, err := state.LoadUserProfile(authUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 
+	}
+	if fromCache {
+		logger.Printf("DB is being cached and requesting registration aborting it")
+		http.Error(w, "db backend is offline for writes", http.StatusServiceUnavailable)
+		return
 	}
 
 	c, err := u2f.NewChallenge(u2fAppID, u2fTrustedFacets)
@@ -1378,10 +1402,15 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	profile, _, err := state.LoadUserProfile(authUser)
+	profile, _, fromCache, err := state.LoadUserProfile(authUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	if fromCache {
+		logger.Printf("DB is being cached and requesting registration aborting it")
+		http.Error(w, "db backend is offline for writes", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -1441,7 +1470,7 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	}
 
 	//////////
-	profile, ok, err := state.LoadUserProfile(authUser)
+	profile, ok, _, err := state.LoadUserProfile(authUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1465,16 +1494,16 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-	profile.U2fAuthChallenge = c
+
+	//save cached copy
+	var localAuth localUserData
+	localAuth.U2fAuthChallenge = c
+	state.Mutex.Lock()
+	state.localAuthData[authUser] = localAuth
+	state.Mutex.Unlock()
+
 	req := c.SignRequest(registrations)
 	logger.Debugf(3, "Sign request: %+v", req)
-
-	err = state.SaveUserProfile(authUser, profile)
-	if err != nil {
-		logger.Printf("Saving profile error: %v", err)
-		http.Error(w, "error", http.StatusInternalServerError)
-		return
-	}
 
 	if err := json.NewEncoder(w).Encode(req); err != nil {
 		logger.Printf("json encofing error: %v", err)
@@ -1517,7 +1546,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 
 	logger.Printf("signResponse: %+v", signResp)
 
-	profile, ok, err := state.LoadUserProfile(authUser)
+	profile, ok, _, err := state.LoadUserProfile(authUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1536,18 +1565,22 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if profile.U2fAuthChallenge == nil {
-		http.Error(w, "challenge missing", http.StatusBadRequest)
-		return
-	}
 	if registrations == nil {
 		http.Error(w, "registration missing", http.StatusBadRequest)
+		return
+	}
+	state.Mutex.Lock()
+	localAuth, ok := state.localAuthData[authUser]
+	state.Mutex.Unlock()
+	if !ok {
+		http.Error(w, "challenge missing", http.StatusBadRequest)
 		return
 	}
 
 	//var err error
 	for i, u2fReg := range profile.U2fAuthData {
-		newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *profile.U2fAuthChallenge, u2fReg.Counter)
+		//newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *profile.U2fAuthChallenge, u2fReg.Counter)
+		newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *localAuth.U2fAuthChallenge, u2fReg.Counter)
 		if authErr == nil {
 			metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, true)
 
@@ -1557,7 +1590,8 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 			//profile.U2fAuthData[i].Counter = newCounter
 			u2fReg.Counter = newCounter
 			profile.U2fAuthData[i] = u2fReg
-			profile.U2fAuthChallenge = nil
+			//profile.U2fAuthChallenge = nil
+			delete(state.localAuthData, authUser)
 
 			// update cookie if found, this should be also a critical section
 			if authCookie != nil {
@@ -1569,14 +1603,6 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 				}
 				state.Mutex.Unlock()
 			}
-
-			err = state.SaveUserProfile(authUser, profile)
-			if err != nil {
-				logger.Printf("Saving profile error: %v", err)
-				http.Error(w, "error", http.StatusInternalServerError)
-				return
-			}
-
 			// TODO: update local cookie state
 			w.Write([]byte("success"))
 			return
@@ -1604,7 +1630,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	//find the user token
-	profile, _, err := state.LoadUserProfile(authUser)
+	profile, _, fromCache, err := state.LoadUserProfile(authUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1619,11 +1645,12 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	displayData := profilePageTemplateData{
-		Username:     authUser,
-		AuthUsername: authUser,
-		Title:        "Keymaster User Profile",
-		ShowU2F:      showU2F,
-		JSSources:    JSSources}
+		Username:        authUser,
+		AuthUsername:    authUser,
+		Title:           "Keymaster User Profile",
+		ShowU2F:         showU2F,
+		JSSources:       JSSources,
+		ReadOnlyProfile: fromCache}
 	for i, tokenInfo := range profile.U2fAuthData {
 
 		deviceData := registeredU2FTokenDisplayInfo{
@@ -1687,12 +1714,17 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	}
 
 	//Do a redirect
-	profile, _, err := state.LoadUserProfile(authUser)
+	profile, _, fromCache, err := state.LoadUserProfile(authUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 
+	}
+	if fromCache {
+		logger.Printf("DB is being cached and requesting registration aborting it")
+		http.Error(w, "db backend is offline for writes", http.StatusServiceUnavailable)
+		return
 	}
 
 	// Todo: check for negative values
