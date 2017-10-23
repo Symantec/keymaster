@@ -40,7 +40,9 @@ func initDB(state *RuntimeState) (err error) {
 		err := errors.New("Bad storage url string")
 		return err
 	}
-	go state.BackgroundDBCopy()
+	state.remoteDBQueryTimeout = time.Second * 2
+	initialSleep := time.Second * 3
+	go state.BackgroundDBCopy(initialSleep)
 	switch splitString[0] {
 	case "sqlite":
 		logger.Printf("doing sqlite")
@@ -122,8 +124,8 @@ func initFileDBSQLite(dbFilename string, currentDB *sql.DB) (*sql.DB, error) {
 	return currentDB, nil
 }
 
-func (state *RuntimeState) BackgroundDBCopy() {
-	time.Sleep(time.Second * 3)
+func (state *RuntimeState) BackgroundDBCopy(initialSleep time.Duration) {
+	time.Sleep(initialSleep)
 	for {
 		logger.Printf("starting db copy")
 		err := copyDBIntoSQLite(state.db, state.cacheDB, "sqlite")
@@ -216,10 +218,9 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 
 	ch := make(chan loadUserProfileData, 1)
 	start := time.Now()
-	go func(username string) {
+	go func(username string) { //loads profile from DB
 		var profileMessage loadUserProfileData
-		//load from DB
-		//start := time.Now()
+
 		stmtText := loadUserProfileStmt[state.dbType]
 		stmt, err := state.db.Prepare(stmtText)
 		if err != nil {
@@ -230,8 +231,6 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 		defer stmt.Close()
 		profileMessage.Err = stmt.QueryRow(username).Scan(&profileMessage.ProfileBytes)
 		ch <- profileMessage
-		//var profileBytes []byte
-		//err = stmt.QueryRow(username).Scan(&profileBytes)
 	}(username)
 	var profileBytes []byte
 	fromCache = false
@@ -250,7 +249,7 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 		}
 		metricLogExternalServiceDuration("storage-read", time.Since(start))
 		profileBytes = dbMessage.ProfileBytes
-	case <-time.After(2 * time.Second):
+	case <-time.After(state.remoteDBQueryTimeout):
 		logger.Printf("GOT a timeout")
 		fromCache = true
 		// load from cache

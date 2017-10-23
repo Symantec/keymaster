@@ -100,13 +100,14 @@ type RuntimeState struct {
 	SignerIsReady       chan bool
 	Mutex               sync.Mutex
 	//userProfile         map[string]userProfile
-	pendingOauth2   map[string]pendingAuth2Request
-	storageRWMutex  sync.RWMutex
-	db              *sql.DB
-	dbType          string
-	cacheDB         *sql.DB
-	htmlTemplate    *template.Template
-	passwordChecker pwauth.PasswordAuthenticator
+	pendingOauth2        map[string]pendingAuth2Request
+	storageRWMutex       sync.RWMutex
+	db                   *sql.DB
+	dbType               string
+	cacheDB              *sql.DB
+	remoteDBQueryTimeout time.Duration
+	htmlTemplate         *template.Template
+	passwordChecker      pwauth.PasswordAuthenticator
 }
 
 const redirectPath = "/auth/oauth2/callback"
