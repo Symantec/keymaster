@@ -1623,6 +1623,43 @@ func (state *RuntimeState) IsAdminUser(user string) bool {
 	return false
 }
 
+const usersPath = "/users/"
+
+func (state *RuntimeState) usersHandler(
+	w http.ResponseWriter, r *http.Request) {
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
+	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	if err != nil {
+		logger.Printf("%v", err)
+
+		return
+	}
+
+	users, _, err := state.GetUsers()
+	if err != nil {
+		logger.Printf("Getting users error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+
+	}
+
+	JSSources := []string{"/static/jquery-1.12.4.patched.min.js"}
+
+	displayData := usersPageTemplateData{
+		AuthUsername: authUser,
+		Title:        "Keymaster Users",
+		Users:        users,
+		JSSources:    JSSources}
+	err = state.htmlTemplate.ExecuteTemplate(w, "usersPage", displayData)
+	if err != nil {
+		logger.Printf("Failed to execute %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+}
+
 const profilePath = "/profile/"
 
 func profileURI(authUser, assumedUser string) string {
@@ -1901,6 +1938,7 @@ func main() {
 	serviceMux.HandleFunc(proto.LoginPath, runtimeState.loginHandler)
 	serviceMux.HandleFunc(logoutPath, runtimeState.logoutHandler)
 	serviceMux.HandleFunc(profilePath, runtimeState.profileHandler)
+	serviceMux.HandleFunc(usersPath, runtimeState.usersHandler)
 
 	staticFilesPath := filepath.Join(runtimeState.Config.Base.SharedDataDirectory, "static_files")
 	serviceMux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticFilesPath))))
