@@ -1625,11 +1625,11 @@ func (state *RuntimeState) IsAdminUser(user string) bool {
 
 const profilePath = "/profile/"
 
-func profileURI(authUser, effectiveUser string) string {
-	if authUser == effectiveUser {
+func profileURI(authUser, assumedUser string) string {
+	if authUser == assumedUser {
 		return profilePath
 	}
-	return profilePath + effectiveUser
+	return profilePath + assumedUser
 }
 
 func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request) {
@@ -1732,10 +1732,10 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	}
 	logger.Debugf(3, "Form: %+v", r.Form)
 
-	effectiveUser := r.Form.Get("username")
+	assumedUser := r.Form.Get("username")
 
 	// Check params
-	if !state.IsAdminUser(authUser) && effectiveUser != authUser {
+	if !state.IsAdminUser(authUser) && assumedUser != authUser {
 		logger.Printf("bad username authUser=%s requested=%s", authUser, r.Form.Get("username"))
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
@@ -1749,7 +1749,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	}
 
 	//Do a redirect
-	profile, _, fromCache, err := state.LoadUserProfile(effectiveUser)
+	profile, _, fromCache, err := state.LoadUserProfile(assumedUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1793,7 +1793,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 		return
 	}
 
-	err = state.SaveUserProfile(effectiveUser, profile)
+	err = state.SaveUserProfile(assumedUser, profile)
 	if err != nil {
 		logger.Printf("Saving profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1804,7 +1804,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	returnAcceptType := getPreferredAcceptType(r)
 	switch returnAcceptType {
 	case "text/html":
-		http.Redirect(w, r, profileURI(authUser, effectiveUser), 302)
+		http.Redirect(w, r, profileURI(authUser, assumedUser), 302)
 	default:
 		w.WriteHeader(200)
 		fmt.Fprintf(w, "Success!")
