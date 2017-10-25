@@ -187,7 +187,7 @@ type profilePageTemplateData struct {
 	Username        string
 	JSSources       []string
 	ShowU2F         bool
-	ReadOnlyProfile bool
+	ReadOnlyMsg     string
 	RegisteredToken []registeredU2FTokenDisplayInfo
 }
 
@@ -218,13 +218,11 @@ const profileHTML = `
     {{with $top := . }}
     <h1>Keymaster User Profile</h1>
     <h2> {{.Username}}</h2>
-    {{if .ReadOnlyProfile}}
-    The active keymaster is running disconnected from its DB backend. All token operations execpt for Authentication cannot proceed.
-    {{end}}
+    {{.ReadOnlyMsg}}
     <ul>
       <li><a href="/api/v0/logout" >Logout </a></li>
        {{if .ShowU2F}}
-       {{if not .ReadOnlyProfile}}
+       {{if not .ReadOnlyMsg}}
       <li>
          <a id="register_button" href="#">Register token</a>
          <div id="register_action_text" style="color: blue;background-color: yellow; display: none;"> Please Touch the blinking device to register(insert if not inserted yet) </div>
@@ -250,10 +248,10 @@ const profileHTML = `
 	     <form enctype="application/x-www-form-urlencoded" action="/api/v0/manageU2FToken" method="post">
 	     <input type="hidden" name="index" value="{{.Index}}">
 	     <input type="hidden" name="username" value="{{$top.Username}}">
-	     <td> <input type="text" name="name" value="{{ .Name}}" SIZE=18  {{if $top.ReadOnlyProfile}} readonly{{end}} > </td>
+	     <td> <input type="text" name="name" value="{{ .Name}}" SIZE=18  {{if $top.ReadOnlyMsg}} readonly{{end}} > </td>
 	     <td> {{ .DeviceData}} </td>
 	     <td>
-	         {{if not $top.ReadOnlyProfile}}
+	         {{if not $top.ReadOnlyMsg}}
 	         <input type="submit" name="action" value="Update" {{if not .Enabled}} disabled {{end}}/>
 		 {{if .Enabled}}
 		 <input type="submit" name="action" value="Disable"/>

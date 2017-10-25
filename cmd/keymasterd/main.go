@@ -1685,18 +1685,21 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("%v", err)
 
 		return
 	}
 
+	readOnlyMsg := ""
 	if assumedUser == "" {
 		assumedUser = authUser
 	} else if !state.IsAdminUser(authUser) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
+	} else if (loginLevel & AuthTypeU2F) == 0 {
+		readOnlyMsg = "Admins must U2F authenticate to change the profile of others."
 	}
 
 	//find the user token
@@ -1707,6 +1710,9 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		return
 
 	}
+	if fromCache {
+		readOnlyMsg = "The active keymaster is running disconnected from its DB backend. All token operations execpt for Authentication cannot proceed."
+	}
 
 	JSSources := []string{"/static/jquery-1.12.4.patched.min.js"}
 	showU2F := browserSupportsU2F(r)
@@ -1715,12 +1721,12 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	displayData := profilePageTemplateData{
-		Username:        assumedUser,
-		AuthUsername:    authUser,
-		Title:           "Keymaster User Profile",
-		ShowU2F:         showU2F,
-		JSSources:       JSSources,
-		ReadOnlyProfile: fromCache}
+		Username:     assumedUser,
+		AuthUsername: authUser,
+		Title:        "Keymaster User Profile",
+		ShowU2F:      showU2F,
+		JSSources:    JSSources,
+		ReadOnlyMsg:  readOnlyMsg}
 	for i, tokenInfo := range profile.U2fAuthData {
 
 		deviceData := registeredU2FTokenDisplayInfo{
@@ -1754,7 +1760,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("%v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1771,8 +1777,11 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 
 	assumedUser := r.Form.Get("username")
 
+	// Have admin rights = Must be admin + authenticated with U2F
+	hasAdminRights := state.IsAdminUser(authUser) && ((loginLevel & AuthTypeU2F) != 0)
+
 	// Check params
-	if !state.IsAdminUser(authUser) && assumedUser != authUser {
+	if !hasAdminRights && assumedUser != authUser {
 		logger.Printf("bad username authUser=%s requested=%s", authUser, r.Form.Get("username"))
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
