@@ -45,7 +45,7 @@ type baseConfig struct {
 	HideStandardLogin           bool     `yaml:"hide_standard_login"`
 	AllowedAuthBackendsForCerts []string `yaml:"allowed_auth_backends_for_certs"`
 	AllowedAuthBackendsForWebUI []string `yaml:"allowed_auth_backends_for_webui"`
-	Admins                      []string `yaml:"admins"`
+	AdminUsers                  []string `yaml:"admin_users"`
 }
 
 type LdapConfig struct {

@@ -1615,7 +1615,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 }
 
 func (state *RuntimeState) IsAdminUser(user string) bool {
-	for _, adminUser := range state.Config.Base.Admins {
+	for _, adminUser := range state.Config.Base.AdminUsers {
 		if user == adminUser {
 			return true
 		}
