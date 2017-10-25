@@ -1726,7 +1726,8 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		Title:        "Keymaster User Profile",
 		ShowU2F:      showU2F,
 		JSSources:    JSSources,
-		ReadOnlyMsg:  readOnlyMsg}
+		ReadOnlyMsg:  readOnlyMsg,
+		UsersLink:    state.IsAdminUser(authUser)}
 	for i, tokenInfo := range profile.U2fAuthData {
 
 		deviceData := registeredU2FTokenDisplayInfo{

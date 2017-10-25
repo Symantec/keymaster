@@ -188,6 +188,7 @@ type profilePageTemplateData struct {
 	JSSources       []string
 	ShowU2F         bool
 	ReadOnlyMsg     string
+	UsersLink       bool
 	RegisteredToken []registeredU2FTokenDisplayInfo
 }
 
@@ -234,6 +235,9 @@ const profileHTML = `
       {{else}}
       <div id="auth_action_text" style="color: blue;background-color: yellow;"> Your browser does not support U2F. However you can still Enable/Disable/Delete U2F tokens </div>
       {{end}}
+    {{if .UsersLink}}
+      <li><a href="/users/">Users</a></li>
+    {{end}}
     </ul>
     {{if .RegisteredToken -}}
         Your U2F Token(s):
