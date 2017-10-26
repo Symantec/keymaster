@@ -702,7 +702,10 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		state.postAuthSSHCertHandler(w, r, targetUser, keySigner, duration)
 		return
 	case "x509":
-		state.postAuthX509CertHandler(w, r, targetUser, keySigner, duration)
+		state.postAuthX509CertHandler(w, r, targetUser, keySigner, duration, false)
+		return
+	case "x509-kubernetes":
+		state.postAuthX509CertHandler(w, r, targetUser, keySigner, duration, true)
 		return
 	default:
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Unrecognized cert type")
@@ -809,19 +812,33 @@ func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
 		return groups, nil
 
 	}
+	if ldapConfig.LDAPTargetURLs == "" {
+		var emptyGroup []string
+		return emptyGroup, nil
+	}
 	err := errors.New("error getting the groups")
 	return nil, err
 }
 
 func (state *RuntimeState) postAuthX509CertHandler(
 	w http.ResponseWriter, r *http.Request, targetUser string,
-	keySigner crypto.Signer, duration time.Duration) {
-	userGroups, err := state.getUserGroups(targetUser)
-	if err != nil {
-		logger.Println("error getting user groups")
-	}
-	logger.Printf("%v", userGroups)
+	keySigner crypto.Signer, duration time.Duration,
+	withUserGroups bool) {
 
+	var userGroups []string
+	var err error
+	if withUserGroups {
+		userGroups, err = state.getUserGroups(targetUser)
+		if err != nil {
+			//logger.Println("error getting user groups")
+			logger.Println(err)
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			return
+		}
+		//logger.Printf("%v", userGroups)
+	} else {
+		userGroups = append(userGroups, "keymaster")
+	}
 	var cert string
 	switch r.Method {
 	case "POST":
@@ -855,7 +872,7 @@ func (state *RuntimeState) postAuthX509CertHandler(
 			logger.Printf("Cannot parse CA Der data")
 			return
 		}
-		derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert, keySigner, state.KerberosRealm, duration, nil)
+		derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert, keySigner, state.KerberosRealm, duration, &userGroups)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			logger.Printf("Cannot Generate x509cert")
