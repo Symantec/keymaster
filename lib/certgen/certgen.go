@@ -258,7 +258,8 @@ func genSANExtension(userName string, kerberosRealm *string) (*pkix.Extension, e
 // SAN exention for pkinit
 func GenUserX509Cert(userName string, userPub interface{},
 	caCert *x509.Certificate, caPriv crypto.Signer,
-	kerberosRealm *string, duration time.Duration) ([]byte, error) {
+	kerberosRealm *string, duration time.Duration,
+	organizations *[]string) ([]byte, error) {
 	//// Now do the actual work...
 	notBefore := time.Now()
 	notAfter := notBefore.Add(duration)
@@ -277,12 +278,16 @@ func GenUserX509Cert(userName string, userPub interface{},
 	// need to add the extended key usage... that is special for kerberos
 	//and also the client key usage
 	kerberosClientExtKeyUsage := []int{1, 3, 6, 1, 5, 2, 3, 4}
+	subject := pkix.Name{
+		CommonName:   userName,
+		Organization: []string{"Keymaster"},
+	}
+	if organizations != nil {
+		subject.Organization = *organizations
+	}
 	template := x509.Certificate{
-		SerialNumber: serialNumber,
-		Subject: pkix.Name{
-			CommonName:   userName,
-			Organization: []string{"Keymaster"},
-		},
+		SerialNumber:          serialNumber,
+		Subject:               subject,
 		NotBefore:             notBefore,
 		NotAfter:              notAfter,
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageKeyAgreement,

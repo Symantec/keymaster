@@ -785,9 +785,43 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 	}(targetUser, "ssh")
 }
 
+func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
+	ldapConfig := state.Config.UserInfo.Ldap
+	var timeoutSecs uint
+	timeoutSecs = 2
+	//for _, ldapUrl := range ldapConfig.LDAPTargetURLs {
+	for _, ldapUrl := range strings.Split(ldapConfig.LDAPTargetURLs, ",") {
+		if len(ldapUrl) < 1 {
+			continue
+		}
+		u, err := authutil.ParseLDAPURL(ldapUrl)
+		if err != nil {
+			logger.Printf("Failed to parse ldapurl '%s'", ldapUrl)
+			continue
+		}
+		groups, err := authutil.GetLDAPUserGroups(*u,
+			ldapConfig.BindUsername, ldapConfig.BindPassword,
+			timeoutSecs, nil, username,
+			ldapConfig.UserSearchBaseDNs, ldapConfig.UserSearchFilter)
+		if err != nil {
+			continue
+		}
+		return groups, nil
+
+	}
+	err := errors.New("error getting the groups")
+	return nil, err
+}
+
 func (state *RuntimeState) postAuthX509CertHandler(
 	w http.ResponseWriter, r *http.Request, targetUser string,
 	keySigner crypto.Signer, duration time.Duration) {
+	userGroups, err := state.getUserGroups(targetUser)
+	if err != nil {
+		logger.Println("error getting user groups")
+	}
+	logger.Printf("%v", userGroups)
+
 	var cert string
 	switch r.Method {
 	case "POST":
@@ -821,7 +855,7 @@ func (state *RuntimeState) postAuthX509CertHandler(
 			logger.Printf("Cannot parse CA Der data")
 			return
 		}
-		derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert, keySigner, state.KerberosRealm, duration)
+		derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert, keySigner, state.KerberosRealm, duration, nil)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			logger.Printf("Cannot Generate x509cert")
