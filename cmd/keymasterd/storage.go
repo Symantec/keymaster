@@ -194,6 +194,81 @@ func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error
 	return nil
 }
 
+var getUsersStmt = map[string]string{
+	"sqlite":   "select username from user_profile order by username",
+	"postgres": "select username from user_profile order by username",
+}
+
+type getUsersData struct {
+	Names []string
+	Err   error
+}
+
+func gatherUsers(stmt *sql.Stmt) ([]string, error) {
+	rows, err := stmt.Query()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return names, nil
+}
+
+func (state *RuntimeState) GetUsers() ([]string, bool, error) {
+	ch := make(chan getUsersData, 1)
+	start := time.Now()
+	go func() {
+		stmtText := getUsersStmt[state.dbType]
+		stmt, err := state.db.Prepare(stmtText)
+		if err != nil {
+			logger.Print("Error Preparing getUsers statement")
+			logger.Fatal(err)
+		}
+		defer stmt.Close()
+		if state.remoteDBQueryTimeout == 0 {
+			time.Sleep(10 * time.Millisecond)
+		}
+		names, dbErr := gatherUsers(stmt)
+		ch <- getUsersData{Names: names, Err: dbErr}
+		close(ch)
+	}()
+	select {
+	case dbMessage := <-ch:
+		if dbMessage.Err != nil {
+			logger.Printf("Problem with db ='%s'", dbMessage.Err)
+		} else {
+			metricLogExternalServiceDuration("storage-read", time.Since(start))
+		}
+		return dbMessage.Names, false, dbMessage.Err
+	case <-time.After(state.remoteDBQueryTimeout):
+		logger.Printf("GOT a timeout")
+		stmtText := getUsersStmt["sqlite"]
+		stmt, err := state.cacheDB.Prepare(stmtText)
+		if err != nil {
+			logger.Print("Error Preparing statement")
+			logger.Fatal(err)
+		}
+		defer stmt.Close()
+		names, dbErr := gatherUsers(stmt)
+		if dbErr != nil {
+			logger.Printf("Problem with db = '%s'", err)
+		} else {
+			logger.Println("GOT data from db cache")
+		}
+		return names, true, dbErr
+	}
+}
+
 var loadUserProfileStmt = map[string]string{
 	"sqlite":   "select profile_data from user_profile where username = ?",
 	"postgres": "select profile_data from user_profile where username = $1",

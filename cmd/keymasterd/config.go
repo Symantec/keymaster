@@ -45,6 +45,7 @@ type baseConfig struct {
 	HideStandardLogin           bool     `yaml:"hide_standard_login"`
 	AllowedAuthBackendsForCerts []string `yaml:"allowed_auth_backends_for_certs"`
 	AllowedAuthBackendsForWebUI []string `yaml:"allowed_auth_backends_for_webui"`
+	AdminUsers                  []string `yaml:"admin_users"`
 }
 
 type LdapConfig struct {
@@ -102,7 +103,7 @@ func (state *RuntimeState) loadTemplates() (err error) {
 		}
 	}
 	/// Load the oter built in templates
-	extraTemplates := []string{footerTemplateText, loginFormText, secondFactorAuthFormText, profileHTML, headerTemplateText}
+	extraTemplates := []string{footerTemplateText, loginFormText, secondFactorAuthFormText, profileHTML, usersHTML, headerTemplateText}
 	for _, templateString := range extraTemplates {
 		_, err = state.htmlTemplate.Parse(templateString)
 		if err != nil {
