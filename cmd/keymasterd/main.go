@@ -1665,28 +1665,104 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 	http.Error(w, "error verifying response", http.StatusInternalServerError)
 }
 
-const profilePath = "/profile/"
+func (state *RuntimeState) IsAdminUser(user string) bool {
+	for _, adminUser := range state.Config.Base.AdminUsers {
+		if user == adminUser {
+			return true
+		}
+	}
+	return false
+}
 
-func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request) {
+const usersPath = "/users/"
+
+func (state *RuntimeState) usersHandler(
+	w http.ResponseWriter, r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-	/*
-	 */
-	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("%v", err)
 
 		return
 	}
+
+	users, _, err := state.GetUsers()
+	if err != nil {
+		logger.Printf("Getting users error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+
+	}
+
+	JSSources := []string{"/static/jquery-1.12.4.patched.min.js"}
+
+	displayData := usersPageTemplateData{
+		AuthUsername: authUser,
+		Title:        "Keymaster Users",
+		Users:        users,
+		JSSources:    JSSources}
+	err = state.htmlTemplate.ExecuteTemplate(w, "usersPage", displayData)
+	if err != nil {
+		logger.Printf("Failed to execute %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+}
+
+const profilePath = "/profile/"
+
+func profileURI(authUser, assumedUser string) string {
+	if authUser == assumedUser {
+		return profilePath
+	}
+	return profilePath + assumedUser
+}
+
+func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request) {
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
+	// /profile/<assumed user>
+	// pieces[0] == "" pieces[1] = "profile" pieces[2] == <assumed user>
+	pieces := strings.Split(r.URL.Path, "/")
+
+	var assumedUser string
+	if len(pieces) >= 3 {
+		assumedUser = pieces[2]
+	}
+
+	/*
+	 */
+	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
+	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	if err != nil {
+		logger.Printf("%v", err)
+
+		return
+	}
+
+	readOnlyMsg := ""
+	if assumedUser == "" {
+		assumedUser = authUser
+	} else if !state.IsAdminUser(authUser) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	} else if (loginLevel & AuthTypeU2F) == 0 {
+		readOnlyMsg = "Admins must U2F authenticate to change the profile of others."
+	}
+
 	//find the user token
-	profile, _, fromCache, err := state.LoadUserProfile(authUser)
+	profile, _, fromCache, err := state.LoadUserProfile(assumedUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 
+	}
+	if fromCache {
+		readOnlyMsg = "The active keymaster is running disconnected from its DB backend. All token operations execpt for Authentication cannot proceed."
 	}
 
 	JSSources := []string{"/static/jquery-1.12.4.patched.min.js"}
@@ -1696,12 +1772,13 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	displayData := profilePageTemplateData{
-		Username:        authUser,
-		AuthUsername:    authUser,
-		Title:           "Keymaster User Profile",
-		ShowU2F:         showU2F,
-		JSSources:       JSSources,
-		ReadOnlyProfile: fromCache}
+		Username:     assumedUser,
+		AuthUsername: authUser,
+		Title:        "Keymaster User Profile",
+		ShowU2F:      showU2F,
+		JSSources:    JSSources,
+		ReadOnlyMsg:  readOnlyMsg,
+		UsersLink:    state.IsAdminUser(authUser)}
 	for i, tokenInfo := range profile.U2fAuthData {
 
 		deviceData := registeredU2FTokenDisplayInfo{
@@ -1735,7 +1812,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("%v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1750,8 +1827,13 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	}
 	logger.Debugf(3, "Form: %+v", r.Form)
 
+	assumedUser := r.Form.Get("username")
+
+	// Have admin rights = Must be admin + authenticated with U2F
+	hasAdminRights := state.IsAdminUser(authUser) && ((loginLevel & AuthTypeU2F) != 0)
+
 	// Check params
-	if r.Form.Get("username") != authUser {
+	if !hasAdminRights && assumedUser != authUser {
 		logger.Printf("bad username authUser=%s requested=%s", authUser, r.Form.Get("username"))
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
@@ -1765,7 +1847,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	}
 
 	//Do a redirect
-	profile, _, fromCache, err := state.LoadUserProfile(authUser)
+	profile, _, fromCache, err := state.LoadUserProfile(assumedUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1809,7 +1891,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 		return
 	}
 
-	err = state.SaveUserProfile(authUser, profile)
+	err = state.SaveUserProfile(assumedUser, profile)
 	if err != nil {
 		logger.Printf("Saving profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1820,7 +1902,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	returnAcceptType := getPreferredAcceptType(r)
 	switch returnAcceptType {
 	case "text/html":
-		http.Redirect(w, r, profilePath, 302)
+		http.Redirect(w, r, profileURI(authUser, assumedUser), 302)
 	default:
 		w.WriteHeader(200)
 		fmt.Fprintf(w, "Success!")
@@ -1917,6 +1999,7 @@ func main() {
 	serviceMux.HandleFunc(proto.LoginPath, runtimeState.loginHandler)
 	serviceMux.HandleFunc(logoutPath, runtimeState.logoutHandler)
 	serviceMux.HandleFunc(profilePath, runtimeState.profileHandler)
+	serviceMux.HandleFunc(usersPath, runtimeState.usersHandler)
 
 	staticFilesPath := filepath.Join(runtimeState.Config.Base.SharedDataDirectory, "static_files")
 	serviceMux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticFilesPath))))

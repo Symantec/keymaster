@@ -130,6 +130,50 @@ const secondFactorAuthFormText = `
 {{end}}
 `
 
+type usersPageTemplateData struct {
+	Title        string
+	AuthUsername string
+	JSSources    []string
+	Users        []string
+}
+
+const usersHTML = `
+{{define "usersPage"}}
+<!DOCTYPE html>
+<html style="height:100%; padding:0;border:0;margin:0">
+  <head>
+    <title>{{.Title}}</title>
+    {{if .JSSources -}}
+    {{- range .JSSources }}
+    <script type="text/javascript" src="{{.}}"></script>
+    {{- end}}
+    {{- end}}
+    <!-- The original u2f-api.js code can be found here:
+    https://github.com/google/u2f-ref-code/blob/master/u2f-gae-demo/war/js/u2f-api.js -->
+    <!-- script type="text/javascript" src="https://demo.yubico.com/js/u2f-api.js"></script-->
+    <link rel="stylesheet" type="text/css" href="//fonts.googleapis.com/css?family=Droid+Sans" />
+    <link rel="stylesheet" type="text/css" href="/custom_static/customization.css">
+    <link rel="stylesheet" type="text/css" href="/static/keymaster.css">
+  </head>
+  <body>
+    <div style="min-height:100%;position:relative;">
+    {{template "header" .}}
+    <div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
+
+    <h1>{{.Title}}</h1>
+    <ul>
+    {{range .Users}}
+       <li><a href="/profile/{{.}}">{{.}}</a></li>
+    {{end}}
+    </ul>
+    </div>
+    {{template "footer" . }}
+    </div>
+  </body>
+</html>
+{{end}}
+`
+
 type registeredU2FTokenDisplayInfo struct {
 	RegistrationDate time.Time
 	DeviceData       string
@@ -143,7 +187,8 @@ type profilePageTemplateData struct {
 	Username        string
 	JSSources       []string
 	ShowU2F         bool
-	ReadOnlyProfile bool
+	ReadOnlyMsg     string
+	UsersLink       bool
 	RegisteredToken []registeredU2FTokenDisplayInfo
 }
 
@@ -174,13 +219,11 @@ const profileHTML = `
     {{with $top := . }}
     <h1>Keymaster User Profile</h1>
     <h2> {{.Username}}</h2>
-    {{if .ReadOnlyProfile}}
-    The active keymaster is running disconnected from its DB backend. All token operations execpt for Authentication cannot proceed.
-    {{end}}
+    {{.ReadOnlyMsg}}
     <ul>
       <li><a href="/api/v0/logout" >Logout </a></li>
        {{if .ShowU2F}}
-       {{if not .ReadOnlyProfile}}
+       {{if not .ReadOnlyMsg}}
       <li>
          <a id="register_button" href="#">Register token</a>
          <div id="register_action_text" style="color: blue;background-color: yellow; display: none;"> Please Touch the blinking device to register(insert if not inserted yet) </div>
@@ -192,6 +235,9 @@ const profileHTML = `
       {{else}}
       <div id="auth_action_text" style="color: blue;background-color: yellow;"> Your browser does not support U2F. However you can still Enable/Disable/Delete U2F tokens </div>
       {{end}}
+    {{if .UsersLink}}
+      <li><a href="/users/">Users</a></li>
+    {{end}}
     </ul>
     {{if .RegisteredToken -}}
         Your U2F Token(s):
@@ -206,10 +252,10 @@ const profileHTML = `
 	     <form enctype="application/x-www-form-urlencoded" action="/api/v0/manageU2FToken" method="post">
 	     <input type="hidden" name="index" value="{{.Index}}">
 	     <input type="hidden" name="username" value="{{$top.Username}}">
-	     <td> <input type="text" name="name" value="{{ .Name}}" SIZE=18  {{if $top.ReadOnlyProfile}} readonly{{end}} > </td>
+	     <td> <input type="text" name="name" value="{{ .Name}}" SIZE=18  {{if $top.ReadOnlyMsg}} readonly{{end}} > </td>
 	     <td> {{ .DeviceData}} </td>
 	     <td>
-	         {{if not $top.ReadOnlyProfile}}
+	         {{if not $top.ReadOnlyMsg}}
 	         <input type="submit" name="action" value="Update" {{if not .Enabled}} disabled {{end}}/>
 		 {{if .Enabled}}
 		 <input type="submit" name="action" value="Disable"/>
