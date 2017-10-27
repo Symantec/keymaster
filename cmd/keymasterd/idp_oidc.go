@@ -47,9 +47,10 @@ func (state *RuntimeState) idpOpenIDCDiscoveryHandler(w http.ResponseWriter, r *
 		TokenEndoint:           issuer + idpOpenIDCTokenPath,
 		UserInfoEndpoint:       issuer + idpOpenIDCUserinfoPath,
 		JWKSURI:                issuer + idpOpenIDCJWKSPath,
-		ResponseTypesSupported: []string{"code"},
+		ResponseTypesSupported: []string{"code"},               // We only support authorization code flow
 		SubjectTypesSupported:  []string{"pairwise", "public"}, // WHAT is THIS?
 		IDTokenSigningAlgValue: []string{"RS256"}}
+	// need to agree on what scopes we will support
 
 	b, err := json.Marshal(metadata)
 	if err != nil {
@@ -80,8 +81,45 @@ func (state *RuntimeState) idpOpenIDCJWKSHandler(w http.ResponseWriter, r *http.
 	fmt.Fprintf(w, "{\"keys\": [%s]  }", string(mkey))
 }
 
-func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter, r *http.Request) {
+type keymasterdCodeToken struct {
+	Issuer     string `json:"iss"`
+	Subject    string `json:"sub"`
+	IssuedAt   int64  `json:"iat"`
+	Expiration int64  `json:"exp"`
+	Username   string `json:"username"`
+	AuthLevel  int64  `json:"auth_level"`
 }
+
+func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter, r *http.Request) {
+	// We are now at exploration stage... and will require pre-authed clients.
+	ok, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	if err != nil {
+		logger.Printf("%v", err)
+		return
+	}
+	// requst MUST be a GET or POST
+	if !(r.Method == "GET" || r.Method == "POST") {
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Method for Auth Handler")
+		return
+	}
+	err = r.ParseForm()
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
+
+}
+
+type openIDConnectIDToken struct {
+	Issuer     string   `json:"iss"`
+	Subject    string   `json:"sub"`
+	Audience   []string `json:"aud"`
+	Expiration int64    `json:"exp"`
+	IssuedAt   int64    `json:"iat"`
+	AuthTime   int64    `json:"auth_time,omitempty"` //Time of Auth
+	Nonce      string   `json:"nonce,omitempty"`
+}
+
 func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http.Request) {
 }
 func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *http.Request) {
