@@ -285,7 +285,7 @@ func derBytesCertToCertAndPem(derBytes []byte) (*x509.Certificate, string, error
 func TestGenx509CertGoodNoRealm(t *testing.T) {
 	userPub, caCert, caPriv := setupX509Generator(t)
 
-	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, nil, testDuration)
+	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, nil, testDuration, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,7 +307,7 @@ func TestGenx509CertGoodWithRealm(t *testing.T) {
 	/*
 	 */
 	realm := "EXAMPLE.COM"
-	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, &realm, testDuration)
+	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, &realm, testDuration, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,7 +346,7 @@ func TestGenSelfSignedCACertGood(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = GenUserX509Cert("username", userPub, cert, caPriv, nil, testDuration)
+	_, err = GenUserX509Cert("username", userPub, cert, caPriv, nil, testDuration, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

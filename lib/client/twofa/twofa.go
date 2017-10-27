@@ -97,11 +97,11 @@ func getCertsFromServer(
 	baseUrl string,
 	tlsConfig *tls.Config,
 	skip2fa bool,
-	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, err error) {
+	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
 	//First Do Login
 	client, err := util.GetHttpClient(tlsConfig)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	loginUrl := baseUrl + proto.LoginPath
@@ -110,7 +110,7 @@ func getCertsFromServer(
 	form.Add("password", string(password[:]))
 	req, err := http.NewRequest("POST", loginUrl, strings.NewReader(form.Encode()))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
@@ -122,24 +122,24 @@ func getCertsFromServer(
 		logger.Println(err)
 		// TODO: differentiate between 400 and 500 errors
 		// is OK to fail.. try next
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	defer loginResp.Body.Close()
 	if loginResp.StatusCode != 200 {
 		logger.Printf("got error from login call %s", loginResp.Status)
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	//Enusre we have at least one cookie
 	if len(loginResp.Cookies()) < 1 {
 		err = errors.New("No cookies from login")
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	loginJSONResponse := proto.LoginResponse{}
 	//body := jsonrr.Result().Body
 	err = json.NewDecoder(loginResp.Body).Decode(&loginJSONResponse)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	loginResp.Body.Close() //so that we can reuse the channel
 
@@ -176,7 +176,7 @@ func getCertsFromServer(
 			devices, err := u2fhid.Devices()
 			if err != nil {
 				logger.Fatal(err)
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			if len(devices) > 0 {
 
@@ -184,7 +184,7 @@ func getCertsFromServer(
 					client, loginResp.Cookies(), baseUrl, logger)
 				if err != nil {
 
-					return nil, nil, err
+					return nil, nil, nil, err
 				}
 				successful2fa = true
 			}
@@ -195,14 +195,14 @@ func getCertsFromServer(
 				client, loginResp.Cookies(), baseUrl, logger)
 			if err != nil {
 
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			successful2fa = true
 		}
 
 		if !successful2fa {
 			err = errors.New("Failed to Pefrom 2FA (as requested from server)")
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 	}
@@ -213,7 +213,7 @@ func getCertsFromServer(
 	pubKey := signer.Public()
 	derKey, err := x509.MarshalPKIXPublicKey(pubKey)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	pemKey := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: derKey}))
 
@@ -225,14 +225,24 @@ func getCertsFromServer(
 		pemKey,
 		logger)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+
+	kubernetesCert, err = doCertRequest(
+		client,
+		loginResp.Cookies(),
+		baseUrl+"/certgen/"+userName+"?type=x509-kubernetes",
+		pemKey,
+		logger)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
 	//// Now we do sshCert!
 	// generate and write public key
 	sshPub, err := ssh.NewPublicKey(pubKey)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	sshAuthFile := string(ssh.MarshalAuthorizedKey(sshPub))
 	sshCert, err = doCertRequest(
@@ -242,10 +252,10 @@ func getCertsFromServer(
 		sshAuthFile,
 		logger)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	return sshCert, x509Cert, nil
+	return sshCert, x509Cert, kubernetesCert, nil
 }
 
 func getCertFromTargetUrls(
@@ -255,13 +265,13 @@ func getCertFromTargetUrls(
 	targetUrls []string,
 	rootCAs *x509.CertPool,
 	skipu2f bool,
-	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, err error) {
+	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
 	success := false
 	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
 
 	for _, baseUrl := range targetUrls {
 		logger.Printf("attempting to target '%s' for '%s'\n", baseUrl, userName)
-		sshCert, x509Cert, err = getCertsFromServer(
+		sshCert, x509Cert, kubernetesCert, err = getCertsFromServer(
 			signer, userName, password, baseUrl, tlsConfig, skipu2f, logger)
 		if err != nil {
 			logger.Println(err)
@@ -273,8 +283,8 @@ func getCertFromTargetUrls(
 	}
 	if !success {
 		err := errors.New("Failed to get creds")
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	return sshCert, x509Cert, nil
+	return sshCert, x509Cert, kubernetesCert, nil
 }
