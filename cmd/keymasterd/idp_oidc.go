@@ -7,10 +7,14 @@ import (
 	//"io/ioutil"
 	"log"
 	"net/http"
-	//"strings"
-	//"time"
+	"strings"
+	"time"
 	//"golang.org/x/net/context"
+
 	"github.com/mendsley/gojwk"
+	//"gopkg.in/dgrijalva/jwt-go.v2"
+	"gopkg.in/square/go-jose.v2"
+	"gopkg.in/square/go-jose.v2/jwt"
 )
 
 //For minimal openid connect interaface and easy config we need 5 enpoints
@@ -82,21 +86,26 @@ func (state *RuntimeState) idpOpenIDCJWKSHandler(w http.ResponseWriter, r *http.
 }
 
 type keymasterdCodeToken struct {
-	Issuer     string `json:"iss"`
-	Subject    string `json:"sub"`
+	Issuer     string `json:"iss"` //keymasterd
+	Subject    string `json:"sub"` //clientID
 	IssuedAt   int64  `json:"iat"`
 	Expiration int64  `json:"exp"`
 	Username   string `json:"username"`
 	AuthLevel  int64  `json:"auth_level"`
+	State      string `json:"state,omitEmpty"`
+	//ClientID    string `json:"client_id"`
+	//RedirectURI string `json:"redirect_uri"`
+	Scope string `json:"scope"`
 }
 
 func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter, r *http.Request) {
 	// We are now at exploration stage... and will require pre-authed clients.
-	ok, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("%v", err)
 		return
 	}
+	logger.Printf("AuthUser of idc auth: %s", authUser)
 	// requst MUST be a GET or POST
 	if !(r.Method == "GET" || r.Method == "POST") {
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Method for Auth Handler")
@@ -107,7 +116,43 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
+	if r.Form.Get("response_type") != "code" {
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Unsupported or Missing response_type for Auth Handler")
+		return
+	}
 
+	clientID := r.Form.Get("client_id")
+	if clientID == "" {
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Empty cleint_id for Auth Handler")
+		return
+	}
+	scope := r.Form.Get("scope")
+	validScope := false
+	for _, requestedScope := range strings.Split(scope, " ") {
+		if requestedScope == "openid" {
+			validScope = true
+		}
+	}
+	if !validScope {
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid scope value for Auth Handler")
+		return
+	}
+
+	//redirectURLString := r.Form.Get("redirect_uri")
+	//Dont check for now
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: state.Signer}, nil)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
+	codeToken := keymasterdCodeToken{Issuer: "keymasterd", Subject: clientID, IssuedAt: time.Now().Unix()}
+
+	raw, err := jwt.Signed(signer).Claims(codeToken).CompactSerialize()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(raw)
 }
 
 type openIDConnectIDToken struct {
