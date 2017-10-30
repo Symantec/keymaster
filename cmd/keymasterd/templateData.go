@@ -218,7 +218,7 @@ const profileHTML = `
 
     {{with $top := . }}
     <h1>Keymaster User Profile</h1>
-    <h2> {{.Username}}</h2>
+    <h2 id="username">{{.Username}}</h2>
     {{.ReadOnlyMsg}}
     <ul>
       <li><a href="/api/v0/logout" >Logout </a></li>
@@ -251,7 +251,7 @@ const profileHTML = `
             <tr>
 	     <form enctype="application/x-www-form-urlencoded" action="/api/v0/manageU2FToken" method="post">
 	     <input type="hidden" name="index" value="{{.Index}}">
-	     <input id="username" type="hidden" name="username" value="{{$top.Username}}">
+	     <input type="hidden" name="username" value="{{$top.Username}}">
 	     <td> <input type="text" name="name" value="{{ .Name}}" SIZE=18  {{if $top.ReadOnlyMsg}} readonly{{end}} > </td>
 	     <td> {{ .DeviceData}} </td>
 	     <td>

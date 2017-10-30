@@ -26,7 +26,7 @@ function checkError(resp) {
     return true;
   }
   function u2fRegistered(resp) {
-    var username = document.getElementById('username').value;
+    var username = document.getElementById('username').textContent;
     console.log(resp);
     if (checkError(resp)) {
       return;
@@ -37,7 +37,7 @@ function checkError(resp) {
     }).fail(serverError);
   }
   function register() {
-    var username = document.getElementById('username').value;
+    var username = document.getElementById('username').textContent;
     document.getElementById('register_action_text').style.display="block";
     $.getJSON('/u2f/RegisterRequest/' + username).success(function(req) {
       console.log(req);

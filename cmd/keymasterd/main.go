@@ -1406,6 +1406,7 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
+
 	// /u2f/RegisterResponse/<assumed user>
 	// pieces[0] == "" pieces[1] = "u2f" pieces[2] == "RegisterResponse"
 	pieces := strings.Split(r.URL.Path, "/")
