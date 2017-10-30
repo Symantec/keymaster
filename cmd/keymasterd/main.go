@@ -2033,6 +2033,9 @@ func main() {
 		Addr:         runtimeState.Config.Base.AdminAddress,
 		TLSConfig:    cfg,
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 	srpc.RegisterServerTlsConfig(
 		&tls.Config{ClientCAs: runtimeState.ClientCAPool},
@@ -2057,6 +2060,9 @@ func main() {
 		Handler:      serviceMux,
 		TLSConfig:    cfg,
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	http.Handle(eventmon.HttpPath, eventNotifier)
