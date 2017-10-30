@@ -130,7 +130,7 @@ func setupCerts(
 	}
 
 	// Get the certs
-	sshCert, x509Cert, err := twofa.GetCertFromTargetUrls(
+	sshCert, x509Cert, kubernetesCert, err := twofa.GetCertFromTargetUrls(
 		signer,
 		userName,
 		password,
@@ -141,7 +141,7 @@ func setupCerts(
 	if err != nil {
 		logger.Fatal(err)
 	}
-	if sshCert == nil || x509Cert == nil {
+	if sshCert == nil || x509Cert == nil || kubernetesCert == nil {
 		err := errors.New("Could not get cert from any url")
 		logger.Fatal(err)
 	}
@@ -179,6 +179,13 @@ func setupCerts(
 		err := errors.New("Could not write ssh cert")
 		logger.Fatal(err)
 	}
+	kubernetesCertPath := privateKeyPath + "-kubernetesCert.pem"
+	err = ioutil.WriteFile(kubernetesCertPath, kubernetesCert, 0644)
+	if err != nil {
+		err := errors.New("Could not write ssh cert")
+		logger.Fatal(err)
+	}
+
 	logger.Printf("Success")
 	if _, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
 		// TODO(rgooch): Parse certificate to get actual lifetime.

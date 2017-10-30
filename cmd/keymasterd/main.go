@@ -73,7 +73,12 @@ type u2fAuthData struct {
 type userProfile struct {
 	U2fAuthData           map[int64]*u2fAuthData
 	RegistrationChallenge *u2f.Challenge
-	U2fAuthChallenge      *u2f.Challenge
+	//U2fAuthChallenge      *u2f.Challenge
+}
+
+type localUserData struct {
+	U2fAuthChallenge *u2f.Challenge
+	ExpiresAt        time.Time
 }
 
 type pendingAuth2Request struct {
@@ -91,15 +96,18 @@ type RuntimeState struct {
 	KerberosRealm       *string
 	caCertDer           []byte
 	authCookie          map[string]authInfo
+	localAuthData       map[string]localUserData
 	SignerIsReady       chan bool
 	Mutex               sync.Mutex
 	//userProfile         map[string]userProfile
-	pendingOauth2   map[string]pendingAuth2Request
-	storageRWMutex  sync.RWMutex
-	db              *sql.DB
-	dbType          string
-	htmlTemplate    *template.Template
-	passwordChecker pwauth.PasswordAuthenticator
+	pendingOauth2        map[string]pendingAuth2Request
+	storageRWMutex       sync.RWMutex
+	db                   *sql.DB
+	dbType               string
+	cacheDB              *sql.DB
+	remoteDBQueryTimeout time.Duration
+	htmlTemplate         *template.Template
+	passwordChecker      pwauth.PasswordAuthenticator
 }
 
 const redirectPath = "/auth/oauth2/callback"
@@ -233,11 +241,22 @@ func (state *RuntimeState) performStateCleanup(secsBetweenCleanup int) {
 		}
 		finalPendingSize := len(state.pendingOauth2)
 
+		//localAuthData
+		initPendingLocal := len(state.localAuthData)
+		for key, localAuth := range state.localAuthData {
+			if localAuth.ExpiresAt.Before(time.Now()) {
+				delete(state.localAuthData, key)
+			}
+		}
+		finalPendingLocal := len(state.localAuthData)
+
 		state.Mutex.Unlock()
 		logger.Debugf(3, "Auth Cookie sizes: before:(%d) after (%d)\n",
 			initAuthSize, finalAuthSize)
 		logger.Debugf(3, "Pending Cookie sizes: before(%d) after(%d)",
 			initPendingSize, finalPendingSize)
+		logger.Debugf(3, "Pending Cookie sizes: before(%d) after(%d)",
+			initPendingLocal, finalPendingLocal)
 		time.Sleep(time.Duration(secsBetweenCleanup) * time.Second)
 	}
 
@@ -683,7 +702,10 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		state.postAuthSSHCertHandler(w, r, targetUser, keySigner, duration)
 		return
 	case "x509":
-		state.postAuthX509CertHandler(w, r, targetUser, keySigner, duration)
+		state.postAuthX509CertHandler(w, r, targetUser, keySigner, duration, false)
+		return
+	case "x509-kubernetes":
+		state.postAuthX509CertHandler(w, r, targetUser, keySigner, duration, true)
 		return
 	default:
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Unrecognized cert type")
@@ -766,9 +788,57 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 	}(targetUser, "ssh")
 }
 
+func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
+	ldapConfig := state.Config.UserInfo.Ldap
+	var timeoutSecs uint
+	timeoutSecs = 2
+	//for _, ldapUrl := range ldapConfig.LDAPTargetURLs {
+	for _, ldapUrl := range strings.Split(ldapConfig.LDAPTargetURLs, ",") {
+		if len(ldapUrl) < 1 {
+			continue
+		}
+		u, err := authutil.ParseLDAPURL(ldapUrl)
+		if err != nil {
+			logger.Printf("Failed to parse ldapurl '%s'", ldapUrl)
+			continue
+		}
+		groups, err := authutil.GetLDAPUserGroups(*u,
+			ldapConfig.BindUsername, ldapConfig.BindPassword,
+			timeoutSecs, nil, username,
+			ldapConfig.UserSearchBaseDNs, ldapConfig.UserSearchFilter)
+		if err != nil {
+			continue
+		}
+		return groups, nil
+
+	}
+	if ldapConfig.LDAPTargetURLs == "" {
+		var emptyGroup []string
+		return emptyGroup, nil
+	}
+	err := errors.New("error getting the groups")
+	return nil, err
+}
+
 func (state *RuntimeState) postAuthX509CertHandler(
 	w http.ResponseWriter, r *http.Request, targetUser string,
-	keySigner crypto.Signer, duration time.Duration) {
+	keySigner crypto.Signer, duration time.Duration,
+	withUserGroups bool) {
+
+	var userGroups []string
+	var err error
+	if withUserGroups {
+		userGroups, err = state.getUserGroups(targetUser)
+		if err != nil {
+			//logger.Println("error getting user groups")
+			logger.Println(err)
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			return
+		}
+		//logger.Printf("%v", userGroups)
+	} else {
+		userGroups = append(userGroups, "keymaster")
+	}
 	var cert string
 	switch r.Method {
 	case "POST":
@@ -802,7 +872,7 @@ func (state *RuntimeState) postAuthX509CertHandler(
 			logger.Printf("Cannot parse CA Der data")
 			return
 		}
-		derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert, keySigner, state.KerberosRealm, duration)
+		derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert, keySigner, state.KerberosRealm, duration, &userGroups)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			logger.Printf("Cannot Generate x509cert")
@@ -966,7 +1036,7 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 }
 
 func (state *RuntimeState) userHasU2FTokens(username string) (bool, error) {
-	profile, ok, err := state.LoadUserProfile(username)
+	profile, ok, _, err := state.LoadUserProfile(username)
 	if err != nil {
 		return false, err
 	}
@@ -1327,12 +1397,17 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	profile, _, err := state.LoadUserProfile(authUser)
+	profile, _, fromCache, err := state.LoadUserProfile(authUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 
+	}
+	if fromCache {
+		logger.Printf("DB is being cached and requesting registration aborting it")
+		http.Error(w, "db backend is offline for writes", http.StatusServiceUnavailable)
+		return
 	}
 
 	c, err := u2f.NewChallenge(u2fAppID, u2fTrustedFacets)
@@ -1378,10 +1453,15 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	profile, _, err := state.LoadUserProfile(authUser)
+	profile, _, fromCache, err := state.LoadUserProfile(authUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	if fromCache {
+		logger.Printf("DB is being cached and requesting registration aborting it")
+		http.Error(w, "db backend is offline for writes", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -1441,7 +1521,7 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	}
 
 	//////////
-	profile, ok, err := state.LoadUserProfile(authUser)
+	profile, ok, _, err := state.LoadUserProfile(authUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1465,16 +1545,16 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-	profile.U2fAuthChallenge = c
+
+	//save cached copy
+	var localAuth localUserData
+	localAuth.U2fAuthChallenge = c
+	state.Mutex.Lock()
+	state.localAuthData[authUser] = localAuth
+	state.Mutex.Unlock()
+
 	req := c.SignRequest(registrations)
 	logger.Debugf(3, "Sign request: %+v", req)
-
-	err = state.SaveUserProfile(authUser, profile)
-	if err != nil {
-		logger.Printf("Saving profile error: %v", err)
-		http.Error(w, "error", http.StatusInternalServerError)
-		return
-	}
 
 	if err := json.NewEncoder(w).Encode(req); err != nil {
 		logger.Printf("json encofing error: %v", err)
@@ -1517,7 +1597,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 
 	logger.Printf("signResponse: %+v", signResp)
 
-	profile, ok, err := state.LoadUserProfile(authUser)
+	profile, ok, _, err := state.LoadUserProfile(authUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1536,18 +1616,22 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if profile.U2fAuthChallenge == nil {
-		http.Error(w, "challenge missing", http.StatusBadRequest)
-		return
-	}
 	if registrations == nil {
 		http.Error(w, "registration missing", http.StatusBadRequest)
+		return
+	}
+	state.Mutex.Lock()
+	localAuth, ok := state.localAuthData[authUser]
+	state.Mutex.Unlock()
+	if !ok {
+		http.Error(w, "challenge missing", http.StatusBadRequest)
 		return
 	}
 
 	//var err error
 	for i, u2fReg := range profile.U2fAuthData {
-		newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *profile.U2fAuthChallenge, u2fReg.Counter)
+		//newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *profile.U2fAuthChallenge, u2fReg.Counter)
+		newCounter, authErr := u2fReg.Registration.Authenticate(signResp, *localAuth.U2fAuthChallenge, u2fReg.Counter)
 		if authErr == nil {
 			metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, true)
 
@@ -1557,7 +1641,8 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 			//profile.U2fAuthData[i].Counter = newCounter
 			u2fReg.Counter = newCounter
 			profile.U2fAuthData[i] = u2fReg
-			profile.U2fAuthChallenge = nil
+			//profile.U2fAuthChallenge = nil
+			delete(state.localAuthData, authUser)
 
 			// update cookie if found, this should be also a critical section
 			if authCookie != nil {
@@ -1569,14 +1654,6 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 				}
 				state.Mutex.Unlock()
 			}
-
-			err = state.SaveUserProfile(authUser, profile)
-			if err != nil {
-				logger.Printf("Saving profile error: %v", err)
-				http.Error(w, "error", http.StatusInternalServerError)
-				return
-			}
-
 			// TODO: update local cookie state
 			w.Write([]byte("success"))
 			return
@@ -1588,28 +1665,104 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 	http.Error(w, "error verifying response", http.StatusInternalServerError)
 }
 
-const profilePath = "/profile/"
+func (state *RuntimeState) IsAdminUser(user string) bool {
+	for _, adminUser := range state.Config.Base.AdminUsers {
+		if user == adminUser {
+			return true
+		}
+	}
+	return false
+}
 
-func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request) {
+const usersPath = "/users/"
+
+func (state *RuntimeState) usersHandler(
+	w http.ResponseWriter, r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-	/*
-	 */
-	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("%v", err)
 
 		return
 	}
+
+	users, _, err := state.GetUsers()
+	if err != nil {
+		logger.Printf("Getting users error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+
+	}
+
+	JSSources := []string{"/static/jquery-1.12.4.patched.min.js"}
+
+	displayData := usersPageTemplateData{
+		AuthUsername: authUser,
+		Title:        "Keymaster Users",
+		Users:        users,
+		JSSources:    JSSources}
+	err = state.htmlTemplate.ExecuteTemplate(w, "usersPage", displayData)
+	if err != nil {
+		logger.Printf("Failed to execute %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+}
+
+const profilePath = "/profile/"
+
+func profileURI(authUser, assumedUser string) string {
+	if authUser == assumedUser {
+		return profilePath
+	}
+	return profilePath + assumedUser
+}
+
+func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request) {
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
+	// /profile/<assumed user>
+	// pieces[0] == "" pieces[1] = "profile" pieces[2] == <assumed user>
+	pieces := strings.Split(r.URL.Path, "/")
+
+	var assumedUser string
+	if len(pieces) >= 3 {
+		assumedUser = pieces[2]
+	}
+
+	/*
+	 */
+	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
+	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	if err != nil {
+		logger.Printf("%v", err)
+
+		return
+	}
+
+	readOnlyMsg := ""
+	if assumedUser == "" {
+		assumedUser = authUser
+	} else if !state.IsAdminUser(authUser) {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	} else if (loginLevel & AuthTypeU2F) == 0 {
+		readOnlyMsg = "Admins must U2F authenticate to change the profile of others."
+	}
+
 	//find the user token
-	profile, _, err := state.LoadUserProfile(authUser)
+	profile, _, fromCache, err := state.LoadUserProfile(assumedUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 
+	}
+	if fromCache {
+		readOnlyMsg = "The active keymaster is running disconnected from its DB backend. All token operations execpt for Authentication cannot proceed."
 	}
 
 	JSSources := []string{"/static/jquery-1.12.4.patched.min.js"}
@@ -1619,11 +1772,13 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	displayData := profilePageTemplateData{
-		Username:     authUser,
+		Username:     assumedUser,
 		AuthUsername: authUser,
 		Title:        "Keymaster User Profile",
 		ShowU2F:      showU2F,
-		JSSources:    JSSources}
+		JSSources:    JSSources,
+		ReadOnlyMsg:  readOnlyMsg,
+		UsersLink:    state.IsAdminUser(authUser)}
 	for i, tokenInfo := range profile.U2fAuthData {
 
 		deviceData := registeredU2FTokenDisplayInfo{
@@ -1657,7 +1812,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("%v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1672,8 +1827,13 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	}
 	logger.Debugf(3, "Form: %+v", r.Form)
 
+	assumedUser := r.Form.Get("username")
+
+	// Have admin rights = Must be admin + authenticated with U2F
+	hasAdminRights := state.IsAdminUser(authUser) && ((loginLevel & AuthTypeU2F) != 0)
+
 	// Check params
-	if r.Form.Get("username") != authUser {
+	if !hasAdminRights && assumedUser != authUser {
 		logger.Printf("bad username authUser=%s requested=%s", authUser, r.Form.Get("username"))
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
@@ -1687,12 +1847,17 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	}
 
 	//Do a redirect
-	profile, _, err := state.LoadUserProfile(authUser)
+	profile, _, fromCache, err := state.LoadUserProfile(assumedUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 
+	}
+	if fromCache {
+		logger.Printf("DB is being cached and requesting registration aborting it")
+		http.Error(w, "db backend is offline for writes", http.StatusServiceUnavailable)
+		return
 	}
 
 	// Todo: check for negative values
@@ -1726,7 +1891,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 		return
 	}
 
-	err = state.SaveUserProfile(authUser, profile)
+	err = state.SaveUserProfile(assumedUser, profile)
 	if err != nil {
 		logger.Printf("Saving profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1737,7 +1902,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	returnAcceptType := getPreferredAcceptType(r)
 	switch returnAcceptType {
 	case "text/html":
-		http.Redirect(w, r, profilePath, 302)
+		http.Redirect(w, r, profileURI(authUser, assumedUser), 302)
 	default:
 		w.WriteHeader(200)
 		fmt.Fprintf(w, "Success!")
@@ -1834,6 +1999,7 @@ func main() {
 	serviceMux.HandleFunc(proto.LoginPath, runtimeState.loginHandler)
 	serviceMux.HandleFunc(logoutPath, runtimeState.logoutHandler)
 	serviceMux.HandleFunc(profilePath, runtimeState.profileHandler)
+	serviceMux.HandleFunc(usersPath, runtimeState.usersHandler)
 
 	staticFilesPath := filepath.Join(runtimeState.Config.Base.SharedDataDirectory, "static_files")
 	serviceMux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(staticFilesPath))))

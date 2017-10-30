@@ -45,11 +45,26 @@ type baseConfig struct {
 	HideStandardLogin           bool     `yaml:"hide_standard_login"`
 	AllowedAuthBackendsForCerts []string `yaml:"allowed_auth_backends_for_certs"`
 	AllowedAuthBackendsForWebUI []string `yaml:"allowed_auth_backends_for_webui"`
+	AdminUsers                  []string `yaml:"admin_users"`
 }
 
 type LdapConfig struct {
 	Bind_Pattern     string
 	LDAP_Target_URLs string
+}
+
+type UserInfoLDAPSource struct {
+	BindUsername       string   `yaml:"bind_username"`
+	BindPassword       string   `yaml:"bind_password"`
+	LDAPTargetURLs     string   `yaml:"ldap_target_urls"`
+	UserSearchBaseDNs  []string `yaml:"user_search_base_dns"`
+	UserSearchFilter   string   `yaml:"user_search_filter"`
+	GroupSearchBaseDNs []string `yaml:"group_search_base_dns"`
+	GroupSearchFilter  string   `yaml:"group_search_filter"`
+}
+
+type UserInfoSouces struct {
+	Ldap UserInfoLDAPSource
 }
 
 type Oauth2Config struct {
@@ -79,6 +94,7 @@ type SymantecVIPConfig struct {
 type AppConfigFile struct {
 	Base           baseConfig
 	Ldap           LdapConfig
+	UserInfo       UserInfoSouces `yaml:"userinfo_sources"`
 	Oauth2         Oauth2Config
 	SymantecVIP    SymantecVIPConfig
 	ProfileStorage ProfileStorageConfig
@@ -102,7 +118,7 @@ func (state *RuntimeState) loadTemplates() (err error) {
 		}
 	}
 	/// Load the oter built in templates
-	extraTemplates := []string{footerTemplateText, loginFormText, secondFactorAuthFormText, profileHTML, headerTemplateText}
+	extraTemplates := []string{footerTemplateText, loginFormText, secondFactorAuthFormText, profileHTML, usersHTML, headerTemplateText}
 	for _, templateString := range extraTemplates {
 		_, err = state.htmlTemplate.Parse(templateString)
 		if err != nil {
@@ -134,6 +150,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	//runtimeState.userProfile = make(map[string]userProfile)
 	runtimeState.pendingOauth2 = make(map[string]pendingAuth2Request)
 	runtimeState.SignerIsReady = make(chan bool, 1)
+	runtimeState.localAuthData = make(map[string]localUserData)
 
 	//verify config
 	if len(runtimeState.Config.Base.HostIdentity) > 0 {

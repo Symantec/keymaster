@@ -815,12 +815,79 @@ func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Todo... check against the FS.
-	profile, _, err = state.LoadUserProfile("username")
+	profile, _, _, err = state.LoadUserProfile("username")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if profile.U2fAuthData[0].Name != newName {
 		t.Fatal("update not successul")
+	}
+}
+
+func TestU2fTokenManagerHandlerDeleteNotAdmin(t *testing.T) {
+	var state RuntimeState
+	//load signer
+	signer, err := getSignerFromPEMBytes([]byte(testSignerPrivateKey))
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Signer = signer
+	state.authCookie = make(map[string]authInfo)
+
+	// login as user username
+	cookieVal := "supersecret"
+	state.authCookie[cookieVal] = authInfo{Username: "username",
+		ExpiresAt: time.Now().Add(120 * time.Second), AuthType: AuthTypeAny}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+
+	dir, err := ioutil.TempDir("", "example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir) // clean up
+	state.Config.Base.DataDirectory = dir
+	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
+	err = initDB(&state)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	profile := &userProfile{}
+	profile.U2fAuthData = make(map[int64]*u2fAuthData)
+	profile.U2fAuthData[0] = &u2fAuthData{Name: "name1", Enabled: false}
+	profile.U2fAuthData[1] = &u2fAuthData{Name: "name2", Enabled: false}
+
+	// 2 U2F's in differentuser's profile
+	err = state.SaveUserProfile("differentuser", profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set up request to delete first u2f from "differentuser"
+	form := url.Values{}
+	form.Add("username", "differentuser")
+	form.Add("index", "0")
+	form.Add("action", "Delete")
+
+	req, err := http.NewRequest("POST", u2fTokenManagementPath, strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(&authCookie)
+	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	val, err := checkRequestHandlerCode(req, state.u2fTokenManagerHandler, http.StatusUnauthorized)
+	if err != nil {
+		t.Log(val)
+		t.Fatal(err)
+	}
+	// Todo... check against the FS.
+	profile, _, _, err = state.LoadUserProfile("differentuser")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profile.U2fAuthData) != 2 {
+		t.Fatal("delete should not have succeeded")
 	}
 }
 
@@ -880,7 +947,7 @@ func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Todo... check against the FS.
-	profile, _, err = state.LoadUserProfile("username")
+	profile, _, _, err = state.LoadUserProfile("username")
 	if err != nil {
 		t.Fatal(err)
 	}

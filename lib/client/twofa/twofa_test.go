@@ -153,7 +153,7 @@ func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
 		t.Fatal(err)
 	}
 	skipu2f := true
-	_, _, err = GetCertFromTargetUrls(
+	_, _, _, err = GetCertFromTargetUrls(
 		privateKey,
 		"username",
 		[]byte("password"),
@@ -172,7 +172,7 @@ func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
 		t.Fatal(err)
 	}
 	skipu2f := true
-	_, _, err = GetCertFromTargetUrls(
+	_, _, _, err = GetCertFromTargetUrls(
 		privateKey,
 		"username",
 		[]byte("password"),
