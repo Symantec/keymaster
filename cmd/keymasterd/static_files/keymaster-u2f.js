@@ -26,18 +26,20 @@ function checkError(resp) {
     return true;
   }
   function u2fRegistered(resp) {
+    var username = document.getElementById('username').value;
     console.log(resp);
     if (checkError(resp)) {
       return;
     }
-    $.post('/u2f/RegisterResponse', JSON.stringify(resp)).success(function() {
+    $.post('/u2f/RegisterResponse/' + username, JSON.stringify(resp)).success(function() {
       alert('Success');
       location.reload();
     }).fail(serverError);
   }
   function register() {
+    var username = document.getElementById('username').value;
     document.getElementById('register_action_text').style.display="block";
-    $.getJSON('/u2f/RegisterRequest').success(function(req) {
+    $.getJSON('/u2f/RegisterRequest/' + username).success(function(req) {
       console.log(req);
       u2f.register(req.appId, req.registerRequests, req.registeredKeys, u2fRegistered, 30);
     }).fail(serverError);
