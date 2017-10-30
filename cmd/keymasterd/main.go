@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1761,14 +1762,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		JSSources = []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/keymaster-u2f.js"}
 	}
 
-	displayData := profilePageTemplateData{
-		Username:     assumedUser,
-		AuthUsername: authUser,
-		Title:        "Keymaster User Profile",
-		ShowU2F:      showU2F,
-		JSSources:    JSSources,
-		ReadOnlyMsg:  readOnlyMsg,
-		UsersLink:    state.IsAdminUser(authUser)}
+	var devices []registeredU2FTokenDisplayInfo
 	for i, tokenInfo := range profile.U2fAuthData {
 
 		deviceData := registeredU2FTokenDisplayInfo{
@@ -1776,9 +1770,26 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 			Enabled:    tokenInfo.Enabled,
 			Name:       tokenInfo.Name,
 			Index:      i}
-		displayData.RegisteredToken = append(displayData.RegisteredToken, deviceData)
+		devices = append(devices, deviceData)
 	}
-
+	sort.Slice(devices, func(i, j int) bool {
+		if devices[i].Name < devices[j].Name {
+			return true
+		}
+		if devices[i].Name > devices[j].Name {
+			return false
+		}
+		return devices[i].DeviceData < devices[j].DeviceData
+	})
+	displayData := profilePageTemplateData{
+		Username:        assumedUser,
+		AuthUsername:    authUser,
+		Title:           "Keymaster User Profile",
+		ShowU2F:         showU2F,
+		JSSources:       JSSources,
+		ReadOnlyMsg:     readOnlyMsg,
+		UsersLink:       state.IsAdminUser(authUser),
+		RegisteredToken: devices}
 	logger.Debugf(1, "%v", displayData)
 
 	err = state.htmlTemplate.ExecuteTemplate(w, "userProfilePage", displayData)
