@@ -43,8 +43,23 @@ type openIDProviderMetadata struct {
 	IDTokenSigningAlgValue []string `json:"id_token_signing_alg_values_supported"`
 }
 
-func (state *RuntimeState) idpOpenIDCDiscoveryHandler(w http.ResponseWriter, r *http.Request) {
+func (state *RuntimeState) idpGetIssuer() string {
 	issuer := "https://" + state.HostIdentity
+	if state.Config.Base.HttpAddress != ":443" {
+		issuer = issuer + state.Config.Base.HttpAddress
+	}
+	return issuer
+}
+
+func (state *RuntimeState) idpOpenIDCDiscoveryHandler(w http.ResponseWriter, r *http.Request) {
+	/*
+		issuer := "https://" + state.HostIdentity
+		//this is a hack..
+		if state.Config.Base.HttpAddress != ":443" {
+			issuer = issuer + state.Config.Base.HttpAddress
+		}
+	*/
+	issuer := state.idpGetIssuer()
 	metadata := openIDProviderMetadata{
 		Issuer:                 issuer,
 		AuthorizationEndpoint:  issuer + idpOpenIDCAuthorizationPath,
@@ -92,7 +107,8 @@ type keymasterdCodeToken struct {
 	Expiration int64  `json:"exp"`
 	Username   string `json:"username"`
 	AuthLevel  int64  `json:"auth_level"`
-	State      string `json:"state,omitEmpty"`
+	Nonce      string `json:"nonce,omitEmpty"`
+	//State      string `json:"state,omitEmpty"`
 	//ClientID    string `json:"client_id"`
 	//RedirectURI string `json:"redirect_uri"`
 	Scope string `json:"scope"`
@@ -116,6 +132,8 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
+	logger.Printf("Auth request =%+v", r)
+	//logger.Printf("IDC auth from=%v", r.Form)
 	if r.Form.Get("response_type") != "code" {
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Unsupported or Missing response_type for Auth Handler")
 		return
@@ -138,21 +156,29 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 		return
 	}
 
-	//redirectURLString := r.Form.Get("redirect_uri")
+	requestRedirectURLString := r.Form.Get("redirect_uri")
 	//Dont check for now
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: state.Signer}, nil)
+	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
+	//signerOptions.EmbedJWK = true
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: state.Signer}, signerOptions)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
-	codeToken := keymasterdCodeToken{Issuer: "keymasterd", Subject: clientID, IssuedAt: time.Now().Unix()}
+	codeToken := keymasterdCodeToken{Issuer: state.idpGetIssuer(), Subject: clientID, IssuedAt: time.Now().Unix()}
+	codeToken.Scope = scope
+	codeToken.Expiration = time.Now().Unix() + 3600*16
+	codeToken.Username = authUser
+	codeToken.Nonce = r.Form.Get("nonce")
 
 	raw, err := jwt.Signed(signer).Claims(codeToken).CompactSerialize()
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println(raw)
+	redirectPath := fmt.Sprintf("%s?code=%s&state=%s", requestRedirectURLString, raw, r.Form.Get("state"))
+	http.Redirect(w, r, redirectPath, 302)
+	//logger.Printf("raw jwt =%v", raw)
 }
 
 type openIDConnectIDToken struct {
@@ -165,7 +191,139 @@ type openIDConnectIDToken struct {
 	Nonce      string   `json:"nonce,omitempty"`
 }
 
-func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http.Request) {
+type accessToken struct {
+	AccessToken string `json:"access_token"`
+	TokenType   string `json:"token_type"`
+	ExpiresIn   int    `json:expires_in`
+	IDToken     string `json:"id_token"`
 }
+
+type userInfoToken struct {
+	Username  string `json:"username"`
+	Scopes    string `json:"scopes"`
+	ExpiresIn int    `json:expires_in`
+}
+
+func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http.Request) {
+
+	// MUST be POST https://openid.net/specs/openid-connect-core-1_0.html 3.1.3.1
+	if !(r.Method == "POST") {
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Method for Auth Handler")
+		return
+	}
+	err := r.ParseForm()
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
+	if r.Form.Get("grant_type") != "authorization_code" {
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid grant type")
+		return
+	}
+	requestRedirectURLString := r.Form.Get("redirect_uri")
+	if requestRedirectURLString == "" {
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid redirect uri")
+		return
+	}
+	logger.Printf("token request =%+v", r)
+	codeString := r.Form.Get("code")
+	if codeString == "" {
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "nil code")
+		return
+
+	}
+	tok, err := jwt.ParseSigned(codeString)
+	if err != nil {
+		logger.Printf("err=%s", err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad code")
+		return
+	}
+	logger.Printf("tok=%+v", tok)
+	//out := jwt.Claims{}
+	keymasterToken := keymasterdCodeToken{}
+	if err := tok.Claims(state.Signer.Public(), &keymasterToken); err != nil {
+		logger.Printf("err=%s", err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad code")
+		return
+	}
+	logger.Printf("out=%+v", keymasterToken)
+
+	//now is time to extract the values..
+
+	//formClientID := r.Form.Get("clientID")
+	logger.Printf("%+v", r)
+
+	clientID, pass, ok := r.BasicAuth()
+	if !ok {
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		//toLoginOrBasicAuth(w, r)
+		//err := errors.New("check_Auth, Invalid or no auth header")
+		//return "", AuthTypeNone, err
+		return
+	}
+	logger.Printf("username=%s, pass%s", clientID, pass)
+	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
+	signerOptions = signerOptions.WithHeader("kid", "1")
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: state.Signer}, signerOptions)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
+
+	idToken := openIDConnectIDToken{Issuer: state.idpGetIssuer(), Subject: keymasterToken.Username, Audience: []string{clientID}}
+	idToken.Nonce = keymasterToken.Nonce
+	idToken.Expiration = time.Now().Unix() + 3600*16
+	idToken.IssuedAt = time.Now().Unix()
+
+	raw, err := jwt.Signed(signer).Claims(idToken).CompactSerialize()
+	if err != nil {
+		panic(err)
+	}
+	logger.Printf("raw=%s", raw)
+
+	// The access token will be yet another jwt.
+	outToken := accessToken{AccessToken: "1234", TokenType: "Bearer", ExpiresIn: 3600, IDToken: raw}
+
+	// and write the json output
+	b, err := json.Marshal(outToken)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	json.Indent(&out, b, "", "\t")
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Pragma", "no-cache")
+	out.WriteTo(w)
+
+}
+
+type openidConnectUserInfo struct {
+	Subject           string `json:"sub"`
+	Name              string `json:"name"`
+	Username          string `json:"username,omitempty"`
+	PreferredUsername string `json:"preferred_username,omitempty"`
+	Email             string `json:"email,omitempty"`
+}
+
 func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *http.Request) {
+
+	if !(r.Method == "GET" || r.Method == "POST") {
+		logger.Printf("Invalid Method for Userinfo Handler")
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Method for Userinfo Handler")
+		return
+	}
+
+	userInfo := openidConnectUserInfo{Subject: "username", Email: "username@example.com", Name: "username"}
+	// and write the json output
+	b, err := json.Marshal(userInfo)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	json.Indent(&out, b, "", "\t")
+	w.Header().Set("Content-Type", "application/json")
+	out.WriteTo(w)
 }
