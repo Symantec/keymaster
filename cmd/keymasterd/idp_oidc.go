@@ -199,9 +199,10 @@ type accessToken struct {
 }
 
 type userInfoToken struct {
-	Username  string `json:"username"`
-	Scopes    string `json:"scopes"`
-	ExpiresIn int    `json:expires_in`
+	Username   string `json:"username"`
+	Scope      string `json:"scope"`
+	Expiration int    `json:"exp"`
+	Type       string `json:"type"`
 }
 
 func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http.Request) {
@@ -275,14 +276,20 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	idToken.Expiration = time.Now().Unix() + 3600*16
 	idToken.IssuedAt = time.Now().Unix()
 
-	raw, err := jwt.Signed(signer).Claims(idToken).CompactSerialize()
+	signedIdToken, err := jwt.Signed(signer).Claims(idToken).CompactSerialize()
 	if err != nil {
 		panic(err)
 	}
-	logger.Printf("raw=%s", raw)
+	logger.Printf("raw=%s", signedIdToken)
+
+	userinfoToken := userInfoToken{Username: keymasterToken.Username, Scope: keymasterToken.Scope}
+	signedAccessToken, err := jwt.Signed(signer).Claims(userinfoToken).CompactSerialize()
+	if err != nil {
+		panic(err)
+	}
 
 	// The access token will be yet another jwt.
-	outToken := accessToken{AccessToken: "1234", TokenType: "Bearer", ExpiresIn: 3600, IDToken: raw}
+	outToken := accessToken{AccessToken: signedAccessToken, TokenType: "Bearer", ExpiresIn: 3600, IDToken: signedIdToken}
 
 	// and write the json output
 	b, err := json.Marshal(outToken)
@@ -314,8 +321,52 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Method for Userinfo Handler")
 		return
 	}
+	logger.Printf("%+v", r)
+	var accessToken string
+	authHeader := r.Header.Get("Authorization")
+	if authHeader != "" {
+		logger.Printf("%s", authHeader)
+		splitHeader := strings.Split(authHeader, " ")
+		if len(splitHeader) == 2 {
+			if splitHeader[0] == "Bearer" {
+				accessToken = splitHeader[1]
+			}
+		}
+	}
+	if accessToken == "" {
+		//logger.Printf("")
+		err := r.ParseForm()
+		if err != nil {
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			return
+		}
+		accessToken = r.Form.Get("access_token")
+	}
+	logger.Printf("access_token='%s'", accessToken)
 
-	userInfo := openidConnectUserInfo{Subject: "username", Email: "username@example.com", Name: "username"}
+	if accessToken == "" {
+		logger.Printf("access_token='%s'", accessToken)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing access token")
+		return
+	}
+
+	tok, err := jwt.ParseSigned(accessToken)
+	if err != nil {
+		logger.Printf("err=%s", err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad access token")
+		return
+	}
+	logger.Printf("tok=%+v", tok)
+
+	parsedAccessToken := userInfoToken{}
+	if err := tok.Claims(state.Signer.Public(), &parsedAccessToken); err != nil {
+		logger.Printf("err=%s", err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad code")
+		return
+	}
+	logger.Printf("out=%+v", parsedAccessToken)
+
+	userInfo := openidConnectUserInfo{Subject: parsedAccessToken.Username, Email: "username@example.com", Name: "username"}
 	// and write the json output
 	b, err := json.Marshal(userInfo)
 	if err != nil {
