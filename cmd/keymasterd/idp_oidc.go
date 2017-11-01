@@ -85,7 +85,9 @@ func (state *RuntimeState) idpOpenIDCDiscoveryHandler(w http.ResponseWriter, r *
 	w.Header().Set("Content-Type", "application/json")
 	out.WriteTo(w)
 }
-func getKid(key crypto.PublicKey) (string, error) {
+
+// This actually gets the SSH key fingerprint
+func getKeyFingerprint(key crypto.PublicKey) (string, error) {
 	sshPublicKey, err := ssh.NewPublicKey(key)
 	if err != nil {
 		return "", err
@@ -103,7 +105,7 @@ func (state *RuntimeState) idpOpenIDCJWKSHandler(w http.ResponseWriter, r *http.
 		log.Fatal(err)
 	}
 
-	selfKey.Kid, err = getKid(state.Signer.Public())
+	selfKey.Kid, err = getKeyFingerprint(state.Signer.Public())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -280,7 +282,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	}
 	logger.Printf("username=%s, pass%s", clientID, pass)
 	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
-	kid, err := getKid(state.Signer.Public())
+	kid, err := getKeyFingerprint(state.Signer.Public())
 	if err != nil {
 		log.Fatal(err)
 	}
