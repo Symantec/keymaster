@@ -108,6 +108,7 @@ type RuntimeState struct {
 	remoteDBQueryTimeout time.Duration
 	htmlTemplate         *template.Template
 	passwordChecker      pwauth.PasswordAuthenticator
+	KeymasterPublicKeys  []crypto.PublicKey
 }
 
 const redirectPath = "/auth/oauth2/callback"
@@ -986,6 +987,7 @@ func (state *RuntimeState) secretInjectorHandler(w http.ResponseWriter, r *http.
 	// Assignmet of signer MUST be the last operation after
 	// all error checks
 	state.Signer = signer
+	state.signerPublicKeyToKeymasterKeys()
 	if sendMessage {
 		state.SignerIsReady <- true
 	}
