@@ -5,6 +5,7 @@ import (
 	"crypto"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	//"io/ioutil"
 	"log"
@@ -199,6 +200,20 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	//logger.Printf("raw jwt =%v", raw)
 }
 
+func (state *RuntimeState) JWTClaims(t *jwt.JSONWebToken, dest ...interface{}) (err error) {
+	for _, key := range state.KeymasterPublicKeys {
+		err = t.Claims(key, dest...)
+		if err == nil {
+			return nil
+		}
+	}
+	if err != nil {
+		return err
+	}
+	err = errors.New("No valid key found")
+	return err
+}
+
 type openIDConnectIDToken struct {
 	Issuer     string   `json:"iss"`
 	Subject    string   `json:"sub"`
@@ -260,7 +275,8 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	logger.Printf("tok=%+v", tok)
 	//out := jwt.Claims{}
 	keymasterToken := keymasterdCodeToken{}
-	if err := tok.Claims(state.Signer.Public(), &keymasterToken); err != nil {
+	//if err := tok.Claims(state.Signer.Public(), &keymasterToken); err != nil {
+	if err := state.JWTClaims(tok, &keymasterToken); err != nil {
 		logger.Printf("err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad code")
 		return
@@ -382,7 +398,8 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 	logger.Printf("tok=%+v", tok)
 
 	parsedAccessToken := userInfoToken{}
-	if err := tok.Claims(state.Signer.Public(), &parsedAccessToken); err != nil {
+	//if err := tok.Claims(state.Signer.Public(), &parsedAccessToken); err != nil {
+	if err := state.JWTClaims(tok, &parsedAccessToken); err != nil {
 		logger.Printf("err=%s", err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad code")
 		return
