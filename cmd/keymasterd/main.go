@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1380,24 +1381,44 @@ func getRegistrationArray(U2fAuthData map[int64]*u2fAuthData) (regArray []u2f.Re
 	return regArray
 }
 
-const u2fRegustisterRequestPath = "/u2f/RegisterRequest"
+const u2fRegustisterRequestPath = "/u2f/RegisterRequest/"
 
 func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
 
+	// /u2f/RegisterRequest/<assumed user>
+	// pieces[0] == "" pieces[1] = "u2f" pieces[2] == "RegisterRequest"
+	pieces := strings.Split(r.URL.Path, "/")
+
+	var assumedUser string
+	if len(pieces) >= 4 {
+		assumedUser = pieces[3]
+	} else {
+		http.Error(w, "error", http.StatusBadRequest)
+		return
+	}
+
 	/*
-	 */
+
+		/*
+	*/
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("%v", err)
 
 		return
 	}
 
-	profile, _, fromCache, err := state.LoadUserProfile(authUser)
+	// Check that they can change other users
+	if !state.IsAdminUserAndU2F(authUser, loginLevel) && authUser != assumedUser {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	profile, _, fromCache, err := state.LoadUserProfile(assumedUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1421,7 +1442,7 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 	req := u2f.NewWebRegisterRequest(c, registrations)
 
 	logger.Printf("registerRequest: %+v", req)
-	err = state.SaveUserProfile(authUser, profile)
+	err = state.SaveUserProfile(assumedUser, profile)
 	if err != nil {
 		logger.Printf("Saving profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1430,20 +1451,38 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 	json.NewEncoder(w).Encode(req)
 }
 
-const u2fRegisterRequesponsePath = "/u2f/RegisterResponse"
+const u2fRegisterRequesponsePath = "/u2f/RegisterResponse/"
 
 func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
 
+	// /u2f/RegisterResponse/<assumed user>
+	// pieces[0] == "" pieces[1] = "u2f" pieces[2] == "RegisterResponse"
+	pieces := strings.Split(r.URL.Path, "/")
+
+	var assumedUser string
+	if len(pieces) >= 4 {
+		assumedUser = pieces[3]
+	} else {
+		http.Error(w, "error", http.StatusBadRequest)
+		return
+	}
+
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("%v", err)
 
+		return
+	}
+
+	// Check that they can change other users
+	if !state.IsAdminUserAndU2F(authUser, loginLevel) && authUser != assumedUser {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -1453,7 +1492,7 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	profile, _, fromCache, err := state.LoadUserProfile(authUser)
+	profile, _, fromCache, err := state.LoadUserProfile(assumedUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1494,7 +1533,7 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 	logger.Printf("Registration success: %+v", reg)
 
 	profile.RegistrationChallenge = nil
-	err = state.SaveUserProfile(authUser, profile)
+	err = state.SaveUserProfile(assumedUser, profile)
 	if err != nil {
 		logger.Printf("Saving profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -1674,6 +1713,10 @@ func (state *RuntimeState) IsAdminUser(user string) bool {
 	return false
 }
 
+func (state *RuntimeState) IsAdminUserAndU2F(user string, loginLevel int) bool {
+	return state.IsAdminUser(user) && ((loginLevel & AuthTypeU2F) != 0)
+}
+
 const usersPath = "/users/"
 
 func (state *RuntimeState) usersHandler(
@@ -1771,14 +1814,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		JSSources = []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/keymaster-u2f.js"}
 	}
 
-	displayData := profilePageTemplateData{
-		Username:     assumedUser,
-		AuthUsername: authUser,
-		Title:        "Keymaster User Profile",
-		ShowU2F:      showU2F,
-		JSSources:    JSSources,
-		ReadOnlyMsg:  readOnlyMsg,
-		UsersLink:    state.IsAdminUser(authUser)}
+	var devices []registeredU2FTokenDisplayInfo
 	for i, tokenInfo := range profile.U2fAuthData {
 
 		deviceData := registeredU2FTokenDisplayInfo{
@@ -1786,9 +1822,26 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 			Enabled:    tokenInfo.Enabled,
 			Name:       tokenInfo.Name,
 			Index:      i}
-		displayData.RegisteredToken = append(displayData.RegisteredToken, deviceData)
+		devices = append(devices, deviceData)
 	}
-
+	sort.Slice(devices, func(i, j int) bool {
+		if devices[i].Name < devices[j].Name {
+			return true
+		}
+		if devices[i].Name > devices[j].Name {
+			return false
+		}
+		return devices[i].DeviceData < devices[j].DeviceData
+	})
+	displayData := profilePageTemplateData{
+		Username:        assumedUser,
+		AuthUsername:    authUser,
+		Title:           "Keymaster User Profile",
+		ShowU2F:         showU2F,
+		JSSources:       JSSources,
+		ReadOnlyMsg:     readOnlyMsg,
+		UsersLink:       state.IsAdminUser(authUser),
+		RegisteredToken: devices}
 	logger.Debugf(1, "%v", displayData)
 
 	err = state.htmlTemplate.ExecuteTemplate(w, "userProfilePage", displayData)
@@ -1830,7 +1883,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	assumedUser := r.Form.Get("username")
 
 	// Have admin rights = Must be admin + authenticated with U2F
-	hasAdminRights := state.IsAdminUser(authUser) && ((loginLevel & AuthTypeU2F) != 0)
+	hasAdminRights := state.IsAdminUserAndU2F(authUser, loginLevel)
 
 	// Check params
 	if !hasAdminRights && assumedUser != authUser {
