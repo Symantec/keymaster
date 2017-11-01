@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	//"io/ioutil"
@@ -9,10 +11,11 @@ import (
 	"net/http"
 	"strings"
 	"time"
-	//"golang.org/x/net/context"
 
+	//"golang.org/x/net/context"
 	"github.com/mendsley/gojwk"
 	//"gopkg.in/dgrijalva/jwt-go.v2"
+	"golang.org/x/crypto/ssh"
 	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/jwt"
 )
@@ -82,6 +85,16 @@ func (state *RuntimeState) idpOpenIDCDiscoveryHandler(w http.ResponseWriter, r *
 	w.Header().Set("Content-Type", "application/json")
 	out.WriteTo(w)
 }
+func getKid(key crypto.PublicKey) (string, error) {
+	sshPublicKey, err := ssh.NewPublicKey(key)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.New()
+	h.Write(sshPublicKey.Marshal())
+	fp := fmt.Sprintf("%x", h.Sum(nil))
+	return fp, nil
+}
 
 // Need to improve this to account for adding the other signers here.
 func (state *RuntimeState) idpOpenIDCJWKSHandler(w http.ResponseWriter, r *http.Request) {
@@ -90,7 +103,10 @@ func (state *RuntimeState) idpOpenIDCJWKSHandler(w http.ResponseWriter, r *http.
 		log.Fatal(err)
 	}
 
-	selfKey.Kid = "1"
+	selfKey.Kid, err = getKid(state.Signer.Public())
+	if err != nil {
+		log.Fatal(err)
+	}
 	mkey, err := gojwk.Marshal(selfKey)
 	if err != nil {
 		log.Fatal(err)
@@ -264,7 +280,12 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	}
 	logger.Printf("username=%s, pass%s", clientID, pass)
 	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
-	signerOptions = signerOptions.WithHeader("kid", "1")
+	kid, err := getKid(state.Signer.Public())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	signerOptions = signerOptions.WithHeader("kid", kid)
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: state.Signer}, signerOptions)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
