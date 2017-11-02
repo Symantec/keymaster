@@ -515,15 +515,11 @@ func (state *RuntimeState) updateAuthCookieAuthlevel(w http.ResponseWriter, r *h
 	if err != nil {
 		return "", err
 	}
-	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) * time.Second)
-	updatedAuthCookie := http.Cookie{Name: authCookieName, Value: cookieVal, Expires: expiration, Path: "/", HttpOnly: true, Secure: true}
+
+	updatedAuthCookie := http.Cookie{Name: authCookieName, Value: cookieVal, Expires: authCookie.Expires, Path: "/", HttpOnly: true, Secure: true}
 	logger.Debugf(3, "about to update authCookie")
 	http.SetCookie(w, &updatedAuthCookie)
 	return authCookie.Value, nil
-}
-
-func (state *RuntimeState) deleteAuthCookie(w http.ResponseWriter, r *http.Request) error {
-	return nil
 }
 
 // Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
