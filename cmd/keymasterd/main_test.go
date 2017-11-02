@@ -256,8 +256,10 @@ func TestSuccessFullSigningSSH(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", AuthType: AuthTypeU2F, ExpiresAt: time.Now().Add(120 * time.Second)}
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypeU2F)
+	if err != nil {
+		t.Fatal(err)
+	}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	cookieReq.AddCookie(&authCookie)
 
@@ -292,8 +294,10 @@ func TestSuccessFullSigningX509(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", AuthType: AuthTypeU2F, ExpiresAt: time.Now().Add(120 * time.Second)}
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypeU2F)
+	if err != nil {
+		t.Fatal(err)
+	}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	cookieReq.AddCookie(&authCookie)
 
@@ -328,8 +332,10 @@ func TestFailCertgenDurationTooLong(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", AuthType: AuthTypeU2F, ExpiresAt: time.Now().Add(120 * time.Second)}
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypeU2F)
+	if err != nil {
+		t.Fatal(err)
+	}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	cookieReq.AddCookie(&authCookie)
 
@@ -376,11 +382,10 @@ func TestFailSingingExpiredCookie(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{
-		Username:  "username",
-		AuthType:  AuthTypeU2F,
-		ExpiresAt: time.Now().Add(120 * time.Second)}
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypeU2F)
+	if err != nil {
+		t.Fatal(err)
+	}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	cookieReq.AddCookie(&authCookie)
 
@@ -397,7 +402,7 @@ func TestFailSingingExpiredCookie(t *testing.T) {
 	// TODO check that body is actually empty
 }
 
-func TestFailSingingUnexpectedCookie(t *testing.T) {
+func TestFailSinginUnexpectedCookie(t *testing.T) {
 	state, passwdFile, err := setupValidRuntimeStateSigner()
 	if err != nil {
 		t.Fatal(err)
@@ -409,8 +414,10 @@ func TestFailSingingUnexpectedCookie(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username", ExpiresAt: time.Now().Add(120 * time.Second)}
+	_, err = state.setNewAuthCookie(nil, "username", AuthTypeU2F)
+	if err != nil {
+		t.Fatal(err)
+	}
 	authCookie := http.Cookie{Name: authCookieName, Value: "nonmatchingvalue"}
 	cookieReq.AddCookie(&authCookie)
 
@@ -456,11 +463,10 @@ func TestInjectingSecret(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{
-		Username:  "username",
-		AuthType:  AuthTypeU2F,
-		ExpiresAt: time.Now().Add(120 * time.Second)}
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypeU2F)
+	if err != nil {
+		t.Fatal(err)
+	}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	certGenReq.AddCookie(&authCookie)
 
@@ -741,11 +747,10 @@ func TestProfileHandlerTemplate(t *testing.T) {
 		t.Fatal(err)
 		//return nil, err
 	}
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{
-		Username:  "username",
-		ExpiresAt: time.Now().Add(120 * time.Second),
-		AuthType:  AuthTypeAny}
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypeAny)
+	if err != nil {
+		t.Fatal(err)
+	}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	req.AddCookie(&authCookie)
 
@@ -777,11 +782,12 @@ func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{
-		Username:  "username",
-		ExpiresAt: time.Now().Add(120 * time.Second),
-		AuthType:  AuthTypeAny}
+
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypeAny)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//cookieReq.AddCookie(&authCookie)
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 
 	const newName = "New./-X"
@@ -835,9 +841,10 @@ func TestU2fTokenManagerHandlerDeleteNotAdmin(t *testing.T) {
 	state.authCookie = make(map[string]authInfo)
 
 	// login as user username
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username",
-		ExpiresAt: time.Now().Add(120 * time.Second), AuthType: AuthTypeAny}
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypeAny)
+	if err != nil {
+		t.Fatal(err)
+	}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 
 	dir, err := ioutil.TempDir("", "example")
@@ -901,9 +908,10 @@ func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
 	state.Signer = signer
 	state.authCookie = make(map[string]authInfo)
 
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{Username: "username",
-		ExpiresAt: time.Now().Add(120 * time.Second), AuthType: AuthTypeAny}
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypeAny)
+	if err != nil {
+		t.Fatal(err)
+	}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 
 	dir, err := ioutil.TempDir("", "example")
