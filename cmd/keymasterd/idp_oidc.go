@@ -2,10 +2,10 @@ package main
 
 import (
 	"bytes"
-	"crypto"
-	"crypto/sha256"
+	//"crypto"
+	//"crypto/sha256"
 	"encoding/json"
-	"errors"
+	//"errors"
 	"fmt"
 	//"io/ioutil"
 	"log"
@@ -16,7 +16,7 @@ import (
 	//"golang.org/x/net/context"
 	"github.com/mendsley/gojwk"
 	//"gopkg.in/dgrijalva/jwt-go.v2"
-	"golang.org/x/crypto/ssh"
+	//"golang.org/x/crypto/ssh"
 	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/jwt"
 )
@@ -45,14 +45,6 @@ type openIDProviderMetadata struct {
 	ResponseTypesSupported []string `json:"response_types_supported"`
 	SubjectTypesSupported  []string `json:"subject_types_supported"`
 	IDTokenSigningAlgValue []string `json:"id_token_signing_alg_values_supported"`
-}
-
-func (state *RuntimeState) idpGetIssuer() string {
-	issuer := "https://" + state.HostIdentity
-	if state.Config.Base.HttpAddress != ":443" {
-		issuer = issuer + state.Config.Base.HttpAddress
-	}
-	return issuer
 }
 
 func (state *RuntimeState) idpOpenIDCDiscoveryHandler(w http.ResponseWriter, r *http.Request) {
@@ -85,18 +77,6 @@ func (state *RuntimeState) idpOpenIDCDiscoveryHandler(w http.ResponseWriter, r *
 	//w.Header.Add("Content-Type", "application/json")
 	w.Header().Set("Content-Type", "application/json")
 	out.WriteTo(w)
-}
-
-// This actually gets the SSH key fingerprint
-func getKeyFingerprint(key crypto.PublicKey) (string, error) {
-	sshPublicKey, err := ssh.NewPublicKey(key)
-	if err != nil {
-		return "", err
-	}
-	h := sha256.New()
-	h.Write(sshPublicKey.Marshal())
-	fp := fmt.Sprintf("%x", h.Sum(nil))
-	return fp, nil
 }
 
 // Need to improve this to account for adding the other signers here.
@@ -198,20 +178,6 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	redirectPath := fmt.Sprintf("%s?code=%s&state=%s", requestRedirectURLString, raw, r.Form.Get("state"))
 	http.Redirect(w, r, redirectPath, 302)
 	//logger.Printf("raw jwt =%v", raw)
-}
-
-func (state *RuntimeState) JWTClaims(t *jwt.JSONWebToken, dest ...interface{}) (err error) {
-	for _, key := range state.KeymasterPublicKeys {
-		err = t.Claims(key, dest...)
-		if err == nil {
-			return nil
-		}
-	}
-	if err != nil {
-		return err
-	}
-	err = errors.New("No valid key found")
-	return err
 }
 
 type openIDConnectIDToken struct {

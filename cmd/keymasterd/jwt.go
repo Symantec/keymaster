@@ -1,0 +1,113 @@
+package main
+
+import (
+	"crypto"
+	"crypto/sha256"
+	"errors"
+	"fmt"
+	"time"
+
+	"golang.org/x/crypto/ssh"
+	"gopkg.in/square/go-jose.v2"
+	"gopkg.in/square/go-jose.v2/jwt"
+)
+
+// This actually gets the SSH key fingerprint
+func getKeyFingerprint(key crypto.PublicKey) (string, error) {
+	sshPublicKey, err := ssh.NewPublicKey(key)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.New()
+	h.Write(sshPublicKey.Marshal())
+	fp := fmt.Sprintf("%x", h.Sum(nil))
+	return fp, nil
+}
+
+func (state *RuntimeState) idpGetIssuer() string {
+	issuer := "https://" + state.HostIdentity
+	if state.Config.Base.HttpAddress != ":443" {
+		issuer = issuer + state.Config.Base.HttpAddress
+	}
+	return issuer
+}
+
+func (state *RuntimeState) JWTClaims(t *jwt.JSONWebToken, dest ...interface{}) (err error) {
+	for _, key := range state.KeymasterPublicKeys {
+		err = t.Claims(key, dest...)
+		if err == nil {
+			return nil
+		}
+	}
+	if err != nil {
+		return err
+	}
+	err = errors.New("No valid key found")
+	return err
+}
+
+func (state *RuntimeState) genNewSerializedAuthJWT(username string, authLevel int) (string, error) {
+	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: state.Signer}, signerOptions)
+	if err != nil {
+		return "", err
+	}
+	issuer := state.idpGetIssuer()
+	authToken := authInfoJWT{Issuer: issuer, Subject: username,
+		Audience: []string{issuer}, AuthType: authLevel, TokenType: "keymaster_auth"}
+	authToken.NotBefore = time.Now().Unix()
+	authToken.IssuedAt = authToken.NotBefore
+	authToken.Expiration = authToken.IssuedAt + maxAgeSecondsAuthCookie // TODO seek the actual duration
+
+	return jwt.Signed(signer).Claims(authToken).CompactSerialize()
+}
+
+func (state *RuntimeState) getAuthInfoFromAuthJWT(serializedToken string) (rvalue authInfo, err error) {
+	tok, err := jwt.ParseSigned(serializedToken)
+	if err != nil {
+		return rvalue, err
+	}
+	inboundJWT := authInfoJWT{}
+	if err := state.JWTClaims(tok, &inboundJWT); err != nil {
+		logger.Printf("err=%s", err)
+		return rvalue, err
+	}
+	//At this stage is now crypto verified, now is time to verify sane values
+	issuer := state.idpGetIssuer()
+	if inboundJWT.Issuer != issuer || inboundJWT.TokenType != "keymaster_auth" ||
+		inboundJWT.NotBefore > time.Now().Unix() {
+		err = errors.New("invalid JWT values")
+		return rvalue, err
+	}
+
+	rvalue.Username = inboundJWT.Subject
+	rvalue.AuthType = inboundJWT.AuthType
+	rvalue.ExpiresAt = time.Unix(inboundJWT.Expiration, 0)
+	return rvalue, nil
+}
+
+func (state *RuntimeState) updateAuthJWTWithNewAuthLevel(intoken string, newAuthLevel int) (string, error) {
+	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: state.Signer}, signerOptions)
+	if err != nil {
+		return "", err
+	}
+
+	tok, err := jwt.ParseSigned(intoken)
+	if err != nil {
+		return "", err
+	}
+	parsedJWT := authInfoJWT{}
+	if err := state.JWTClaims(tok, &parsedJWT); err != nil {
+		logger.Printf("err=%s", err)
+		return "", err
+	}
+	issuer := state.idpGetIssuer()
+	if parsedJWT.Issuer != issuer || parsedJWT.TokenType != "keymaster_auth" ||
+		parsedJWT.NotBefore > time.Now().Unix() {
+		err = errors.New("invalid JWT values")
+		return "", err
+	}
+	parsedJWT.AuthType = newAuthLevel
+	return jwt.Signed(signer).Claims(parsedJWT).CompactSerialize()
+}

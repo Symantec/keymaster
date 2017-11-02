@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
+	//"time"
 
 	"github.com/Symantec/Dominator/lib/log/debuglogger"
 	"gopkg.in/square/go-jose.v2/jwt"
@@ -42,7 +42,6 @@ func TestIDPOpenIDCMetadataHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
-	state.authCookie = make(map[string]authInfo)
 	state.pendingOauth2 = make(map[string]pendingAuth2Request)
 
 	url := idpOpenIDCConfigurationDocumentPath
@@ -59,7 +58,6 @@ func TestIDPOpenIDCJWKSHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
-	state.authCookie = make(map[string]authInfo)
 	state.pendingOauth2 = make(map[string]pendingAuth2Request)
 
 	url := idpOpenIDCJWKSPath
@@ -76,9 +74,9 @@ func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
-	state.authCookie = make(map[string]authInfo)
 	state.pendingOauth2 = make(map[string]pendingAuth2Request)
 	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
+	state.signerPublicKeyToKeymasterKeys()
 
 	//url := idpOpenIDCAuthorizationPath
 	req, err := http.NewRequest("GET", idpOpenIDCAuthorizationPath, nil)
