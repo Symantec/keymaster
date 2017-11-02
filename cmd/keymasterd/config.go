@@ -38,6 +38,7 @@ type baseConfig struct {
 	HtpasswdFilename            string   `yaml:"htpasswd_filename"`
 	ExternalAuthCmd             string   `yaml:"external_auth_command"`
 	ClientCAFilename            string   `yaml:"client_ca_filename"`
+	KeymasterPublicKeysFilename string   `yaml:"keymaster_public_keys_filename"`
 	HostIdentity                string   `yaml:"host_identity"`
 	KerberosRealm               string   `yaml:"kerberos_realm"`
 	DataDirectory               string   `yaml:"data_directory"`
@@ -128,6 +129,29 @@ func (state *RuntimeState) loadTemplates() (err error) {
 	return nil
 }
 
+func (state *RuntimeState) signerPublicKeyToKeymasterKeys() error {
+	logger.Debugf(3, "number of pk known=%d", len(state.KeymasterPublicKeys))
+	signerPKFingerprint, err := getKeyFingerprint(state.Signer.Public())
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, key := range state.KeymasterPublicKeys {
+		fp, err := getKeyFingerprint(key)
+		if err != nil {
+			return err
+		}
+		if signerPKFingerprint == fp {
+			found = true
+		}
+	}
+	if !found {
+		state.KeymasterPublicKeys = append(state.KeymasterPublicKeys, state.Signer.Public())
+	}
+	logger.Printf("number of pk known=%d", len(state.KeymasterPublicKeys))
+	return nil
+}
+
 func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	var runtimeState RuntimeState
 	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
@@ -146,7 +170,6 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	}
 
 	//share config
-	runtimeState.authCookie = make(map[string]authInfo)
 	//runtimeState.userProfile = make(map[string]userProfile)
 	runtimeState.pendingOauth2 = make(map[string]pendingAuth2Request)
 	runtimeState.SignerIsReady = make(chan bool, 1)
@@ -204,6 +227,39 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		logger.Debugf(3, "client ca file loaded")
 
 	}
+	if len(runtimeState.Config.Base.KeymasterPublicKeysFilename) > 0 {
+		filename := runtimeState.Config.Base.KeymasterPublicKeysFilename
+		if _, err := os.Stat(filename); os.IsNotExist(err) {
+			logger.Printf("keymaster_public_keys_filename defined but file does not exist")
+			return runtimeState, err
+		}
+		inFile, err := os.Open(filename)
+		if err != nil {
+			logger.Printf("keymaster_public_keys_filename cannot be opened")
+			return runtimeState, err
+		}
+		defer inFile.Close()
+		scanner := bufio.NewScanner(inFile)
+		scanner.Split(bufio.ScanLines)
+		for scanner.Scan() {
+			logger.Debugf(2, "line='%s'", scanner.Text())
+			userPubKey := scanner.Text()
+			sshPubKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(userPubKey))
+			if err != nil {
+				return runtimeState, err
+			}
+			//
+			cryptokey, ok := sshPubKey.(ssh.CryptoPublicKey)
+			if !ok {
+				err := errors.New("cannot cast public key!")
+				return runtimeState, err
+			}
+			logger.Debugf(3, "adding")
+			runtimeState.KeymasterPublicKeys = append(runtimeState.KeymasterPublicKeys, cryptokey.CryptoPublicKey())
+
+		}
+	}
+
 	if strings.HasPrefix(string(runtimeState.SSHCARawFileContent[:]), "-----BEGIN RSA PRIVATE KEY-----") {
 		signer, err := getSignerFromPEMBytes(runtimeState.SSHCARawFileContent)
 		if err != nil {
@@ -219,6 +275,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		// Assignmet of signer MUST be the last operation after
 		// all error checks
 		runtimeState.Signer = signer
+		runtimeState.signerPublicKeyToKeymasterKeys()
 		runtimeState.SignerIsReady <- true
 
 	} else {
