@@ -90,11 +90,10 @@ func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	// now we add a cookie for auth
-	cookieVal := "supersecret"
-	state.authCookie[cookieVal] = authInfo{
-		Username:  "username",
-		ExpiresAt: time.Now().Add(120 * time.Second),
-		AuthType:  AuthTypePassword}
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypePassword)
+	if err != nil {
+		t.Fatal(err)
+	}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
 	req.AddCookie(&authCookie)
 	// and we retry with no params... it should fail again
