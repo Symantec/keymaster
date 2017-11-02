@@ -106,10 +106,10 @@ type RuntimeState struct {
 	HostIdentity        string
 	KerberosRealm       *string
 	caCertDer           []byte
-	authCookie          map[string]authInfo
-	localAuthData       map[string]localUserData
-	SignerIsReady       chan bool
-	Mutex               sync.Mutex
+	//authCookie          map[string]authInfo
+	localAuthData map[string]localUserData
+	SignerIsReady chan bool
+	Mutex         sync.Mutex
 	//userProfile         map[string]userProfile
 	pendingOauth2        map[string]pendingAuth2Request
 	storageRWMutex       sync.RWMutex
@@ -236,14 +236,6 @@ func generateCADer(state *RuntimeState, keySigner crypto.Signer) ([]byte, error)
 func (state *RuntimeState) performStateCleanup(secsBetweenCleanup int) {
 	for {
 		state.Mutex.Lock()
-		initAuthSize := len(state.authCookie)
-		for key, authInfo := range state.authCookie {
-			if authInfo.ExpiresAt.Before(time.Now()) {
-				delete(state.authCookie, key)
-			}
-		}
-		finalAuthSize := len(state.authCookie)
-
 		//
 		initPendingSize := len(state.pendingOauth2)
 		for key, oauth2Pending := range state.pendingOauth2 {
@@ -263,8 +255,6 @@ func (state *RuntimeState) performStateCleanup(secsBetweenCleanup int) {
 		finalPendingLocal := len(state.localAuthData)
 
 		state.Mutex.Unlock()
-		logger.Debugf(3, "Auth Cookie sizes: before:(%d) after (%d)\n",
-			initAuthSize, finalAuthSize)
 		logger.Debugf(3, "Pending Cookie sizes: before(%d) after(%d)",
 			initPendingSize, finalPendingSize)
 		logger.Debugf(3, "Pending Cookie sizes: before(%d) after(%d)",
@@ -443,13 +433,22 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter, r *http.R
 				state.writeHTMLLoginPage(w, r)
 				return
 			}
-			state.Mutex.Lock()
-			info, ok := state.authCookie[authCookie.Value]
-			state.Mutex.Unlock()
-			if !ok {
+			info, err := state.getAuthInfoFromAuthJWT(authCookie.Value)
+			if err != nil {
+				logger.Debugf(3, "write failure state, error from getinfo authInfoJWT")
 				state.writeHTMLLoginPage(w, r)
 				return
 			}
+			/*
+					state.Mutex.Lock()
+					info, ok := state.authCookie[authCookie.Value]
+					state.Mutex.Unlock()
+
+				if !ok {
+					state.writeHTMLLoginPage(w, r)
+					return
+				}
+			*/
 			if info.ExpiresAt.Before(time.Now()) {
 				state.writeHTMLLoginPage(w, r)
 				return
@@ -493,18 +492,12 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 }
 
 func (state *RuntimeState) setNewAuthCookie(w http.ResponseWriter, username string, authlevel int) (string, error) {
-
-	cookieVal, err := genRandomString()
+	cookieVal, err := state.genNewSerializedAuthJWT(username, authlevel)
 	if err != nil {
 		logger.Println(err)
 		return "", err
 	}
 	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) * time.Second)
-	savedUserInfo := authInfo{Username: username, ExpiresAt: expiration, AuthType: authlevel}
-	state.Mutex.Lock()
-	state.authCookie[cookieVal] = savedUserInfo
-	state.Mutex.Unlock()
-
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal, Expires: expiration, Path: "/", HttpOnly: true, Secure: true}
 
 	//use handler with original request.
@@ -526,13 +519,16 @@ func (state *RuntimeState) updateAuthCookieAuthlevel(w http.ResponseWriter, r *h
 		err := errors.New("cannot find authCookie")
 		return "", err
 	}
-	state.Mutex.Lock()
-	info, ok := state.authCookie[authCookie.Value]
-	if ok {
-		info.AuthType = authlevel
-		state.authCookie[authCookie.Value] = info
+
+	var err error
+	cookieVal, err := state.updateAuthJWTWithNewAuthLevel(authCookie.Value, authlevel)
+	if err != nil {
+		return "", err
 	}
-	state.Mutex.Unlock()
+	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) * time.Second)
+	updatedAuthCookie := http.Cookie{Name: authCookieName, Value: cookieVal, Expires: expiration, Path: "/", HttpOnly: true, Secure: true}
+	logger.Debugf(3, "about to update authCookie")
+	http.SetCookie(w, &updatedAuthCookie)
 	return authCookie.Value, nil
 }
 
@@ -603,13 +599,22 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 	}
 
 	//Critical section
-	state.Mutex.Lock()
-	info, ok := state.authCookie[authCookie.Value]
-	state.Mutex.Unlock()
+	/*
+		state.Mutex.Lock()
+		info, ok := state.authCookie[authCookie.Value]
+		state.Mutex.Unlock()
 
-	if !ok {
-		//redirect to login page?
-		//better would be to return the content of the redirect form with a 401 code?
+		if !ok {
+			//redirect to login page?
+			//better would be to return the content of the redirect form with a 401 code?
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+			err := errors.New("Invalid Cookie")
+			return "", AuthTypeNone, err
+		}
+	*/
+	info, err := state.getAuthInfoFromAuthJWT(authCookie.Value)
+	if err != nil {
+		//TODO check between internal and bad cookie error
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		err := errors.New("Invalid Cookie")
 		return "", AuthTypeNone, err
@@ -1272,6 +1277,7 @@ func (state *RuntimeState) logoutHandler(w http.ResponseWriter, r *http.Request)
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
+	//TODO: check for CSRF (simple way: makeit post only)
 
 	// We first check for cookies
 	var authCookie *http.Cookie
@@ -1283,16 +1289,12 @@ func (state *RuntimeState) logoutHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	if authCookie != nil {
-		//Critical section
-		state.Mutex.Lock()
-		_, ok := state.authCookie[authCookie.Value]
-		if ok {
-			delete(state.authCookie, authCookie.Value)
-		}
-		state.Mutex.Unlock()
+		expiration := time.Unix(0, 0)
+		updatedAuthCookie := http.Cookie{Name: authCookieName, Value: "", Expires: expiration, Path: "/", HttpOnly: true, Secure: true}
+		http.SetCookie(w, &updatedAuthCookie)
 	}
 	//redirect to login
-	http.Redirect(w, r, profilePath, 302)
+	http.Redirect(w, r, "/", 302)
 }
 
 ///

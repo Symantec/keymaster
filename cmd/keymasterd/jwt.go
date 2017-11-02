@@ -57,7 +57,7 @@ func (state *RuntimeState) genNewSerializedAuthJWT(username string, authLevel in
 		Audience: []string{issuer}, AuthType: authLevel, TokenType: "keymaster_auth"}
 	authToken.NotBefore = time.Now().Unix()
 	authToken.IssuedAt = authToken.NotBefore
-	authToken.Expiration = authToken.IssuedAt + 3600*16 // TODO seek the actual duration
+	authToken.Expiration = authToken.IssuedAt + maxAgeSecondsAuthCookie // TODO seek the actual duration
 
 	return jwt.Signed(signer).Claims(authToken).CompactSerialize()
 }
