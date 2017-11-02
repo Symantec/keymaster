@@ -161,13 +161,6 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 	logger.Debugf(2, "%+v", data)
 
 	// Check if name is there..
-	//Make new auth cookie
-	cookieVal, err := genRandomString()
-	if err != nil {
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
-		logger.Println(err)
-		return
-	}
 
 	// TODO: we need a more robust way to get the username and to add some filters. This
 	// mechanism is ok for 0.2 but not for 0.3.
@@ -181,19 +174,13 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 		username = strings.ToLower(components[0])
 	}
 
-	// TODO: we should enhance oath2 to limit who can login by either full username OR
-	// source domain.
-
-	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) * time.Second)
-	savedUserInfo := authInfo{Username: username, ExpiresAt: expiration, AuthType: AuthTypeFederated}
-	state.Mutex.Lock()
-	state.authCookie[cookieVal] = savedUserInfo
-	state.Mutex.Unlock()
-
-	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal, Expires: expiration, Path: "/", HttpOnly: true, Secure: true}
-
-	//use handler with original request.
-	http.SetCookie(w, &authCookie)
+	//Make new auth cookie
+	_, err = state.setNewAuthCookie(w, username, AuthTypeFederated)
+	if err != nil {
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
+		logger.Println(err)
+		return
+	}
 
 	// delete peding cookie
 	state.Mutex.Lock()

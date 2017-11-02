@@ -61,6 +61,17 @@ type authInfo struct {
 	AuthType  int
 }
 
+type authInfoJWT struct {
+	Issuer    string   `json:"iss,omitempty"`
+	Subject   string   `json:"sub,omitempty"`
+	Audience  []string `json:"aud,omitempty"`
+	Expiry    int64    `json:"exp,omitempty"`
+	NotBefore int64    `json:"nbf,omitempty"`
+	IssuedAt  int64    `json:"iat,omitempty"`
+	tokenType string   `json:"token_type"`
+	AuthType  int      `json:"auth_type"`
+}
+
 type u2fAuthData struct {
 	Enabled      bool
 	CreatedAt    time.Time
@@ -479,6 +490,53 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 		return true
 	}
 	return false
+}
+
+func (state *RuntimeState) setNewAuthCookie(w http.ResponseWriter, username string, authlevel int) (string, error) {
+	cookieVal, err := genRandomString()
+	if err != nil {
+		logger.Println(err)
+		return "", err
+	}
+	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) * time.Second)
+	savedUserInfo := authInfo{Username: username, ExpiresAt: expiration, AuthType: authlevel}
+	state.Mutex.Lock()
+	state.authCookie[cookieVal] = savedUserInfo
+	state.Mutex.Unlock()
+
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal, Expires: expiration, Path: "/", HttpOnly: true, Secure: true}
+
+	//use handler with original request.
+	if w != nil {
+		http.SetCookie(w, &authCookie)
+	}
+	return cookieVal, nil
+}
+
+func (state *RuntimeState) updateAuthCookieAuthlevel(w http.ResponseWriter, r *http.Request, authlevel int) (string, error) {
+	var authCookie *http.Cookie
+	for _, cookie := range r.Cookies() {
+		if cookie.Name != authCookieName {
+			continue
+		}
+		authCookie = cookie
+	}
+	if authCookie == nil {
+		err := errors.New("cannot find authCookie")
+		return "", err
+	}
+	state.Mutex.Lock()
+	info, ok := state.authCookie[authCookie.Value]
+	if ok {
+		info.AuthType = authlevel
+		state.authCookie[authCookie.Value] = info
+	}
+	state.Mutex.Unlock()
+	return "", nil
+}
+
+func (state *RuntimeState) deleteAuthCookie(w http.ResponseWriter, r *http.Request) error {
+	return nil
 }
 
 // Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
@@ -1149,23 +1207,12 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	//
-	cookieVal, err := genRandomString()
+	_, err = state.setNewAuthCookie(w, username, AuthTypePassword)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "error internal")
 		logger.Println(err)
 		return
 	}
-
-	expiration := time.Now().Add(time.Duration(maxAgeSecondsAuthCookie) * time.Second)
-	savedUserInfo := authInfo{Username: username, ExpiresAt: expiration, AuthType: AuthTypePassword}
-	state.Mutex.Lock()
-	state.authCookie[cookieVal] = savedUserInfo
-	state.Mutex.Unlock()
-
-	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal, Expires: expiration, Path: "/", HttpOnly: true, Secure: true}
-
-	//use handler with original request.
-	http.SetCookie(w, &authCookie)
 
 	returnAcceptType := "application/json"
 	acceptHeader, ok := r.Header["Accept"]
