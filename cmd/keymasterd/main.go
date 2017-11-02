@@ -532,7 +532,7 @@ func (state *RuntimeState) updateAuthCookieAuthlevel(w http.ResponseWriter, r *h
 		state.authCookie[authCookie.Value] = info
 	}
 	state.Mutex.Unlock()
-	return "", nil
+	return authCookie.Value, nil
 }
 
 func (state *RuntimeState) deleteAuthCookie(w http.ResponseWriter, r *http.Request) error {
@@ -1325,7 +1325,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	//authUser, authType, err := state.checkAuth(w, r, AuthTypeAny)
-	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
+	authUser, currentAuthLevel, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Printf("%v", err)
 
@@ -1369,29 +1369,12 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	// OTP check was  successful
-
-	// Now we  need to update the cookie
-	var authCookie *http.Cookie
-	for _, cookie := range r.Cookies() {
-		if cookie.Name != authCookieName {
-			continue
-		}
-		authCookie = cookie
-	}
-	if authCookie == nil {
-		logger.Printf("Autch Cookie NOT found!")
+	_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeSymantecVIP)
+	if err != nil {
+		logger.Printf("Autch Cookie NOT found ? %s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
 		return
-
 	}
-	// update cookie if found, this should be also a critical section
-	state.Mutex.Lock()
-	info, ok := state.authCookie[authCookie.Value]
-	if ok {
-		info.AuthType = info.AuthType | AuthTypeSymantecVIP
-		state.authCookie[authCookie.Value] = info
-	}
-	state.Mutex.Unlock()
 
 	// Now we send to the appropiate place
 	returnAcceptType := "application/json"
@@ -1622,19 +1605,10 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
+	authUser, currentAuthLevel, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Printf("%v", err)
 		return
-	}
-
-	// If successful I need to update the cookie
-	var authCookie *http.Cookie
-	for _, cookie := range r.Cookies() {
-		if cookie.Name != authCookieName {
-			continue
-		}
-		authCookie = cookie
 	}
 
 	//now the actual work
@@ -1693,16 +1667,13 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 			//profile.U2fAuthChallenge = nil
 			delete(state.localAuthData, authUser)
 
-			// update cookie if found, this should be also a critical section
-			if authCookie != nil {
-				state.Mutex.Lock()
-				info, ok := state.authCookie[authCookie.Value]
-				if ok {
-					info.AuthType = info.AuthType | AuthTypeU2F
-					state.authCookie[authCookie.Value] = info
-				}
-				state.Mutex.Unlock()
+			_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeU2F)
+			if err != nil {
+				logger.Printf("Autch Cookie NOT found ? %s", err)
+				state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure updating vip token")
+				return
 			}
+
 			// TODO: update local cookie state
 			w.Write([]byte("success"))
 			return
