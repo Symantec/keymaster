@@ -95,7 +95,6 @@ func TestOauth2DoRedirectoToProviderHandlerSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
-	//state.authCookie = make(map[string]authInfo)
 	state.pendingOauth2 = make(map[string]pendingAuth2Request)
 
 	req, err := http.NewRequest("GET", oauth2LoginBeginPath, nil)
@@ -132,7 +131,6 @@ func TestOauth2RedirectPathHandlerSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(passwdFile.Name()) // clean up
-	//state.authCookie = make(map[string]authInfo)
 	state.pendingOauth2 = make(map[string]pendingAuth2Request)
 	state.Config.Oauth2.UserinfoUrl = "http://localhost:12345/userinfo"
 
@@ -162,7 +160,6 @@ func TestOauth2RedirectPathHandlerSuccess(t *testing.T) {
 	}
 	// has a cookie.. but is not known to the server:
 	cookieVal := "supersecret"
-	//state.authCookie[cookieVal] = authInfo{Username: "username", AuthType: AuthTypeU2F, ExpiresAt: time.Now().Add(120 * time.Second)}
 	pendingCookie := http.Cookie{Name: redirCookieName, Value: cookieVal}
 	req.AddCookie(&pendingCookie)
 	// request has no cookies

@@ -227,8 +227,6 @@ func setupValidRuntimeStateSigner() (*RuntimeState, *os.File, error) {
 	}
 	state.Config.Base.HtpasswdFilename = passwdFile.Name()
 
-	//state.authCookie = make(map[string]authInfo)
-
 	return &state, passwdFile, nil
 }
 
@@ -458,7 +456,6 @@ func TestInjectingSecret(t *testing.T) {
 	defer os.Remove(passwdFile.Name()) // clean up
 	state.Config.Base.HtpasswdFilename = passwdFile.Name()
 
-	//state.authCookie = make(map[string]authInfo)
 	// Make certgen Request
 	//Fist we ensure OK is working
 	certGenReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey, "")
@@ -582,12 +579,6 @@ func checkValidLoginResponse(resp *http.Response, state *RuntimeState, username 
 	if err != nil {
 		return false
 	}
-	/*
-		info, ok := state.authCookie[authCookie.Value]
-		if !ok {
-			return false
-		}
-	*/
 	if info.Username != username {
 		return false
 	}
@@ -606,7 +597,6 @@ func TestLoginAPIBasicAuth(t *testing.T) {
 	}
 	state.Signer = signer
 	state.signerPublicKeyToKeymasterKeys()
-	//state.authCookie = make(map[string]authInfo)
 
 	passwdFile, err := setupPasswdFile()
 	if err != nil {
@@ -660,7 +650,6 @@ func TestLoginAPIFormAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.Signer = signer
-	//state.authCookie = make(map[string]authInfo)
 	state.signerPublicKeyToKeymasterKeys()
 
 	passwdFile, err := setupPasswdFile()
@@ -747,7 +736,6 @@ func TestProfileHandlerTemplate(t *testing.T) {
 	}
 	state.Signer = signer
 	state.signerPublicKeyToKeymasterKeys()
-	//state.authCookie = make(map[string]authInfo)
 
 	dir, err := ioutil.TempDir("", "example")
 	if err != nil {
@@ -793,7 +781,6 @@ func TestU2fTokenManagerHandlerUpdateSuccess(t *testing.T) {
 	}
 	state.Signer = signer
 	state.signerPublicKeyToKeymasterKeys()
-	//state.authCookie = make(map[string]authInfo)
 
 	dir, err := ioutil.TempDir("", "example")
 	if err != nil {
@@ -862,7 +849,6 @@ func TestU2fTokenManagerHandlerDeleteNotAdmin(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.Signer = signer
-	//state.authCookie = make(map[string]authInfo)
 
 	// login as user username
 	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypeAny)
@@ -931,7 +917,6 @@ func TestU2fTokenManagerHandlerDeleteSuccess(t *testing.T) {
 	}
 	state.Signer = signer
 	state.signerPublicKeyToKeymasterKeys()
-	//state.authCookie = make(map[string]authInfo)
 
 	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypeAny)
 	if err != nil {

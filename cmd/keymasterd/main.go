@@ -439,16 +439,6 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter, r *http.R
 				state.writeHTMLLoginPage(w, r)
 				return
 			}
-			/*
-					state.Mutex.Lock()
-					info, ok := state.authCookie[authCookie.Value]
-					state.Mutex.Unlock()
-
-				if !ok {
-					state.writeHTMLLoginPage(w, r)
-					return
-				}
-			*/
 			if info.ExpiresAt.Before(time.Now()) {
 				state.writeHTMLLoginPage(w, r)
 				return
@@ -599,19 +589,6 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 	}
 
 	//Critical section
-	/*
-		state.Mutex.Lock()
-		info, ok := state.authCookie[authCookie.Value]
-		state.Mutex.Unlock()
-
-		if !ok {
-			//redirect to login page?
-			//better would be to return the content of the redirect form with a 401 code?
-			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-			err := errors.New("Invalid Cookie")
-			return "", AuthTypeNone, err
-		}
-	*/
 	info, err := state.getAuthInfoFromAuthJWT(authCookie.Value)
 	if err != nil {
 		//TODO check between internal and bad cookie error
