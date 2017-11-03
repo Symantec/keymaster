@@ -81,6 +81,9 @@ func (state *RuntimeState) idpOpenIDCDiscoveryHandler(w http.ResponseWriter, r *
 
 // Need to improve this to account for adding the other signers here.
 func (state *RuntimeState) idpOpenIDCJWKSHandler(w http.ResponseWriter, r *http.Request) {
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
 	selfKey, err := gojwk.PublicKey(state.Signer.Public())
 	if err != nil {
 		log.Fatal(err)
@@ -114,6 +117,10 @@ type keymasterdCodeToken struct {
 }
 
 func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter, r *http.Request) {
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
+
 	// We are now at exploration stage... and will require pre-authed clients.
 	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
@@ -200,7 +207,7 @@ type accessToken struct {
 type userInfoToken struct {
 	Username   string `json:"username"`
 	Scope      string `json:"scope"`
-	Expiration int    `json:"exp"`
+	Expiration int64  `json:"exp"`
 	Type       string `json:"type"`
 }
 
@@ -247,7 +254,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad code")
 		return
 	}
-	logger.Printf("out=%+v", keymasterToken)
+	logger.Printf("idc token handler out=%+v", keymasterToken)
 
 	//now is time to extract the values..
 
@@ -288,6 +295,8 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	logger.Printf("raw=%s", signedIdToken)
 
 	userinfoToken := userInfoToken{Username: keymasterToken.Username, Scope: keymasterToken.Scope}
+	userinfoToken.Expiration = idToken.Expiration
+	userinfoToken.Type = "bearer"
 	signedAccessToken, err := jwt.Signed(signer).Claims(userinfoToken).CompactSerialize()
 	if err != nil {
 		panic(err)
@@ -372,7 +381,7 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 	}
 	logger.Printf("out=%+v", parsedAccessToken)
 
-	userInfo := openidConnectUserInfo{Subject: parsedAccessToken.Username, Email: "username@example.com", Name: "username"}
+	userInfo := openidConnectUserInfo{Subject: parsedAccessToken.Username, Email: "username@example.com", Name: parsedAccessToken.Username}
 	// and write the json output
 	b, err := json.Marshal(userInfo)
 	if err != nil {
