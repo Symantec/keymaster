@@ -123,6 +123,7 @@ const secondFactorAuthFormText = `
 	{{end}}
 	{{if .ShowU2F}}
 	<p>
+	       <div id="u2f_login_destination" style="display: none;">{{.LoginDestination}}</div>
                <div id="auth_action_text" > Authenticate by touching a blinking registered U2F device (insert if not inserted yet)</div>
         </p>
 	{{end}}

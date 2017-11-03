@@ -32,7 +32,8 @@ function checkError(resp) {
     }
     $.post('/u2f/SignResponse', JSON.stringify(resp)).success(function() {
       //alert('Success');
-      window.location.href = '/profile'; 
+      var destination = document.getElementById("u2f_login_destination").innerHTML;
+      window.location.href = destination;
     }).fail(serverError);
   }
   function sign() {
