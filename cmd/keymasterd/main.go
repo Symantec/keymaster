@@ -374,17 +374,19 @@ func getClientType(r *http.Request) string {
 	}
 }
 
-func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.Request) error {
+func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.Request,
+	loginDestination string) error {
 	JSSources := []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js"}
 	showU2F := browserSupportsU2F(r)
 	if showU2F {
 		JSSources = []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/webui-2fa-u2f.js"}
 	}
 	displayData := secondFactorAuthTemplateData{
-		Title:     "Keymaster 2FA Auth",
-		JSSources: JSSources,
-		ShowOTP:   state.Config.SymantecVIP.Enabled,
-		ShowU2F:   showU2F}
+		Title:            "Keymaster 2FA Auth",
+		JSSources:        JSSources,
+		ShowOTP:          state.Config.SymantecVIP.Enabled,
+		ShowU2F:          showU2F,
+		LoginDestination: loginDestination}
 	err := state.htmlTemplate.ExecuteTemplate(w, "secondFactorLoginPage", displayData)
 	if err != nil {
 		logger.Printf("Failed to execute %v", err)
@@ -394,12 +396,14 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.R
 	return nil
 }
 
-func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter, r *http.Request) error {
+func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter, r *http.Request,
+	loginDestination string) error {
 	//footerText := state.getFooterText()
 	displayData := loginPageTemplateData{
-		Title:        "Keymaster Login",
-		ShowOauth2:   state.Config.Oauth2.Enabled,
-		HideStdLogin: state.Config.Base.HideStandardLogin}
+		Title:            "Keymaster Login",
+		ShowOauth2:       state.Config.Oauth2.Enabled,
+		HideStdLogin:     state.Config.Base.HideStandardLogin,
+		LoginDestination: loginDestination}
 	err := state.htmlTemplate.ExecuteTemplate(w, "loginPage", displayData)
 	if err != nil {
 		logger.Printf("Failed to execute %v", err)
@@ -428,26 +432,36 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter, r *http.R
 				}
 				authCookie = cookie
 			}
+			loginDestnation := profilePath
+			if r.URL.Path == idpOpenIDCAuthorizationPath {
+				loginDestnation = r.URL.String()
+			}
+			if r.Method == "POST" {
+				/// assume it has been parsed... otherwise why are we here?
+				if r.Form.Get("login_destination") != "" {
+					loginDestnation = r.Form.Get("login_destination")
+				}
+			}
 			if authCookie == nil {
 				// TODO: change by a message followed by an HTTP redirection
-				state.writeHTMLLoginPage(w, r)
+				state.writeHTMLLoginPage(w, r, loginDestnation)
 				return
 			}
 			info, err := state.getAuthInfoFromAuthJWT(authCookie.Value)
 			if err != nil {
 				logger.Debugf(3, "write failure state, error from getinfo authInfoJWT")
-				state.writeHTMLLoginPage(w, r)
+				state.writeHTMLLoginPage(w, r, loginDestnation)
 				return
 			}
 			if info.ExpiresAt.Before(time.Now()) {
-				state.writeHTMLLoginPage(w, r)
+				state.writeHTMLLoginPage(w, r, loginDestnation)
 				return
 			}
 			if (info.AuthType & AuthTypePassword) == AuthTypePassword {
-				state.writeHTML2FAAuthPage(w, r)
+				state.writeHTML2FAAuthPage(w, r, loginDestnation)
 				return
 			}
-			state.writeHTMLLoginPage(w, r)
+			state.writeHTMLLoginPage(w, r, loginDestnation)
 			return
 
 		default:
@@ -1058,7 +1072,7 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 	case "loginForm":
 		w.WriteHeader(200)
 		//fmt.Fprintf(w, "%s", loginFormText)
-		state.writeHTMLLoginPage(w, r)
+		state.writeHTMLLoginPage(w, r, profilePath)
 		return
 	case "x509ca":
 		pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: state.caCertDer}))
@@ -1227,12 +1241,17 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		CertAuthBackend: certBackends}
 	switch returnAcceptType {
 	case "text/html":
+		loginDestination := profilePath
+		if r.Form.Get("login_destination") != "" {
+			loginDestination = r.Form.Get("login_destination")
+		}
+
 		requiredAuth := state.getRequiredWebUIAuthLevel()
 		if (requiredAuth & AuthTypePassword) != 0 {
-			http.Redirect(w, r, profilePath, 302)
+			http.Redirect(w, r, loginDestination, 302)
 		} else {
 			//Go 2FA
-			state.writeHTML2FAAuthPage(w, r)
+			state.writeHTML2FAAuthPage(w, r, loginDestination)
 		}
 	default:
 		w.WriteHeader(200)
@@ -1368,7 +1387,11 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	loginResponse := proto.LoginResponse{Message: "success"} //CertAuthBackend: certBackends
 	switch returnAcceptType {
 	case "text/html":
-		http.Redirect(w, r, profilePath, 302)
+		loginDestination := profilePath
+		if r.Form.Get("login_destination") != "" {
+			loginDestination = r.Form.Get("login_destination")
+		}
+		http.Redirect(w, r, loginDestination, 302)
 	default:
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(loginResponse)
@@ -1922,7 +1945,7 @@ func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Req
 	if r.URL.Path[:] == "/" {
 		//landing page
 		if r.Method == "GET" && len(r.Cookies()) < 1 {
-			state.writeHTMLLoginPage(w, r)
+			state.writeHTMLLoginPage(w, r, profilePath)
 			return
 		}
 
