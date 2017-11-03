@@ -218,7 +218,7 @@ const profileHTML = `
 
     {{with $top := . }}
     <h1>Keymaster User Profile</h1>
-    <h2> {{.Username}}</h2>
+    <h2 id="username">{{.Username}}</h2>
     {{.ReadOnlyMsg}}
     <ul>
       <li><a href="/api/v0/logout" >Logout </a></li>
