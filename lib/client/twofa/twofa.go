@@ -236,7 +236,9 @@ func getCertsFromServer(
 		pemKey,
 		logger)
 	if err != nil {
-		return nil, nil, nil, err
+		logger.Printf("Warning: could not get the kubernets cert")
+		kubernetesCert = nil
+		//return nil, nil, nil, err
 	}
 
 	//// Now we do sshCert!
