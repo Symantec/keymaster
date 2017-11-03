@@ -18,7 +18,6 @@ import (
 
 func doVIPAuthenticate(
 	client *http.Client,
-	authCookies []*http.Cookie,
 	baseURL string,
 	logger log.DebugLogger) error {
 	logger.Printf("top of doVIPAuthenticate")
@@ -41,12 +40,6 @@ func doVIPAuthenticate(
 	form.Add("OTP", otpText)
 	//form.Add("password", string(password[:]))
 	req, err := http.NewRequest("POST", VIPLoginURL, strings.NewReader(form.Encode()))
-
-	// Add the login cookies
-	for _, cookie := range authCookies {
-		req.AddCookie(cookie)
-	}
-	logger.Debugf(0, "Authcookies:  %+v", authCookies)
 
 	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")

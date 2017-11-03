@@ -46,7 +46,6 @@ func checkU2FDevices(logger log.Logger) {
 
 func doU2FAuthenticate(
 	client *http.Client,
-	authCookies []*http.Cookie,
 	baseURL string,
 	logger log.DebugLogger) error {
 	logger.Printf("top of doU2fAuthenticate")
@@ -55,11 +54,6 @@ func doU2FAuthenticate(
 	if err != nil {
 		logger.Fatal(err)
 	}
-	// Add the login cookies
-	for _, cookie := range authCookies {
-		signRequest.AddCookie(cookie)
-	}
-	logger.Debugf(0, "Authcookies:  %+v", authCookies)
 
 	signRequestResp, err := client.Do(signRequest) // Client.Get(targetUrl)
 	if err != nil {
@@ -192,10 +186,7 @@ func doU2FAuthenticate(
 
 	url = baseURL + "/u2f/SignResponse"
 	webSignRequest2, err := http.NewRequest("POST", url, webSignRequestBuf)
-	// Add the login cookies
-	for _, cookie := range authCookies {
-		webSignRequest2.AddCookie(cookie)
-	}
+
 	signRequestResp2, err := client.Do(webSignRequest2) // Client.Get(targetUrl)
 	if err != nil {
 		logger.Printf("Failure to sign request req %s", err)
