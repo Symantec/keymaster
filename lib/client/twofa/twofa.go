@@ -98,6 +98,7 @@ func getCertsFromServer(
 	tlsConfig *tls.Config,
 	skip2fa bool,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
+
 	//First Do Login
 	client, err := util.GetHttpClient(tlsConfig)
 	if err != nil {
@@ -181,7 +182,7 @@ func getCertsFromServer(
 			if len(devices) > 0 {
 
 				err = u2f.DoU2FAuthenticate(
-					client, loginResp.Cookies(), baseUrl, logger)
+					client, baseUrl, logger)
 				if err != nil {
 
 					return nil, nil, nil, err
@@ -192,7 +193,7 @@ func getCertsFromServer(
 
 		if allowVIP && !successful2fa {
 			err = vip.DoVIPAuthenticate(
-				client, loginResp.Cookies(), baseUrl, logger)
+				client, baseUrl, logger)
 			if err != nil {
 
 				return nil, nil, nil, err
@@ -235,7 +236,9 @@ func getCertsFromServer(
 		pemKey,
 		logger)
 	if err != nil {
-		return nil, nil, nil, err
+		logger.Printf("Warning: could not get the kubernets cert")
+		kubernetesCert = nil
+		//return nil, nil, nil, err
 	}
 
 	//// Now we do sshCert!

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/net/publicsuffix"
 )
 
 const rsaKeySize = 2048
@@ -85,9 +87,13 @@ func getHttpClient(tlsConfig *tls.Config) (*http.Client, error) {
 			clientTransport.Proxy = http.ProxyURL(httpProxy)
 		}
 	}
+	jar, err := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
+	if err != nil {
+		return nil, err
+	}
 
 	// TODO: change timeout const for a flag
-	client := &http.Client{Transport: clientTransport, Timeout: 5 * time.Second}
+	client := &http.Client{Transport: clientTransport, Jar: jar, Timeout: 5 * time.Second}
 	return client, nil
 }
 
