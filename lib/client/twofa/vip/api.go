@@ -10,8 +10,7 @@ import (
 // DoVIPAuthenticate performs two factor authentication with Symantec VIP
 func DoVIPAuthenticate(
 	client *http.Client,
-	authCookies []*http.Cookie,
 	baseURL string,
 	logger log.DebugLogger) error {
-	return doVIPAuthenticate(client, authCookies, baseURL, logger)
+	return doVIPAuthenticate(client, baseURL, logger)
 }

@@ -16,8 +16,7 @@ func CheckU2FDevices(logger log.Logger) {
 // DoU2FAuthenticate does U2F authentication
 func DoU2FAuthenticate(
 	client *http.Client,
-	authCookies []*http.Cookie,
 	baseURL string,
 	logger log.DebugLogger) error {
-	return doU2FAuthenticate(client, authCookies, baseURL, logger)
+	return doU2FAuthenticate(client, baseURL, logger)
 }
