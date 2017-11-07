@@ -10,6 +10,7 @@ import (
 	//"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -111,7 +112,7 @@ type keymasterdCodeToken struct {
 	Username   string `json:"username"`
 	AuthLevel  int64  `json:"auth_level"`
 	Nonce      string `json:"nonce,omitEmpty"`
-	//State      string `json:"state,omitEmpty"`
+	State      string `json:"state,omitEmpty"`
 	//ClientID    string `json:"client_id"`
 	RedirectURI string `json:"redirect_uri"`
 	Scope       string `json:"scope"`
@@ -162,12 +163,14 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	logger.Printf("Auth request =%+v", r)
 	//logger.Printf("IDC auth from=%v", r.Form)
 	if r.Form.Get("response_type") != "code" {
+		logger.Debugf(1, "Invalid response_type")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Unsupported or Missing response_type for Auth Handler")
 		return
 	}
 
 	clientID := r.Form.Get("client_id")
 	if clientID == "" {
+		logger.Debugf(1, "empty client_id abourting")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Empty cleint_id for Auth Handler")
 		return
 	}
@@ -179,6 +182,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 		}
 	}
 	if !validScope {
+
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid scope value for Auth Handler")
 		return
 	}
@@ -206,23 +210,26 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	}
 	codeToken := keymasterdCodeToken{Issuer: state.idpGetIssuer(), Subject: clientID, IssuedAt: time.Now().Unix()}
 	codeToken.Scope = scope
-	codeToken.Expiration = time.Now().Unix() + 120 //3600*16
+	codeToken.Expiration = time.Now().Unix() + 3600*16
 	codeToken.Username = authUser
 	codeToken.RedirectURI = requestRedirectURLString
+	codeToken.State = r.Form.Get("state")
 	codeToken.Type = "token_endpoint"
 	codeToken.Nonce = r.Form.Get("nonce")
 	// Do nonce complexity check
-	if len(codeToken.Nonce) < 8 {
+	if len(codeToken.Nonce) < 8 && len(codeToken.Nonce) != 0 {
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad Nonce value...not enough entropy")
 		return
 	}
+	logger.Debugf(3, "auth request is valid, now proceeding to generate redirect")
 
 	raw, err := jwt.Signed(signer).Claims(codeToken).CompactSerialize()
 	if err != nil {
 		panic(err)
 	}
 
-	redirectPath := fmt.Sprintf("%s?code=%s&state=%s", requestRedirectURLString, raw, r.Form.Get("state"))
+	redirectPath := fmt.Sprintf("%s?code=%s&state=%s", requestRedirectURLString, raw, url.QueryEscape(r.Form.Get("state")))
+	logger.Debugf(3, "auth request is valid, redirect path=%s", redirectPath)
 	http.Redirect(w, r, redirectPath, 302)
 	//logger.Printf("raw jwt =%v", raw)
 }
@@ -402,6 +409,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 type openidConnectUserInfo struct {
 	Subject           string `json:"sub"`
 	Name              string `json:"name"`
+	Login             string `json:"login,omitempty"`
 	Username          string `json:"username,omitempty"`
 	PreferredUsername string `json:"preferred_username,omitempty"`
 	Email             string `json:"email,omitempty"`
@@ -460,12 +468,18 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 	}
 	logger.Printf("out=%+v", parsedAccessToken)
 
-	userInfo := openidConnectUserInfo{Subject: parsedAccessToken.Username, Email: "username@example.com", Name: parsedAccessToken.Username}
+	email := fmt.Sprintf("%s@%s", parsedAccessToken.Username, "example.com")
+
+	userInfo := openidConnectUserInfo{
+		Subject:  parsedAccessToken.Username,
+		Username: parsedAccessToken.Username,
+		Email:    email, Name: parsedAccessToken.Username, Login: parsedAccessToken.Username}
 	// and write the json output
 	b, err := json.Marshal(userInfo)
 	if err != nil {
 		log.Fatal(err)
 	}
+	logger.Printf("userinfo=%+v\n b=%s", userInfo, b)
 
 	var out bytes.Buffer
 	json.Indent(&out, b, "", "\t")
