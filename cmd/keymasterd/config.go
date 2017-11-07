@@ -80,6 +80,16 @@ type Oauth2Config struct {
 	//Todo add allowed orgs...
 }
 
+type OpenIDConnectClientConfig struct {
+	ClientID             string   `yaml:"client_id"`
+	ClientSecret         string   `yaml:"client_secret"`
+	AllowedRedirectURLRE []string `yaml:"allowed_redirect_url_re"`
+}
+
+type OpenIDConnectIDPConfig struct {
+	Client []OpenIDConnectClientConfig `yaml:"clients"`
+}
+
 type ProfileStorageConfig struct {
 	StorageUrl          string `yaml:"storage_url"`
 	TLSRootCertFilename string `yaml:"tls_root_cert_filename"`
@@ -93,12 +103,13 @@ type SymantecVIPConfig struct {
 }
 
 type AppConfigFile struct {
-	Base           baseConfig
-	Ldap           LdapConfig
-	UserInfo       UserInfoSouces `yaml:"userinfo_sources"`
-	Oauth2         Oauth2Config
-	SymantecVIP    SymantecVIPConfig
-	ProfileStorage ProfileStorageConfig
+	Base             baseConfig
+	Ldap             LdapConfig
+	UserInfo         UserInfoSouces `yaml:"userinfo_sources"`
+	Oauth2           Oauth2Config
+	OpenIDConnectIDP OpenIDConnectIDPConfig `yaml:"openid_connect_idp"`
+	SymantecVIP      SymantecVIPConfig
+	ProfileStorage   ProfileStorageConfig
 }
 
 const defaultRSAKeySize = 3072

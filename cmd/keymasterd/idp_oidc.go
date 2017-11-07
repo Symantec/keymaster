@@ -10,6 +10,7 @@ import (
 	//"io/ioutil"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -116,6 +117,25 @@ type keymasterdCodeToken struct {
 	Scope string `json:"scope"`
 }
 
+func (state *RuntimeState) idpOpenIDCClientCanRedirect(client_id string, redirect_url string) (bool, error) {
+	for _, client := range state.Config.OpenIDConnectIDP.Client {
+		if client.ClientID != client_id {
+			continue
+		}
+		for _, re := range client.AllowedRedirectURLRE {
+			matched, err := regexp.MatchString(re, redirect_url)
+			if err != nil {
+				return false, err
+			}
+			if matched {
+				return true, nil
+			}
+
+		}
+	}
+	return false, nil
+}
+
 func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter, r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
@@ -163,6 +183,17 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	}
 
 	requestRedirectURLString := r.Form.Get("redirect_uri")
+
+	ok, err := state.idpOpenIDCClientCanRedirect(clientID, requestRedirectURLString)
+	if err != nil {
+		logger.Printf("%v", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
+	if !ok {
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "redirect string not valid or clientID uknown")
+		return
+	}
 	//Dont check for now
 	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
 	//signerOptions.EmbedJWK = true
@@ -209,6 +240,16 @@ type userInfoToken struct {
 	Scope      string `json:"scope"`
 	Expiration int64  `json:"exp"`
 	Type       string `json:"type"`
+}
+
+func (state *RuntimeState) idpOpenIDCValidClientSecret(client_id string, client_secret string) bool {
+	for _, client := range state.Config.OpenIDConnectIDP.Client {
+		if client.ClientID != client_id {
+			continue
+		}
+		return client_secret == client.ClientSecret
+	}
+	return false
 }
 
 func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http.Request) {
@@ -270,6 +311,12 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		return
 	}
 	logger.Printf("username=%s, pass%s", clientID, pass)
+	valid := state.idpOpenIDCValidClientSecret(clientID, pass)
+	if !valid {
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		return
+	}
+
 	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
 	kid, err := getKeyFingerprint(state.Signer.Public())
 	if err != nil {

@@ -78,6 +78,11 @@ func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
 	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
 	state.signerPublicKeyToKeymasterKeys()
 
+	valid_client_id := "valid_client_id"
+	valid_redirect_uri := "https://localhost:12345"
+	clientConfig := OpenIDConnectClientConfig{ClientID: valid_client_id, AllowedRedirectURLRE: []string{"localhost"}}
+	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, clientConfig)
+
 	//url := idpOpenIDCAuthorizationPath
 	req, err := http.NewRequest("GET", idpOpenIDCAuthorizationPath, nil)
 
@@ -103,8 +108,8 @@ func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
 	form := url.Values{}
 	form.Add("scope", "openid")
 	form.Add("response_type", "code")
-	form.Add("client_id", "valid_client_id")
-	form.Add("redirect_uri", "https://localhost:12345")
+	form.Add("client_id", valid_client_id)
+	form.Add("redirect_uri", valid_redirect_uri)
 	form.Add("state", "this is my state")
 
 	postReq, err := http.NewRequest("POST", idpOpenIDCAuthorizationPath, strings.NewReader(form.Encode()))
