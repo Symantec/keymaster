@@ -110,6 +110,7 @@ func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
 	form.Add("response_type", "code")
 	form.Add("client_id", valid_client_id)
 	form.Add("redirect_uri", valid_redirect_uri)
+	form.Add("nonce", "123456789")
 	form.Add("state", "this is my state")
 
 	postReq, err := http.NewRequest("POST", idpOpenIDCAuthorizationPath, strings.NewReader(form.Encode()))

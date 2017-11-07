@@ -113,8 +113,9 @@ type keymasterdCodeToken struct {
 	Nonce      string `json:"nonce,omitEmpty"`
 	//State      string `json:"state,omitEmpty"`
 	//ClientID    string `json:"client_id"`
-	//RedirectURI string `json:"redirect_uri"`
-	Scope string `json:"scope"`
+	RedirectURI string `json:"redirect_uri"`
+	Scope       string `json:"scope"`
+	Type        string `json:"type"`
 }
 
 func (state *RuntimeState) idpOpenIDCClientCanRedirect(client_id string, redirect_url string) (bool, error) {
@@ -194,6 +195,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "redirect string not valid or clientID uknown")
 		return
 	}
+
 	//Dont check for now
 	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
 	//signerOptions.EmbedJWK = true
@@ -204,9 +206,16 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	}
 	codeToken := keymasterdCodeToken{Issuer: state.idpGetIssuer(), Subject: clientID, IssuedAt: time.Now().Unix()}
 	codeToken.Scope = scope
-	codeToken.Expiration = time.Now().Unix() + 3600*16
+	codeToken.Expiration = time.Now().Unix() + 120 //3600*16
 	codeToken.Username = authUser
+	codeToken.RedirectURI = requestRedirectURLString
+	codeToken.Type = "token_endpoint"
 	codeToken.Nonce = r.Form.Get("nonce")
+	// Do nonce complexity check
+	if len(codeToken.Nonce) < 8 {
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad Nonce value...not enough entropy")
+		return
+	}
 
 	raw, err := jwt.Signed(signer).Claims(codeToken).CompactSerialize()
 	if err != nil {
@@ -313,6 +322,29 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	logger.Printf("username=%s, pass%s", clientID, pass)
 	valid := state.idpOpenIDCValidClientSecret(clientID, pass)
 	if !valid {
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		return
+	}
+
+	//validity checks
+	// 1. Ensure authoriation client was issued to the authenticated client
+	if clientID != keymasterToken.Subject {
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		return
+	}
+	// 2. verify authorization code is valid
+	// 2.a -> expiration
+	if keymasterToken.Expiration < time.Now().Unix() {
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		return
+	}
+	// verify redirect uri matches the one setup in the original request:
+	if keymasterToken.RedirectURI != requestRedirectURLString {
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		return
+	}
+	// Verify that the Authorization Code used was issued in response to an OpenID Connect Authentication Request
+	if keymasterToken.Type != "token_endpoint" {
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}
