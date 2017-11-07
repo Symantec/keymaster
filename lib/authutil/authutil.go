@@ -130,6 +130,35 @@ func getUserDNAndSimpleGroups(conn *ldap.Conn, UserSearchBaseDNs []string, UserS
 	return "", nil, nil
 }
 
+func getSimpleUserAttributes(conn *ldap.Conn, UserSearchBaseDNs []string,
+	UserSearchFilter string, username string, attributes []string) (m map[string][]string, err error) {
+	for _, searchDN := range UserSearchBaseDNs {
+		searchRequest := ldap.NewSearchRequest(
+			searchDN,
+			ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 0, false,
+			//fmt.Sprintf("(&(objectClass=organizationalPerson)&(uid=%s))", username),
+			fmt.Sprintf(UserSearchFilter, username),
+			attributes,
+			nil,
+		)
+		sr, err := conn.Search(searchRequest)
+		if err != nil {
+			return nil, err
+		}
+		if len(sr.Entries) != 1 {
+			log.Printf("User does not exist or too many entries returned")
+			continue
+		}
+		m = make(map[string][]string)
+		for _, attr := range attributes {
+			m[attr] = sr.Entries[0].GetAttributeValues(attr)
+		}
+		return m, nil
+	}
+	err = errors.New("user not found or too many users found")
+	return nil, err
+}
+
 func extractCNFromDNString(input []string) (output []string, err error) {
 	re := regexp.MustCompile("^cn=([^,]+),.*")
 	log.Printf("input=%v ", input)
@@ -177,4 +206,28 @@ func GetLDAPUserGroups(u url.URL, bindDN string, bindPassword string,
 		return nil, err
 	}
 	return groupCNs, nil
+}
+
+func GetLDAPUserAttributes(u url.URL, bindDN string, bindPassword string,
+	timeoutSecs uint, rootCAs *x509.CertPool,
+	username string,
+	UserSearchBaseDNs []string, UserSearchFilter string,
+	attributes []string) (map[string][]string, error) {
+
+	timeout := time.Duration(time.Duration(timeoutSecs) * time.Second)
+	conn, _, err := getLDAPConnection(u, timeoutSecs, rootCAs)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	conn.SetTimeout(timeout)
+	conn.Start()
+	err = conn.Bind(bindDN, bindPassword)
+	if err != nil {
+		return nil, err
+	}
+
+	return getSimpleUserAttributes(conn, UserSearchBaseDNs,
+		UserSearchFilter, username, attributes)
 }

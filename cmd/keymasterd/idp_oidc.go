@@ -5,7 +5,7 @@ import (
 	//"crypto"
 	//"crypto/sha256"
 	"encoding/json"
-	//"errors"
+	"errors"
 	"fmt"
 	//"io/ioutil"
 	"log"
@@ -18,6 +18,7 @@ import (
 	//"golang.org/x/net/context"
 	"github.com/mendsley/gojwk"
 	//"gopkg.in/dgrijalva/jwt-go.v2"
+	"github.com/Symantec/keymaster/lib/authutil"
 	//"golang.org/x/crypto/ssh"
 	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/jwt"
@@ -50,13 +51,6 @@ type openIDProviderMetadata struct {
 }
 
 func (state *RuntimeState) idpOpenIDCDiscoveryHandler(w http.ResponseWriter, r *http.Request) {
-	/*
-		issuer := "https://" + state.HostIdentity
-		//this is a hack..
-		if state.Config.Base.HttpAddress != ":443" {
-			issuer = issuer + state.Config.Base.HttpAddress
-		}
-	*/
 	issuer := state.idpGetIssuer()
 	metadata := openIDProviderMetadata{
 		Issuer:                 issuer,
@@ -81,27 +75,36 @@ func (state *RuntimeState) idpOpenIDCDiscoveryHandler(w http.ResponseWriter, r *
 	out.WriteTo(w)
 }
 
+type jwsKeyList struct {
+	Keys []*gojwk.Key `json:"keys"`
+}
+
 // Need to improve this to account for adding the other signers here.
 func (state *RuntimeState) idpOpenIDCJWKSHandler(w http.ResponseWriter, r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-	selfKey, err := gojwk.PublicKey(state.Signer.Public())
+	var currentKeys jwsKeyList
+	for _, key := range state.KeymasterPublicKeys {
+		jwkKey, err := gojwk.PublicKey(key)
+		if err != nil {
+			log.Fatal(err)
+		}
+		jwkKey.Kid, err = getKeyFingerprint(key)
+		if err != nil {
+			log.Fatal(err)
+		}
+		currentKeys.Keys = append(currentKeys.Keys, jwkKey)
+	}
+	b, err := json.Marshal(currentKeys)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	selfKey.Kid, err = getKeyFingerprint(state.Signer.Public())
-	if err != nil {
-		log.Fatal(err)
-	}
-	mkey, err := gojwk.Marshal(selfKey)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// hacky for now
+	var out bytes.Buffer
+	json.Indent(&out, b, "", "\t")
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, "{\"keys\": [%s]  }", string(mkey))
+	out.WriteTo(w)
 }
 
 type keymasterdCodeToken struct {
@@ -112,7 +115,7 @@ type keymasterdCodeToken struct {
 	Username   string `json:"username"`
 	AuthLevel  int64  `json:"auth_level"`
 	Nonce      string `json:"nonce,omitEmpty"`
-	State      string `json:"state,omitEmpty"`
+	//State      string `json:"state,omitEmpty"`
 	//ClientID    string `json:"client_id"`
 	RedirectURI string `json:"redirect_uri"`
 	Scope       string `json:"scope"`
@@ -213,7 +216,6 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	codeToken.Expiration = time.Now().Unix() + 3600*16
 	codeToken.Username = authUser
 	codeToken.RedirectURI = requestRedirectURLString
-	codeToken.State = r.Form.Get("state")
 	codeToken.Type = "token_endpoint"
 	codeToken.Nonce = r.Form.Get("nonce")
 	// Do nonce complexity check
@@ -406,6 +408,37 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 
 }
 
+func (state *RuntimeState) getUserAttributes(username string, attributes []string) (map[string][]string, error) {
+	ldapConfig := state.Config.UserInfo.Ldap
+	var timeoutSecs uint
+	timeoutSecs = 2
+	//for _, ldapUrl := range ldapConfig.LDAPTargetURLs {
+	for _, ldapUrl := range strings.Split(ldapConfig.LDAPTargetURLs, ",") {
+		if len(ldapUrl) < 1 {
+			continue
+		}
+		u, err := authutil.ParseLDAPURL(ldapUrl)
+		if err != nil {
+			logger.Printf("Failed to parse ldapurl '%s'", ldapUrl)
+			continue
+		}
+		attributeMap, err := authutil.GetLDAPUserAttributes(*u,
+			ldapConfig.BindUsername, ldapConfig.BindPassword,
+			timeoutSecs, nil, username,
+			ldapConfig.UserSearchBaseDNs, ldapConfig.UserSearchFilter, attributes)
+		if err != nil {
+			continue
+		}
+		return attributeMap, nil
+
+	}
+	if ldapConfig.LDAPTargetURLs == "" {
+		return nil, nil
+	}
+	err := errors.New("error getting the groups")
+	return nil, err
+}
+
 type openidConnectUserInfo struct {
 	Subject           string `json:"sub"`
 	Name              string `json:"name"`
@@ -468,7 +501,18 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 	}
 	logger.Printf("out=%+v", parsedAccessToken)
 
-	email := fmt.Sprintf("%s@%s", parsedAccessToken.Username, "example.com")
+	email := fmt.Sprintf("%s@%s", parsedAccessToken.Username, state.HostIdentity)
+	userAttributeMap, err := state.getUserAttributes(parsedAccessToken.Username, []string{"mail"})
+	if err != nil {
+		logger.Printf("failed to get user attributes %s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+	}
+	if userAttributeMap != nil {
+		mailList, ok := userAttributeMap["mail"]
+		if ok {
+			email = mailList[0]
+		}
+	}
 
 	userInfo := openidConnectUserInfo{
 		Subject:  parsedAccessToken.Username,
