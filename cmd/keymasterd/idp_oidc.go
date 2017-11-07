@@ -313,7 +313,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad code")
 		return
 	}
-	logger.Printf("idc token handler out=%+v", keymasterToken)
+	logger.Debugf(3, "idc token handler out=%+v", keymasterToken)
 
 	//now is time to extract the values..
 
@@ -323,12 +323,9 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	clientID, pass, ok := r.BasicAuth()
 	if !ok {
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-		//toLoginOrBasicAuth(w, r)
-		//err := errors.New("check_Auth, Invalid or no auth header")
-		//return "", AuthTypeNone, err
 		return
 	}
-	logger.Printf("username=%s, pass%s", clientID, pass)
+	logger.Debugf(3, "username=%s, pass%s", clientID, pass)
 	valid := state.idpOpenIDCValidClientSecret(clientID, pass)
 	if !valid {
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
@@ -501,6 +498,19 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 	}
 	logger.Printf("out=%+v", parsedAccessToken)
 
+	//now we check for validity
+	if parsedAccessToken.Expiration < time.Now().Unix() {
+		logger.Debugf(1, "expired token attempted to be used for bearer")
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		return
+	}
+	//now we check for validity
+	if parsedAccessToken.Type != "bearer" {
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		return
+	}
+
+	//Get email from ldap if available
 	email := fmt.Sprintf("%s@%s", parsedAccessToken.Username, state.HostIdentity)
 	userAttributeMap, err := state.getUserAttributes(parsedAccessToken.Username, []string{"mail"})
 	if err != nil {
@@ -517,7 +527,10 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 	userInfo := openidConnectUserInfo{
 		Subject:  parsedAccessToken.Username,
 		Username: parsedAccessToken.Username,
-		Email:    email, Name: parsedAccessToken.Username, Login: parsedAccessToken.Username}
+		Email:    email,
+		Name:     parsedAccessToken.Username,
+		Login:    parsedAccessToken.Username}
+
 	// and write the json output
 	b, err := json.Marshal(userInfo)
 	if err != nil {
