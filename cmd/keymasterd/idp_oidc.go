@@ -274,20 +274,24 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 
 	// MUST be POST https://openid.net/specs/openid-connect-core-1_0.html 3.1.3.1
 	if !(r.Method == "POST") {
+		logger.Printf("invalid method")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Method for Auth Handler")
 		return
 	}
 	err := r.ParseForm()
 	if err != nil {
+		logger.Printf("error parsing form")
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
 	if r.Form.Get("grant_type") != "authorization_code" {
+		logger.Printf("invalid grant type='%s'", r.Form.Get("grant_type"))
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid grant type")
 		return
 	}
 	requestRedirectURLString := r.Form.Get("redirect_uri")
 	if requestRedirectURLString == "" {
+		logger.Printf("redirect_uri is empty")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid redirect uri")
 		return
 	}

@@ -1,7 +1,7 @@
 package main
 
 import (
-	//"encoding/json"
+	"encoding/json"
 	//"fmt"
 	stdlog "log"
 	"net/http"
@@ -77,10 +77,12 @@ func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
 	state.pendingOauth2 = make(map[string]pendingAuth2Request)
 	state.Config.Base.AllowedAuthBackendsForWebUI = []string{"password"}
 	state.signerPublicKeyToKeymasterKeys()
+	state.HostIdentity = "localhost"
 
 	valid_client_id := "valid_client_id"
+	valid_client_secret := "secret_password"
 	valid_redirect_uri := "https://localhost:12345"
-	clientConfig := OpenIDConnectClientConfig{ClientID: valid_client_id, AllowedRedirectURLRE: []string{"localhost"}}
+	clientConfig := OpenIDConnectClientConfig{ClientID: valid_client_id, ClientSecret: valid_client_secret, AllowedRedirectURLRE: []string{"localhost"}}
 	state.Config.OpenIDConnectIDP.Client = append(state.Config.OpenIDConnectIDP.Client, clientConfig)
 
 	//url := idpOpenIDCAuthorizationPath
@@ -146,5 +148,48 @@ func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("out=%+v", out)
+
+	//now we do a token request
+	tokenForm := url.Values{}
+	tokenForm.Add("grant_type", "authorization_code")
+	tokenForm.Add("redirect_uri", valid_redirect_uri)
+	tokenForm.Add("code", rCode)
+
+	tokenReq, err := http.NewRequest("POST", idpOpenIDCTokenPath, strings.NewReader(tokenForm.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokenReq.Header.Add("Content-Length", strconv.Itoa(len(tokenForm.Encode())))
+	tokenReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	tokenReq.SetBasicAuth(valid_client_id, valid_client_secret)
+	//idpOpenIDCTokenHandler
+
+	tokenRR, err := checkRequestHandlerCode(tokenReq, state.idpOpenIDCTokenHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultAccessToken := accessToken{}
+	body := tokenRR.Result().Body
+	err = json.NewDecoder(body).Decode(&resultAccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("resultAccessToken='%+v'", resultAccessToken)
+
+	//now the userinfo
+	userinfoForm := url.Values{}
+	userinfoForm.Add("access_token", resultAccessToken.AccessToken)
+
+	userinfoReq, err := http.NewRequest("POST", idpOpenIDCUserinfoPath, strings.NewReader(userinfoForm.Encode()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	userinfoReq.Header.Add("Content-Length", strconv.Itoa(len(userinfoForm.Encode())))
+	userinfoReq.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	_, err = checkRequestHandlerCode(userinfoReq, state.idpOpenIDCUserinfoHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 }
