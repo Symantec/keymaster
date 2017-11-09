@@ -213,7 +213,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	}
 	codeToken := keymasterdCodeToken{Issuer: state.idpGetIssuer(), Subject: clientID, IssuedAt: time.Now().Unix()}
 	codeToken.Scope = scope
-	codeToken.Expiration = time.Now().Unix() + 3600*16
+	codeToken.Expiration = time.Now().Unix() + maxAgeSecondsAuthCookie
 	codeToken.Username = authUser
 	codeToken.RedirectURI = requestRedirectURLString
 	codeToken.Type = "token_endpoint"
@@ -374,7 +374,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 
 	idToken := openIDConnectIDToken{Issuer: state.idpGetIssuer(), Subject: keymasterToken.Username, Audience: []string{clientID}}
 	idToken.Nonce = keymasterToken.Nonce
-	idToken.Expiration = time.Now().Unix() + 3600*16
+	idToken.Expiration = keymasterToken.Expiration
 	idToken.IssuedAt = time.Now().Unix()
 
 	signedIdToken, err := jwt.Signed(signer).Claims(idToken).CompactSerialize()
@@ -392,7 +392,11 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	}
 
 	// The access token will be yet another jwt.
-	outToken := accessToken{AccessToken: signedAccessToken, TokenType: "Bearer", ExpiresIn: 3600, IDToken: signedIdToken}
+	outToken := accessToken{
+		AccessToken: signedAccessToken,
+		TokenType:   "Bearer",
+		ExpiresIn:   int(idToken.Expiration - idToken.IssuedAt),
+		IDToken:     signedIdToken}
 
 	// and write the json output
 	b, err := json.Marshal(outToken)
