@@ -31,11 +31,12 @@ Copright 2017 Symantec Corporation.  {{template "footer_extra"}}
 `
 
 type loginPageTemplateData struct {
-	Title        string
-	AuthUsername string
-	JSSources    []string
-	ShowOauth2   bool
-	HideStdLogin bool
+	Title            string
+	AuthUsername     string
+	JSSources        []string
+	ShowOauth2       bool
+	HideStdLogin     bool
+	LoginDestination string
 }
 
 //Should be a template
@@ -64,6 +65,7 @@ const loginFormText = `
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/login" method="post">
             <p>Username: <INPUT TYPE="text" NAME="username" SIZE=18></p>
             <p>Password: <INPUT TYPE="password" NAME="password" SIZE=18></p>
+	    <INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
             <p><input type="submit" value="Submit" /></p>
         </form>
 	{{end}}
@@ -76,11 +78,12 @@ const loginFormText = `
 `
 
 type secondFactorAuthTemplateData struct {
-	Title        string
-	AuthUsername string
-	JSSources    []string
-	ShowOTP      bool
-	ShowU2F      bool
+	Title            string
+	AuthUsername     string
+	JSSources        []string
+	ShowOTP          bool
+	ShowU2F          bool
+	LoginDestination string
 }
 
 const secondFactorAuthFormText = `
@@ -108,6 +111,7 @@ const secondFactorAuthFormText = `
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/vipAuth" method="post">
             <p>
 	    Enter VIP token value: <INPUT TYPE="text" NAME="OTP" SIZE=18>
+	    <INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
             <input type="submit" value="Submit" />
 	    </p>
         </form>
@@ -119,6 +123,7 @@ const secondFactorAuthFormText = `
 	{{end}}
 	{{if .ShowU2F}}
 	<p>
+	       <div id="u2f_login_destination" style="display: none;">{{.LoginDestination}}</div>
                <div id="auth_action_text" > Authenticate by touching a blinking registered U2F device (insert if not inserted yet)</div>
         </p>
 	{{end}}
