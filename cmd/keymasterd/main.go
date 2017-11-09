@@ -1107,7 +1107,7 @@ func (state *RuntimeState) userHasU2FTokens(username string) (bool, error) {
 
 const authCookieName = "auth_cookie"
 const randomStringEntropyBytes = 32
-const maxAgeSecondsAuthCookie = 3600
+const maxAgeSecondsAuthCookie = 57600
 
 func genRandomString() (string, error) {
 	size := randomStringEntropyBytes
