@@ -55,7 +55,9 @@ func (s state) writeActivity(writer io.Writer) {
 	startTime := time.Now()
 	usernames := make([]string, 0, len(eventsMap.Events))
 	for username := range eventsMap.Events {
-		usernames = append(usernames, username)
+		if len(eventsMap.Events[username]) > 0 {
+			usernames = append(usernames, username)
+		}
 	}
 	sort.Strings(usernames)
 	for _, username := range usernames {
@@ -95,6 +97,7 @@ func writeUser(writer io.Writer, username string,
 			maxLifetime = lifetime
 		}
 	}
+	sort.Ints(lifetimes)
 	medLifetime := time.Duration(lifetimes[len(lifetimes)/2]) * time.Second
 	fmt.Fprintf(writer, "  <tr>\n")
 	fmt.Fprintf(writer, "    <td>%s</td>\n", username)

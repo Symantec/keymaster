@@ -199,11 +199,12 @@ func (sr *EventRecorder) expireOldEvents() bool {
 				break
 			}
 			eventsList.oldest = event.newer
-			event.newer.older = nil
+			if event.newer == nil {
+				eventsList.newest = nil
+			} else {
+				event.newer.older = nil
+			}
 			changed = true
-		}
-		if eventsList.oldest == nil {
-			eventsList.newest = nil
 		}
 	}
 	return changed
