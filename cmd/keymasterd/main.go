@@ -2133,11 +2133,13 @@ func main() {
 	if isReady != true {
 		panic("got bad signer ready data")
 	}
+	serviceTLSConfig := cfg
+	serviceTLSConfig.ClientAuth = tls.RequestClientCert
 
 	serviceSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.HttpAddress,
 		Handler:      serviceMux,
-		TLSConfig:    cfg,
+		TLSConfig:    serviceTLSConfig,
 		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
