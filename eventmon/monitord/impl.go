@@ -204,19 +204,31 @@ func (m *Monitor) writeHtml(writer io.Writer) {
 func (m *Monitor) notify(event eventmon.EventV0, logger log.Logger) {
 	switch event.Type {
 	case eventmon.EventTypeSSHCert:
-		logger.Println("Received SSH certificate")
 		select { // Non-blocking notification.
 		case m.sshRawCertChannel <- event.CertData:
 		default:
 		}
-		// if sshCert, err := ssh.ParseCertificate(event.CertData); err != nil {
-		// 	logger.Println(err)
-		// } else {
-		// 	select { // Non-blocking notification.
-		// 	case m.sshCertChannel <- sshCert:
-		// 	default:
-		// 	}
-		// }
+		if pubKey, err := ssh.ParsePublicKey(event.CertData); err != nil {
+			logger.Println(err)
+		} else if sshCert, ok := pubKey.(*ssh.Certificate); !ok {
+			logger.Println("SSH public key is not a certificate")
+		} else {
+			switch len(sshCert.ValidPrincipals) {
+			case 0:
+				logger.Println(
+					"Received SSH certificate with no valid principals")
+			case 1:
+				logger.Printf("Received SSH certificate for: %s",
+					sshCert.ValidPrincipals[0])
+			default:
+				logger.Printf("Received SSH certificate for: %s",
+					sshCert.ValidPrincipals)
+			}
+			select { // Non-blocking notification.
+			case m.sshCertChannel <- sshCert:
+			default:
+			}
+		}
 	case eventmon.EventTypeX509Cert:
 		select { // Non-blocking notification.
 		case m.x509RawCertChannel <- event.CertData:
