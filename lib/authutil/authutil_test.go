@@ -330,3 +330,31 @@ func TestCheckLDAPUserPasswordFailInvalidScheme(t *testing.T) {
 		t.Fatal("Should have borked on invalid scheme")
 	}
 }
+
+func TestArgon2RoundTripSuccess(t *testing.T) {
+	//t.Logf("Failed to parse url")
+	pwd := []byte("password")
+	hash, err := argon2MakeNewHash(pwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("hash=%s", hash)
+	err = argon2ComareHashAndPassword(hash, pwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestArgon2RoundTripFailure(t *testing.T) {
+	//t.Logf("Failed to parse url")
+	pwd := []byte("password")
+	hash, err := argon2MakeNewHash(pwd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("hash=%s", hash)
+	err = argon2ComareHashAndPassword(hash, []byte("otherpassword"))
+	if err == nil {
+		t.Fatal(err)
+	}
+}

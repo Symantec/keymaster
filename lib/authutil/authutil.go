@@ -1,8 +1,10 @@
 package authutil
 
 import (
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
@@ -13,9 +15,75 @@ import (
 	"time"
 
 	"github.com/foomo/htpasswd"
+	"github.com/magical/argon2"
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/ldap.v2"
 )
+
+// The argon2 defaults are:
+// t = 3
+// m = 12  // memory usage 2^N
+// p = 1
+// l = 32
+// We will use slightly bigger values:
+
+const argon2t = 40
+const argon2m = 17
+const argon2p = 2
+const argon2l = 32
+
+//There is no well defined number for argon2. We define our own
+const argon2dPrefix = "$argon2d$"
+
+const randomStringEntropyBytes = 32
+
+func genRandomString() (string, error) {
+	size := randomStringEntropyBytes
+	rb := make([]byte, size)
+	_, err := rand.Read(rb)
+	if err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(rb), nil
+}
+
+// The format of the hash will be:
+// $99d$SALT:HEXVALUE
+
+func argon2MakeNewHash(password []byte) (string, error) {
+
+	salt, err := genRandomString()
+	if err != nil {
+		return "", err
+	}
+	key, err := argon2.Key(password, []byte(salt), argon2t, argon2p, argon2m, argon2l)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s%s:%x", argon2dPrefix, salt, key), nil
+
+}
+
+// We only support argon2d as is the only pure golang implementation
+func argon2ComareHashAndPassword(hash string, password []byte) error {
+	if !strings.HasPrefix(hash, argon2dPrefix) {
+		err := errors.New("Dont understand hash format")
+		return err
+	}
+	splitHashString := strings.SplitN(hash, ":", 2)
+	hexKey := splitHashString[1]
+	salt := splitHashString[0][len(argon2dPrefix):]
+	//log.Printf("salt='%s' heykey=%s", salt, hexKey)
+	key, err := argon2.Key(password, []byte(salt), argon2t, argon2p, argon2m, argon2l)
+	if err != nil {
+		return err
+	}
+	if hexKey == fmt.Sprintf("%x", key) {
+		return nil
+	}
+	return errors.New("invalid password")
+	//return nil
+}
 
 func CheckHtpasswdUserPassword(username string, password string, htpasswdBytes []byte) (bool, error) {
 	//	secrets := HtdigestFileProvider(htpasswdFilename)
