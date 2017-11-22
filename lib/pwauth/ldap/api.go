@@ -3,16 +3,22 @@ package ldap
 import (
 	"crypto/x509"
 	"github.com/Symantec/Dominator/lib/log"
-	//"github.com/Symantec/Dominator/lib/log/debuglogger"
 	"net/url"
+	"time"
 )
 
+type cacheCredentialEntry struct {
+	Expiration time.Time
+	Hash       string
+}
+
 type PasswordAuthenticator struct {
-	ldapURL     []*url.URL
-	bindPattern []string
-	timeoutSecs uint
-	rootCAs     *x509.CertPool
-	logger      log.DebugLogger
+	ldapURL           []*url.URL
+	bindPattern       []string
+	timeoutSecs       uint
+	rootCAs           *x509.CertPool
+	logger            log.DebugLogger
+	cachedCredentials map[string]cacheCredentialEntry
 }
 
 func New(url []string, bindPattern []string, timeoutSecs uint, rootCAs *x509.CertPool, logger log.DebugLogger) (

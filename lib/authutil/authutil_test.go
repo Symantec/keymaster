@@ -334,12 +334,12 @@ func TestCheckLDAPUserPasswordFailInvalidScheme(t *testing.T) {
 func TestArgon2RoundTripSuccess(t *testing.T) {
 	//t.Logf("Failed to parse url")
 	pwd := []byte("password")
-	hash, err := argon2MakeNewHash(pwd)
+	hash, err := Argon2MakeNewHash(pwd)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("hash=%s", hash)
-	err = argon2ComareHashAndPassword(hash, pwd)
+	err = Argon2CompareHashAndPassword(hash, pwd)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,12 +348,12 @@ func TestArgon2RoundTripSuccess(t *testing.T) {
 func TestArgon2RoundTripFailure(t *testing.T) {
 	//t.Logf("Failed to parse url")
 	pwd := []byte("password")
-	hash, err := argon2MakeNewHash(pwd)
+	hash, err := Argon2MakeNewHash(pwd)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("hash=%s", hash)
-	err = argon2ComareHashAndPassword(hash, []byte("otherpassword"))
+	err = Argon2CompareHashAndPassword(hash, []byte("otherpassword"))
 	if err == nil {
 		t.Fatal(err)
 	}

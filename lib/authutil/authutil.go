@@ -50,7 +50,7 @@ func genRandomString() (string, error) {
 // The format of the hash will be:
 // $99d$SALT:HEXVALUE
 
-func argon2MakeNewHash(password []byte) (string, error) {
+func Argon2MakeNewHash(password []byte) (string, error) {
 
 	salt, err := genRandomString()
 	if err != nil {
@@ -65,7 +65,7 @@ func argon2MakeNewHash(password []byte) (string, error) {
 }
 
 // We only support argon2d as is the only pure golang implementation
-func argon2ComareHashAndPassword(hash string, password []byte) error {
+func Argon2CompareHashAndPassword(hash string, password []byte) error {
 	if !strings.HasPrefix(hash, argon2dPrefix) {
 		err := errors.New("Dont understand hash format")
 		return err
