@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cviecco/argon2"
 	"github.com/foomo/htpasswd"
-	"github.com/magical/argon2"
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/ldap.v2"
 )

@@ -44,13 +44,17 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 			bindDN := convertToBindDN(username, bindPattern)
 			valid, err = authutil.CheckLDAPUserPassword(*u, bindDN, string(password), pa.timeoutSecs, pa.rootCAs)
 			if err != nil {
-				pa.logger.Debugf(1, "Error checking LDAP user password url= %s", u)
+				if pa.logger != nil {
+					pa.logger.Debugf(1, "Error checking LDAP user password url= %s", u)
+				}
 				continue
 			}
 			if valid {
 				hash, err := authutil.Argon2MakeNewHash(password)
 				if err != nil {
-					pa.logger.Debugf(0, "Failure making new hash for password for user %s", username)
+					if pa.logger != nil {
+						pa.logger.Debugf(0, "Failure making new hash for password for user %s", username)
+					}
 					return valid, nil
 				}
 				pa.cachedCredentials[username] = cacheCredentialEntry{Hash: hash}
