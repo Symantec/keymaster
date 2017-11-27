@@ -227,7 +227,7 @@ func TestPasswordAuthetnicateSimple(t *testing.T) {
 
 }
 
-func TestPasswordAuthetnicateCacheSuccess(t *testing.T) {
+func TestPasswordAuthetnicateCache(t *testing.T) {
 	certPool := x509.NewCertPool()
 	ok := certPool.AppendCertsFromPEM([]byte(rootCAPem))
 	if !ok {
@@ -276,6 +276,33 @@ func TestPasswordAuthetnicateCacheSuccess(t *testing.T) {
 		t.Fatal("User considerd true")
 	}
 	//and ass timeout and the auth should fail as the cache should have been cleared
+	serverMmutex.Lock()
+	serverConfig.ValidUser = "username"
+	serverConfig.Delay = 5000 * time.Millisecond
+	serverMmutex.Unlock()
+
+	ok, err = authn.passwordAuthenticate("username", []byte("password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok != false {
+		t.Fatal("User considerd true")
+	}
+
+	// now lets set the expiration to 1ms and ensure that the cache is filled up
+	serverMmutex.Lock()
+	serverConfig.ValidUser = "username"
+	serverConfig.Delay = 0 * time.Millisecond
+	serverMmutex.Unlock()
+	authn.expirationDuration = 0 * time.Millisecond
+	ok, err = authn.passwordAuthenticate("username", []byte("password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok != true {
+		t.Fatal("User considerd false")
+	}
+	/// and now add the timeout... since it is expired it should return false
 	serverMmutex.Lock()
 	serverConfig.ValidUser = "username"
 	serverConfig.Delay = 5000 * time.Millisecond

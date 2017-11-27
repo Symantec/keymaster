@@ -13,12 +13,13 @@ type cacheCredentialEntry struct {
 }
 
 type PasswordAuthenticator struct {
-	ldapURL           []*url.URL
-	bindPattern       []string
-	timeoutSecs       uint
-	rootCAs           *x509.CertPool
-	logger            log.DebugLogger
-	cachedCredentials map[string]cacheCredentialEntry
+	ldapURL            []*url.URL
+	bindPattern        []string
+	timeoutSecs        uint
+	rootCAs            *x509.CertPool
+	logger             log.DebugLogger
+	expirationDuration time.Duration
+	cachedCredentials  map[string]cacheCredentialEntry
 }
 
 func New(url []string, bindPattern []string, timeoutSecs uint, rootCAs *x509.CertPool, logger log.DebugLogger) (

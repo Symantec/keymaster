@@ -4,11 +4,13 @@ import (
 	"crypto/x509"
 	//"errors"
 	"fmt"
+	"time"
 
 	"github.com/Symantec/Dominator/lib/log"
-	//"github.com/Symantec/Dominator/lib/log/debuglogger"
 	"github.com/Symantec/keymaster/lib/authutil"
 )
+
+const defaultCacheDuration = time.Hour * 96
 
 func newAuthenticator(urllist []string, bindPattern []string,
 	timeoutSecs uint, rootCAs *x509.CertPool, logger log.DebugLogger) (
@@ -25,6 +27,7 @@ func newAuthenticator(urllist []string, bindPattern []string,
 	authenticator.timeoutSecs = timeoutSecs
 	authenticator.rootCAs = rootCAs
 	authenticator.logger = logger
+	authenticator.expirationDuration = defaultCacheDuration
 	authenticator.cachedCredentials = make(map[string]cacheCredentialEntry)
 	return &authenticator, nil
 }
@@ -32,8 +35,6 @@ func newAuthenticator(urllist []string, bindPattern []string,
 func convertToBindDN(username string, bind_pattern string) string {
 	return fmt.Sprintf(bind_pattern, username)
 }
-
-//const cacheDuration = time.Hour * 96
 
 func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 	password []byte) (valid bool, err error) {
@@ -57,7 +58,9 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 					}
 					return valid, nil
 				}
-				pa.cachedCredentials[username] = cacheCredentialEntry{Hash: hash}
+				pa.cachedCredentials[username] = cacheCredentialEntry{
+					Hash:       hash,
+					Expiration: time.Now().Add(pa.expirationDuration)}
 
 			} else {
 				cachedCred, ok := pa.cachedCredentials[username]
@@ -78,7 +81,9 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 		//Check validity
 		err = authutil.Argon2CompareHashAndPassword(cachedCred.Hash, password)
 		if err == nil {
-			return true, nil
+			if cachedCred.Expiration.Sub(time.Now()) > 0 {
+				return true, nil
+			}
 		}
 	}
 	return false, nil
