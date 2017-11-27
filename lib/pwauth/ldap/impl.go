@@ -36,10 +36,34 @@ func convertToBindDN(username string, bind_pattern string) string {
 	return fmt.Sprintf(bind_pattern, username)
 }
 
+func (pa *PasswordAuthenticator) updateOrDeletePasswordHash(valid bool, username string, password []byte) error {
+	if valid {
+		hash, err := authutil.Argon2MakeNewHash(password)
+		if err != nil {
+			if pa.logger != nil {
+				pa.logger.Debugf(0, "Failure making new hash for password for user %s", username)
+			}
+			return nil
+		}
+		pa.cachedCredentials[username] = cacheCredentialEntry{
+			Hash:       hash,
+			Expiration: time.Now().Add(pa.expirationDuration)}
+
+	} else {
+		cachedCred, ok := pa.cachedCredentials[username]
+		if ok {
+			err := authutil.Argon2CompareHashAndPassword(cachedCred.Hash, password)
+			if err == nil {
+				delete(pa.cachedCredentials, username)
+			}
+		}
+	}
+	return nil
+}
+
 func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 	password []byte) (valid bool, err error) {
 	valid = false
-	//for _, ldapUrl := range strings.Split(config.Ldap.LDAP_Target_URLs, ",") {
 	for _, u := range pa.ldapURL {
 		for _, bindPattern := range pa.bindPattern {
 			bindDN := convertToBindDN(username, bindPattern)
@@ -50,28 +74,10 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 				}
 				continue
 			}
-			if valid {
-				hash, err := authutil.Argon2MakeNewHash(password)
-				if err != nil {
-					if pa.logger != nil {
-						pa.logger.Debugf(0, "Failure making new hash for password for user %s", username)
-					}
-					return valid, nil
-				}
-				pa.cachedCredentials[username] = cacheCredentialEntry{
-					Hash:       hash,
-					Expiration: time.Now().Add(pa.expirationDuration)}
-
-			} else {
-				cachedCred, ok := pa.cachedCredentials[username]
-				if ok {
-					err = authutil.Argon2CompareHashAndPassword(cachedCred.Hash, password)
-					if err == nil {
-						delete(pa.cachedCredentials, username)
-					}
-				}
+			err = pa.updateOrDeletePasswordHash(valid, username, password)
+			if err != nil && pa.logger != nil {
+				pa.logger.Debugf(0, "Updating local password hash for user %s", username)
 			}
-
 			return valid, nil
 
 		}

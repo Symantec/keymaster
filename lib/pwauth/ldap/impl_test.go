@@ -13,7 +13,7 @@ import (
 	"github.com/vjeantet/ldapserver"
 )
 
-/* To generate certs, I used all data here should expire around Jan 1 2037:
+/* To generate certs, I used the following commands:
    openssl genpkey -algorithm RSA -out rootkey.pem -pkeyopt rsa_keygen_bits:4096
    openssl req -new -key rootkey.pem -days 7300 -extensions v3_ca -batch -out root.csr -utf8 -subj '/C=US/O=TestOrg/OU=Test CA'
    openssl x509 -req -sha256 -days 7300 -in root.csr -signkey rootkey.pem -set_serial 10  -out root.pem
