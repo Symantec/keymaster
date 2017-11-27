@@ -75,6 +75,7 @@ func initDBPostgres(state *RuntimeState) (err error) {
 			logger.Printf("%q: %s\n", err, sqlStmt)
 			return err
 		}
+		sqlStmt = `create table if not exists expiring_signed_user_data(id serial not null primary key, username text not null, jws_data text not null, type integer not null, expiration_epoch integer not null, UNIQUE(username,type));`
 	}
 
 	return nil
@@ -402,5 +403,16 @@ func (state *RuntimeState) SaveUserProfile(username string, profile *userProfile
 		return err
 	}
 	metricLogExternalServiceDuration("storage-save", time.Since(start))
+	return nil
+}
+
+var saveSignedUserDataStmt = map[string]string{
+	"sqlite":   "insert or replace into expiring_signed_user_data(username, type, jws_data, expiration_epoch) values(?,?, ?, ?)",
+	"postgres": "insert into expiring_signed_user_data(username, type, jws_data, expiration_epoch) values ($1,$2,$3,$4) ON CONFLICT(username,type) DO UPDATE SET  jws_data = excluded.jws_data, expiration_epoch = excluded.expiration_epoch",
+}
+
+func (state *RuntimeState) SaveSignedUserData(username string, dataType int, expiration time.Time, data string) error {
+	//expirationEpoch := expiration.Unix()
+
 	return nil
 }
