@@ -111,3 +111,45 @@ func (state *RuntimeState) updateAuthJWTWithNewAuthLevel(intoken string, newAuth
 	parsedJWT.AuthType = newAuthLevel
 	return jwt.Signed(signer).Claims(parsedJWT).CompactSerialize()
 }
+
+func (state *RuntimeState) genNewSerializedStorageStringDataJWT(username string, dataType int, data string, expiration int64) (string, error) {
+	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.RS256, Key: state.Signer}, signerOptions)
+	if err != nil {
+		return "", err
+	}
+	issuer := state.idpGetIssuer()
+	storageToken := storageStringDataJWT{Issuer: issuer, Subject: username,
+		Audience: []string{issuer}, DataType: dataType,
+		TokenType: "storage_data", Data: data}
+	storageToken.NotBefore = time.Now().Unix()
+	storageToken.IssuedAt = storageToken.NotBefore
+	storageToken.Expiration = expiration
+
+	return jwt.Signed(signer).Claims(storageToken).CompactSerialize()
+}
+
+func (state *RuntimeState) getStorageDataFromStorageStringDataJWT(serializedToken string) (rvalue storageStringDataJWT, err error) {
+	tok, err := jwt.ParseSigned(serializedToken)
+	if err != nil {
+		return rvalue, err
+	}
+	inboundJWT := storageStringDataJWT{}
+	if err := state.JWTClaims(tok, &inboundJWT); err != nil {
+		logger.Printf("err=%s", err)
+		return rvalue, err
+	}
+	//At this stage is now crypto verified, now is time to verify sane values
+	issuer := state.idpGetIssuer()
+	if inboundJWT.Issuer != issuer || inboundJWT.TokenType != "storage_data" ||
+		inboundJWT.NotBefore > time.Now().Unix() {
+		err = errors.New("invalid JWT values")
+		return rvalue, err
+	}
+	/*
+		rvalue.Username = inboundJWT.Subject
+		rvalue.AuthType = inboundJWT.AuthType
+		rvalue.ExpiresAt = time.Unix(inboundJWT.Expiration, 0)
+	*/
+	return inboundJWT, nil
+}

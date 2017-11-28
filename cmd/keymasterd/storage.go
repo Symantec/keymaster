@@ -406,13 +406,75 @@ func (state *RuntimeState) SaveUserProfile(username string, profile *userProfile
 	return nil
 }
 
+var deleteSignedUserDataStmt = map[string]string{
+	"sqlite":   "delete from expiring_signed_user_data where username = ? and type = ?",
+	"postgres": "delete from expiring_signed_user_data where username = $1 and type = $2",
+}
+
+func (state *RuntimeState) DeleteSigned(username string, dataType int) error {
+
+	//insert into DB
+	tx, err := state.db.Begin()
+	if err != nil {
+		return err
+	}
+	stmtText := deleteSignedUserDataStmt[state.dbType]
+	stmt, err := tx.Prepare(stmtText)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.Exec(username, dataType)
+	if err != nil {
+		return err
+	}
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+/*
+var getSignedUserDataStmt = map[string]string{
+	"sqlite":   "select jws_data,expiration_epoch from expiring_signed_user_data where username = ? and type =?",
+	"postgres": "select jws_data,expiration_epoch from expiring_signed_user_data where username = $1 and type = $2",
+}
+*/
+
 var saveSignedUserDataStmt = map[string]string{
 	"sqlite":   "insert or replace into expiring_signed_user_data(username, type, jws_data, expiration_epoch) values(?,?, ?, ?)",
 	"postgres": "insert into expiring_signed_user_data(username, type, jws_data, expiration_epoch) values ($1,$2,$3,$4) ON CONFLICT(username,type) DO UPDATE SET  jws_data = excluded.jws_data, expiration_epoch = excluded.expiration_epoch",
 }
 
-func (state *RuntimeState) SaveSignedUserData(username string, dataType int, expiration time.Time, data string) error {
-	//expirationEpoch := expiration.Unix()
+func (state *RuntimeState) UpsertSigned(username string, dataType int, expiration time.Time, data string) error {
+	expirationEpoch := expiration.Unix()
+	stringData, err := state.genNewSerializedStorageStringDataJWT(username, dataType, data, expirationEpoch)
+	if err != nil {
+		return err
+	}
+	start := time.Now()
+	//insert into DB
+	tx, err := state.db.Begin()
+	if err != nil {
+		return err
+	}
+	stmtText := saveSignedUserDataStmt[state.dbType]
+	stmt, err := tx.Prepare(stmtText)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.Exec(username, dataType, stringData, expirationEpoch)
+	if err != nil {
+		return err
+	}
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+	metricLogExternalServiceDuration("storage-save", time.Since(start))
 
 	return nil
 }

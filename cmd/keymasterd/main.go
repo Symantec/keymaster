@@ -73,6 +73,18 @@ type authInfoJWT struct {
 	AuthType   int      `json:"auth_type"`
 }
 
+type storageStringDataJWT struct {
+	Issuer     string   `json:"iss,omitempty"`
+	Subject    string   `json:"sub,omitempty"`
+	Audience   []string `json:"aud,omitempty"`
+	NotBefore  int64    `json:"nbf,omitempty"`
+	Expiration int64    `json:"exp"`
+	IssuedAt   int64    `json:"iat,omitempty"`
+	TokenType  string   `json:"token_type"`
+	DataType   int      `json:"data_type"`
+	Data       string   `json:"data"`
+}
+
 type u2fAuthData struct {
 	Enabled      bool
 	CreatedAt    time.Time
