@@ -8,12 +8,14 @@ import (
 
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/keymaster/lib/authutil"
+	"github.com/Symantec/keymaster/lib/simplestorage"
 )
 
 const defaultCacheDuration = time.Hour * 96
 
 func newAuthenticator(urllist []string, bindPattern []string,
-	timeoutSecs uint, rootCAs *x509.CertPool, logger log.DebugLogger) (
+	timeoutSecs uint, rootCAs *x509.CertPool,
+	storage simplestorage.SimpleStore, logger log.DebugLogger) (
 	*PasswordAuthenticator, error) {
 	var authenticator PasswordAuthenticator
 	for _, stringURL := range urllist {
@@ -28,6 +30,7 @@ func newAuthenticator(urllist []string, bindPattern []string,
 	authenticator.rootCAs = rootCAs
 	authenticator.logger = logger
 	authenticator.expirationDuration = defaultCacheDuration
+	authenticator.storage = storage
 	authenticator.cachedCredentials = make(map[string]cacheCredentialEntry)
 	return &authenticator, nil
 }

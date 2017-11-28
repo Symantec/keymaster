@@ -436,20 +436,52 @@ func (state *RuntimeState) DeleteSigned(username string, dataType int) error {
 	return nil
 }
 
-/*
 var getSignedUserDataStmt = map[string]string{
 	"sqlite":   "select jws_data,expiration_epoch from expiring_signed_user_data where username = ? and type =?",
 	"postgres": "select jws_data,expiration_epoch from expiring_signed_user_data where username = $1 and type = $2",
 }
-*/
+
+func (state *RuntimeState) GetSigned(username string, dataType int) (bool, string, error) {
+
+	var jws_data string
+	var expiration_epoch int64
+
+	stmtText := getSignedUserDataStmt[state.dbType]
+	stmt, err := state.db.Prepare(stmtText)
+	if err != nil {
+		logger.Print("Error Preparing statement")
+		logger.Fatal(err)
+	}
+	defer stmt.Close()
+	err = stmt.QueryRow(username, dataType).Scan(&jws_data, &expiration_epoch)
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			logger.Printf("err='%s'", err)
+			return false, "", nil
+		} else {
+			logger.Printf("Problem with db ='%s'", err)
+			return false, "", err
+		}
+	}
+	storageJWT, err := state.getStorageDataFromStorageStringDataJWT(jws_data)
+	if err != nil {
+		return false, "", err
+	}
+	if storageJWT.Subject != username {
+		err := errors.New("inconsistent data coming from DB")
+		return false, "", err
+	}
+
+	return true, storageJWT.Data, nil
+}
 
 var saveSignedUserDataStmt = map[string]string{
 	"sqlite":   "insert or replace into expiring_signed_user_data(username, type, jws_data, expiration_epoch) values(?,?, ?, ?)",
 	"postgres": "insert into expiring_signed_user_data(username, type, jws_data, expiration_epoch) values ($1,$2,$3,$4) ON CONFLICT(username,type) DO UPDATE SET  jws_data = excluded.jws_data, expiration_epoch = excluded.expiration_epoch",
 }
 
-func (state *RuntimeState) UpsertSigned(username string, dataType int, expiration time.Time, data string) error {
-	expirationEpoch := expiration.Unix()
+func (state *RuntimeState) UpsertSigned(username string, dataType int, expirationEpoch int64, data string) error {
+	//expirationEpoch := expiration.Unix()
 	stringData, err := state.genNewSerializedStorageStringDataJWT(username, dataType, data, expirationEpoch)
 	if err != nil {
 		return err

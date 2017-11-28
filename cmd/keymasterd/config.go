@@ -359,7 +359,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		runtimeState.passwordChecker, err = ldap.New(
 			strings.Split(runtimeState.Config.Ldap.LDAP_Target_URLs, ","),
 			[]string{runtimeState.Config.Ldap.Bind_Pattern},
-			timeoutSecs, nil,
+			timeoutSecs, nil, &runtimeState,
 			logger)
 		if err != nil {
 			return runtimeState, err

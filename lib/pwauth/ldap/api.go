@@ -2,9 +2,11 @@ package ldap
 
 import (
 	"crypto/x509"
-	"github.com/Symantec/Dominator/lib/log"
 	"net/url"
 	"time"
+
+	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/keymaster/lib/simplestorage"
 )
 
 type cacheCredentialEntry struct {
@@ -19,12 +21,13 @@ type PasswordAuthenticator struct {
 	rootCAs            *x509.CertPool
 	logger             log.DebugLogger
 	expirationDuration time.Duration
+	storage            simplestorage.SimpleStore
 	cachedCredentials  map[string]cacheCredentialEntry
 }
 
-func New(url []string, bindPattern []string, timeoutSecs uint, rootCAs *x509.CertPool, logger log.DebugLogger) (
+func New(url []string, bindPattern []string, timeoutSecs uint, rootCAs *x509.CertPool, storage simplestorage.SimpleStore, logger log.DebugLogger) (
 	*PasswordAuthenticator, error) {
-	return newAuthenticator(url, bindPattern, timeoutSecs, rootCAs, logger)
+	return newAuthenticator(url, bindPattern, timeoutSecs, rootCAs, storage, logger)
 }
 
 // PasswordAuthenticate will authenticate a user using the provided username and
