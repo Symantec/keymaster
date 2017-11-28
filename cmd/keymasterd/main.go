@@ -271,33 +271,26 @@ func convertToBindDN(username string, bind_pattern string) string {
 
 func checkUserPassword(username string, password string, config AppConfigFile, passwordChecker pwauth.PasswordAuthenticator, r *http.Request) (bool, error) {
 	clientType := getClientType(r)
+	if passwordChecker != nil {
+		logger.Debugf(3, "checking auth with passwordChecker")
+		isLDAP := false
+		if len(config.Ldap.LDAP_Target_URLs) > 0 {
+			isLDAP = true
+		}
 
-	const timeoutSecs = 3
-	bindDN := convertToBindDN(username, config.Ldap.Bind_Pattern)
-	for _, ldapUrl := range strings.Split(config.Ldap.LDAP_Target_URLs, ",") {
-		if len(ldapUrl) < 1 {
-			continue
-		}
-		u, err := authutil.ParseLDAPURL(ldapUrl)
-		if err != nil {
-			logger.Printf("Failed to parse ldapurl '%s'", ldapUrl)
-			continue
-		}
 		start := time.Now()
-		valid, err := authutil.CheckLDAPUserPassword(*u, bindDN, password, timeoutSecs, nil)
+		valid, err := passwordChecker.PasswordAuthenticate(username, []byte(password))
 		if err != nil {
-			logger.Debugf(1, "Error checking LDAP user password url= %s", ldapUrl)
-			continue
+			return false, err
 		}
-
-		metricLogExternalServiceDuration("ldap", time.Since(start))
-
-		// the ldap exchange was successful (user might be invaid)
+		if isLDAP {
+			metricLogExternalServiceDuration("ldap", time.Since(start))
+		}
+		logger.Debugf(3, "pwdChaker output = %d", valid)
 		metricLogAuthOperation(clientType, "password", valid)
-
 		return valid, nil
-
 	}
+
 	if config.Base.HtpasswdFilename != "" {
 		logger.Debugf(3, "I have htpasswed filename")
 		buffer, err := ioutil.ReadFile(config.Base.HtpasswdFilename)
@@ -309,15 +302,6 @@ func checkUserPassword(username string, password string, config AppConfigFile, p
 			return false, err
 		}
 		metricLogAuthOperation(clientType, "password", valid)
-		return valid, nil
-	}
-	if passwordChecker != nil {
-		logger.Debugf(3, "checking auth with cmd")
-		valid, err := passwordChecker.PasswordAuthenticate(username, []byte(password))
-		if err != nil {
-			return false, err
-		}
-		logger.Debugf(3, "cmd output = %d", valid)
 		return valid, nil
 	}
 	metricLogAuthOperation(clientType, "password", false)

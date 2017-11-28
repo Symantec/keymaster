@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/Symantec/keymaster/lib/pwauth/command"
+	"github.com/Symantec/keymaster/lib/pwauth/ldap"
 	"github.com/Symantec/keymaster/lib/vip"
 	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/openpgp"
@@ -349,6 +350,17 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	// ExtAuthCommand
 	if len(runtimeState.Config.Base.ExternalAuthCmd) > 0 {
 		runtimeState.passwordChecker, err = command.New(runtimeState.Config.Base.ExternalAuthCmd, nil, logger)
+		if err != nil {
+			return runtimeState, err
+		}
+	}
+	if len(runtimeState.Config.Ldap.LDAP_Target_URLs) > 0 {
+		const timeoutSecs = 3
+		runtimeState.passwordChecker, err = ldap.New(
+			strings.Split(runtimeState.Config.Ldap.LDAP_Target_URLs, ","),
+			[]string{runtimeState.Config.Ldap.Bind_Pattern},
+			timeoutSecs, nil,
+			logger)
 		if err != nil {
 			return runtimeState, err
 		}

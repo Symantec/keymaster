@@ -1,18 +1,19 @@
-package authutil
+package ldap
 
 import (
 	"crypto/tls"
 	"crypto/x509"
 	"log"
 	"net"
-	"net/url"
+	//	"net/url"
+	"sync"
 	"testing"
 	"time"
 
-	ldap "github.com/vjeantet/ldapserver"
+	"github.com/vjeantet/ldapserver"
 )
 
-/* To generate certs, I used all data here should expire around Jan 1 2037:
+/* To generate certs, I used the following commands:
    openssl genpkey -algorithm RSA -out rootkey.pem -pkeyopt rsa_keygen_bits:4096
    openssl req -new -key rootkey.pem -days 7300 -extensions v3_ca -batch -out root.csr -utf8 -subj '/C=US/O=TestOrg/OU=Test CA'
    openssl x509 -req -sha256 -days 7300 -in root.csr -signkey rootkey.pem -set_serial 10  -out root.pem
@@ -103,15 +104,16 @@ GuCdIOQpn0IWClccTMjwc0AhJStSckNdSUQcsRl6LRnRHa3oCIs3hxnkiEHYch6e
 dcxWzhBDbzeIV9SvcTwLx/ghQg==
 -----END PRIVATE KEY-----`
 
-const testLdapsURL = `ldaps://ldap.example.com`
-const testLdapURL = `ldap://ldap.example.com`
-const testHttpURL = `http://www.example.com`
+type ServerConfig struct {
+	Delay     time.Duration
+	ValidUser string
+}
 
-// This DB has user 'username' with password 'password'
-const userdbContent = `username:$2y$05$D4qQmZbWYqfgtGtez2EGdOkcNne40EdEznOqMvZegQypT8Jdz42Jy`
-
-// This DB has user 'username' with password 'password'
-const aprUserDBContent = `username:$apr1$9gzRPctr$.5JlM3HCKcMbiwDEuvsB40`
+var (
+	serverMmutex = &sync.Mutex{}
+	serverConfig = ServerConfig{ValidUser: "username",
+		Delay: 0 * time.Millisecond}
+)
 
 // getTLSconfig returns a tls configuration used
 // to build a TLSlistener for TLS or StartTLS
@@ -130,32 +132,38 @@ func getTLSconfig() (*tls.Config, error) {
 }
 
 // handleBind return Success if login == username
-func handleBind(w ldap.ResponseWriter, m *ldap.Message) {
+func handleBind(w ldapserver.ResponseWriter, m *ldapserver.Message) {
 	r := m.GetBindRequest()
-	res := ldap.NewBindResponse(ldap.LDAPResultSuccess)
+	res := ldapserver.NewBindResponse(ldapserver.LDAPResultSuccess)
 
-	if string(r.Name()) == "username" {
+	serverMmutex.Lock()
+	config := serverConfig
+	serverMmutex.Unlock()
+
+	time.Sleep(config.Delay)
+
+	if string(r.Name()) == config.ValidUser {
 		w.Write(res)
 		return
 	}
 
 	log.Printf("Bind failed User=%s, Pass=%s", string(r.Name()), string(r.AuthenticationSimple()))
-	res.SetResultCode(ldap.LDAPResultInvalidCredentials)
+	res.SetResultCode(ldapserver.LDAPResultInvalidCredentials)
 	res.SetDiagnosticMessage("invalid credentials")
 	w.Write(res)
 }
 
 func init() {
 	//Create a new LDAP Server
-	server := ldap.NewServer()
+	server := ldapserver.NewServer()
 
 	//Set routes, here, we only serve bindRequest
-	routes := ldap.NewRouteMux()
+	routes := ldapserver.NewRouteMux()
 	routes.Bind(handleBind)
 	server.Handle(routes)
 
 	//SSL
-	secureConn := func(s *ldap.Server) {
+	secureConn := func(s *ldapserver.Server) {
 		config, _ := getTLSconfig()
 		s.Listener = tls.NewListener(s.Listener, config)
 	}
@@ -182,179 +190,130 @@ func init() {
 	time.Sleep(20 * time.Millisecond)
 }
 
-func TestCheckHtpasswdUserPasswordSuccess(t *testing.T) {
-	ok, err := CheckHtpasswdUserPassword("username", "password", []byte(userdbContent))
+const localLDAPSURL = "ldaps://localhost:10636"
+
+func TestPasswordAuthetnicateSimple(t *testing.T) {
+	certPool := x509.NewCertPool()
+	ok := certPool.AppendCertsFromPEM([]byte(rootCAPem))
+	if !ok {
+		t.Fatal("cannot add certs to certpool")
+	}
+	authn, err := newAuthenticator([]string{localLDAPSURL}, []string{"%s"}, 0, certPool, nil)
+	//ok, err := CheckHtpasswdUserPassword("username", "password", []byte(userdbContent))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	serverMmutex.Lock()
+	serverConfig.ValidUser = "username"
+	serverConfig.Delay = 0 * time.Millisecond
+	serverMmutex.Unlock()
+
+	ok, err = authn.passwordAuthenticate("username", []byte("password"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if ok != true {
 		t.Fatal("User considerd false")
 	}
-}
 
-func TestCheckHtpasswdUserPassworFailBadPassword(t *testing.T) {
-	ok, err := CheckHtpasswdUserPassword("username", "Incorrectpassword", []byte(userdbContent))
+	ok, err = authn.passwordAuthenticate("invalidUser", []byte("password"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if ok != false {
-		t.Fatal("Logged in with bad password")
+		t.Fatal("User considerd true")
 	}
+
 }
 
-func TestCheckHtpasswdUserPasswordFailUknownUsername(t *testing.T) {
-	ok, err := CheckHtpasswdUserPassword("usernameUknown", "password", []byte(userdbContent))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ok != false {
-		t.Fatal("Logged in with bad password")
-	}
-}
-
-func TestCheckHtpasswdUserPasswordFailInvalidPasswordFileContent(t *testing.T) {
-	_, err := CheckHtpasswdUserPassword("username", "password", []byte("invalidfilecontents"))
-	if err == nil {
-		t.Fatal(err)
-	}
-}
-
-func TestCheckHtpasswdUserPasswordFailInvalidNonBcryptHashes(t *testing.T) {
-	_, err := CheckHtpasswdUserPassword("username", "password", []byte(aprUserDBContent))
-	if err == nil {
-		t.Fatal(err)
-	}
-}
-
-func TestParseLDAPURLSuccess(t *testing.T) {
-	_, err := ParseLDAPURL(testLdapsURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestParseLDAPURLFail(t *testing.T) {
-
-	_, err := ParseLDAPURL(testLdapURL)
-	if err == nil {
-		t.Logf("Failed to fail '%s'", testLdapURL)
-		t.Fatal(err)
-	}
-	_, err = ParseLDAPURL(testHttpURL)
-	if err == nil {
-		t.Logf("Failed to fail '%s'", testHttpURL)
-		t.Fatal(err)
-	}
-}
-
-func TestCheckLDAPUserPasswordSuccess(t *testing.T) {
+func TestPasswordAuthetnicateCache(t *testing.T) {
 	certPool := x509.NewCertPool()
 	ok := certPool.AppendCertsFromPEM([]byte(rootCAPem))
 	if !ok {
 		t.Fatal("cannot add certs to certpool")
 	}
-	ldapURL, err := ParseLDAPURL("ldaps://localhost:10636")
+	authn, err := newAuthenticator([]string{localLDAPSURL}, []string{"%s"}, 1, certPool, nil)
+	//ok, err := CheckHtpasswdUserPassword("username", "password", []byte(userdbContent))
 	if err != nil {
-		t.Logf("Failed to parse url")
 		t.Fatal(err)
 	}
-	ok, err = CheckLDAPUserPassword(*ldapURL, "username", "password", 2, certPool)
+	ok, err = authn.passwordAuthenticate("username", []byte("password"))
 	if err != nil {
-		t.Logf("Connect to server")
 		t.Fatal(err)
 	}
 	if ok != true {
-		t.Fatal("userame not accepted")
+		t.Fatal("User considerd false")
 	}
-}
+	start := time.Now()
+	serverMmutex.Lock()
+	serverConfig.ValidUser = "username"
+	serverConfig.Delay = 5000 * time.Millisecond
+	serverMmutex.Unlock()
+	ok, err = authn.passwordAuthenticate("username", []byte("password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok != true {
+		t.Fatal("User considerd false")
+	}
+	end := time.Now()
+	if end.Sub(start) > 2000*time.Millisecond {
+		t.Fatal("timeout did not work as expected")
+	}
 
-func TestCheckLDAPUserPasswordFailUntrustedHost(t *testing.T) {
-	ldapURL, err := ParseLDAPURL("ldaps://localhost:10636")
-	if err != nil {
-		t.Logf("Failed to parse url")
-		t.Fatal(err)
-	}
-	_, err = CheckLDAPUserPassword(*ldapURL, "InvalidUsername", "password", 2, nil)
-	if err == nil {
-		t.Fatal("Should have borked on untrusted Host")
-	}
-}
+	//lets make it an indalid user
+	serverMmutex.Lock()
+	serverConfig.ValidUser = "otheruser"
+	serverConfig.Delay = 0 * time.Millisecond
+	serverMmutex.Unlock()
 
-func TestCheckLDAPUserPasswordFailInvalidUser(t *testing.T) {
-	certPool := x509.NewCertPool()
-	ok := certPool.AppendCertsFromPEM([]byte(rootCAPem))
-	if !ok {
-		t.Fatal("cannot add certs to certpool")
-	}
-	ldapURL, err := ParseLDAPURL("ldaps://localhost:10636")
+	ok, err = authn.passwordAuthenticate("username", []byte("password"))
 	if err != nil {
-		t.Logf("Failed to parse url")
 		t.Fatal(err)
 	}
-	ok, err = CheckLDAPUserPassword(*ldapURL, "InvalidUsername", "password", 2, certPool)
-	if err != nil {
-		t.Logf("Connect to server")
-		t.Fatal(err)
+	if ok != false {
+		t.Fatal("User considerd true")
 	}
-	if ok == true {
-		t.Fatal("userame accepted when it should have failed")
-	}
-}
+	//and ass timeout and the auth should fail as the cache should have been cleared
+	serverMmutex.Lock()
+	serverConfig.ValidUser = "username"
+	serverConfig.Delay = 5000 * time.Millisecond
+	serverMmutex.Unlock()
 
-func TestCheckLDAPUserPasswordFailNonLDAPEndpoint(t *testing.T) {
-	certPool := x509.NewCertPool()
-	ok := certPool.AppendCertsFromPEM([]byte(rootCAPem))
-	if !ok {
-		t.Fatal("cannot add certs to certpool")
-	}
-	ldapURL, err := ParseLDAPURL("ldaps://localhost:10637")
+	ok, err = authn.passwordAuthenticate("username", []byte("password"))
 	if err != nil {
-		t.Logf("Failed to parse url")
 		t.Fatal(err)
 	}
-	ok, err = CheckLDAPUserPassword(*ldapURL, "username", "password", 2, certPool)
-	if err == nil {
-		//t.Logf("Connect to server")
-		//t.Fatal(err)
-		t.Fatal("Does not speak LDAP endpoint.. ")
+	if ok != false {
+		t.Fatal("User considerd true")
 	}
-}
 
-func TestCheckLDAPUserPasswordFailInvalidScheme(t *testing.T) {
-	u, err := url.Parse(testHttpURL)
+	// now lets set the expiration to 1ms and ensure that the cache is filled up
+	serverMmutex.Lock()
+	serverConfig.ValidUser = "username"
+	serverConfig.Delay = 0 * time.Millisecond
+	serverMmutex.Unlock()
+	authn.expirationDuration = 0 * time.Millisecond
+	ok, err = authn.passwordAuthenticate("username", []byte("password"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = CheckLDAPUserPassword(*u, "username", "password", 1, nil)
-	if err == nil {
-		t.Fatal("Should have borked on invalid scheme")
+	if ok != true {
+		t.Fatal("User considerd false")
 	}
-}
+	/// and now add the timeout... since it is expired it should return false
+	serverMmutex.Lock()
+	serverConfig.ValidUser = "username"
+	serverConfig.Delay = 5000 * time.Millisecond
+	serverMmutex.Unlock()
 
-func TestArgon2RoundTripSuccess(t *testing.T) {
-	//t.Logf("Failed to parse url")
-	pwd := []byte("password")
-	hash, err := Argon2MakeNewHash(pwd)
+	ok, err = authn.passwordAuthenticate("username", []byte("password"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("hash=%s", hash)
-	err = Argon2CompareHashAndPassword(hash, pwd)
-	if err != nil {
-		t.Fatal(err)
+	if ok != false {
+		t.Fatal("User considerd true")
 	}
-}
 
-func TestArgon2RoundTripFailure(t *testing.T) {
-	//t.Logf("Failed to parse url")
-	pwd := []byte("password")
-	hash, err := Argon2MakeNewHash(pwd)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("hash=%s", hash)
-	err = Argon2CompareHashAndPassword(hash, []byte("otherpassword"))
-	if err == nil {
-		t.Fatal(err)
-	}
 }
