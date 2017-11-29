@@ -211,6 +211,11 @@ func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error
 		return err
 	}
 
+	err = tx.Commit()
+	if err != nil {
+		logger.Printf("err='%s'", err)
+		return err
+	}
 	return nil
 }
 
