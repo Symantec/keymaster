@@ -75,7 +75,14 @@ func initDBPostgres(state *RuntimeState) (err error) {
 			logger.Printf("%q: %s\n", err, sqlStmt)
 			return err
 		}
-		sqlStmt = `create table if not exists expiring_signed_user_data(id serial not null primary key, username text not null, jws_data text not null, type integer not null, expiration_epoch integer not null, UNIQUE(username,type));`
+		sqlStmt = `create table if not exists expiring_signed_user_data(id serial not null primary key, username text not null, jws_data text not null, type integer not null, expiration_epoch integer not null, update_epoch integer not null, UNIQUE(username,type));`
+		_, err = state.db.Exec(sqlStmt)
+		if err != nil {
+			logger.Printf("%q: %s\n", err, sqlStmt)
+			return err
+		} else {
+			logger.Printf("created table?")
+		}
 	}
 
 	return nil
@@ -87,6 +94,23 @@ func initDBSQlite(state *RuntimeState) (err error) {
 	dbFilename := filepath.Join(state.Config.Base.DataDirectory, profileDBFilename)
 	state.db, err = initFileDBSQLite(dbFilename, state.db)
 	return err
+}
+
+var sqliteinitializationStatements = []string{
+	`create table if not exists user_profile (id integer not null primary key, username text unique, profile_data blob);`,
+	`create table if not exists expiring_signed_user_data(id integer not null primary key, username text not null, jws_data text not null, type integer not null, expiration_epoch integer not null, update_epoch integer no null, UNIQUE(username,type));`,
+}
+
+func initializeSQLitetables(db *sql.DB) error {
+	for _, sqlStmt := range sqliteinitializationStatements {
+		logger.Debugf(2, "initializing sqlite, statement =%s", sqlStmt)
+		_, err := db.Exec(sqlStmt)
+		if err != nil {
+			logger.Printf("%q: %s\n", err, sqlStmt)
+			return err
+		}
+	}
+	return nil
 }
 
 // This call initializes the database if it does not exist.
@@ -102,14 +126,10 @@ func initFileDBSQLite(dbFilename string, currentDB *sql.DB) (*sql.DB, error) {
 			return nil, err
 		}
 		logger.Printf("post DB open")
-		// create profile table
-		sqlStmt := `create table user_profile (id integer not null primary key, username text unique, profile_data blob);`
-		_, err = fileDB.Exec(sqlStmt)
+		err = initializeSQLitetables(fileDB)
 		if err != nil {
-			logger.Printf("%q: %s\n", err, sqlStmt)
 			return nil, err
 		}
-
 		return fileDB, nil
 	}
 
@@ -117,6 +137,10 @@ func initFileDBSQLite(dbFilename string, currentDB *sql.DB) (*sql.DB, error) {
 	if currentDB == nil {
 
 		fileDB, err := sql.Open("sqlite3", dbFilename)
+		if err != nil {
+			return nil, err
+		}
+		err = initializeSQLitetables(fileDB)
 		if err != nil {
 			return nil, err
 		}
@@ -145,6 +169,7 @@ func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error
 		err := errors.New("nil databases")
 		return err
 	}
+	// Copy user profiles
 	rows, err := source.Query("SELECT username,profile_data FROM user_profile")
 	if err != nil {
 		logger.Printf("err='%s'", err)
@@ -171,7 +196,6 @@ func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error
 			profileBytes []byte
 		)
 		if err := rows.Scan(&username, &profileBytes); err != nil {
-			//log.Fatal(err)
 			logger.Printf("err='%s'", err)
 			return err
 		}
@@ -180,18 +204,13 @@ func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error
 			logger.Printf("err='%s'", err)
 			return err
 		}
-		//fmt.Printf("%s is %d\n", name, age)
 	}
 	if err := rows.Err(); err != nil {
 		//log.Fatal(err)
 		logger.Printf("err='%s'", err)
 		return err
 	}
-	err = tx.Commit()
-	if err != nil {
-		logger.Printf("err='%s'", err)
-		return err
-	}
+
 	return nil
 }
 
@@ -476,8 +495,8 @@ func (state *RuntimeState) GetSigned(username string, dataType int) (bool, strin
 }
 
 var saveSignedUserDataStmt = map[string]string{
-	"sqlite":   "insert or replace into expiring_signed_user_data(username, type, jws_data, expiration_epoch) values(?,?, ?, ?)",
-	"postgres": "insert into expiring_signed_user_data(username, type, jws_data, expiration_epoch) values ($1,$2,$3,$4) ON CONFLICT(username,type) DO UPDATE SET  jws_data = excluded.jws_data, expiration_epoch = excluded.expiration_epoch",
+	"sqlite":   "insert or replace into expiring_signed_user_data(username, type, jws_data, expiration_epoch, update_epoch) values(?,?, ?, ?, ?)",
+	"postgres": "insert into expiring_signed_user_data(username, type, jws_data, expiration_epoch, update_epoch) values ($1,$2,$3,$4, $5) ON CONFLICT(username,type) DO UPDATE SET  jws_data = excluded.jws_data, expiration_epoch = excluded.expiration_epoch",
 }
 
 func (state *RuntimeState) UpsertSigned(username string, dataType int, expirationEpoch int64, data string) error {
@@ -498,7 +517,7 @@ func (state *RuntimeState) UpsertSigned(username string, dataType int, expiratio
 		return err
 	}
 	defer stmt.Close()
-	_, err = stmt.Exec(username, dataType, stringData, expirationEpoch)
+	_, err = stmt.Exec(username, dataType, stringData, expirationEpoch, time.Now().Unix())
 	if err != nil {
 		return err
 	}

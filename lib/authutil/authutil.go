@@ -28,7 +28,7 @@ import (
 // We will use slightly bigger values:
 
 const argon2t = 40
-const argon2m = 17
+const argon2m = 18
 const argon2p = 2
 const argon2l = 32
 

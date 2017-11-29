@@ -198,7 +198,7 @@ func TestPasswordAuthetnicateSimple(t *testing.T) {
 	if !ok {
 		t.Fatal("cannot add certs to certpool")
 	}
-	authn, err := newAuthenticator([]string{localLDAPSURL}, []string{"%s"}, 0, certPool, nil)
+	authn, err := newAuthenticator([]string{localLDAPSURL}, []string{"%s"}, 0, certPool, nil, nil)
 	//ok, err := CheckHtpasswdUserPassword("username", "password", []byte(userdbContent))
 	if err != nil {
 		t.Fatal(err)
@@ -233,7 +233,7 @@ func TestPasswordAuthetnicateCache(t *testing.T) {
 	if !ok {
 		t.Fatal("cannot add certs to certpool")
 	}
-	authn, err := newAuthenticator([]string{localLDAPSURL}, []string{"%s"}, 1, certPool, nil)
+	authn, err := newAuthenticator([]string{localLDAPSURL}, []string{"%s"}, 1, certPool, nil, nil)
 	//ok, err := CheckHtpasswdUserPassword("username", "password", []byte(userdbContent))
 	if err != nil {
 		t.Fatal(err)
