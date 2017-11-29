@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/gob"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -159,9 +160,26 @@ func (state *RuntimeState) BackgroundDBCopy(initialSleep time.Duration) {
 		} else {
 			logger.Printf("db copy success")
 		}
+		cleanupDBData(state.db)
+		cleanupDBData(state.cacheDB)
 		time.Sleep(time.Second * 300)
 	}
 
+}
+
+func cleanupDBData(db *sql.DB) error {
+	if db == nil {
+		err := errors.New("nil database on cleanup")
+		return err
+	}
+	queryStr := fmt.Sprintf("DELETE from expiring_signed_user_data WHERE expiration_epoch < %d", time.Now().Unix())
+	rows, err := db.Query(queryStr)
+	if err != nil {
+		logger.Printf("err='%s'", err)
+		return err
+	}
+	defer rows.Close()
+	return nil
 }
 
 func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error {
@@ -461,14 +479,13 @@ func (state *RuntimeState) DeleteSigned(username string, dataType int) error {
 }
 
 var getSignedUserDataStmt = map[string]string{
-	"sqlite":   "select jws_data,expiration_epoch from expiring_signed_user_data where username = ? and type =?",
-	"postgres": "select jws_data,expiration_epoch from expiring_signed_user_data where username = $1 and type = $2",
+	"sqlite":   "select jws_data from expiring_signed_user_data where username = ? and type =? and expiration_epoch > ?",
+	"postgres": "select jws_data from expiring_signed_user_data where username = $1 and type = $2 and expiration_epoch > $3",
 }
 
 func (state *RuntimeState) GetSigned(username string, dataType int) (bool, string, error) {
 
-	var jws_data string
-	var expiration_epoch int64
+	var jwsData string
 
 	stmtText := getSignedUserDataStmt[state.dbType]
 	stmt, err := state.db.Prepare(stmtText)
@@ -477,7 +494,7 @@ func (state *RuntimeState) GetSigned(username string, dataType int) (bool, strin
 		logger.Fatal(err)
 	}
 	defer stmt.Close()
-	err = stmt.QueryRow(username, dataType).Scan(&jws_data, &expiration_epoch)
+	err = stmt.QueryRow(username, dataType, time.Now().Unix()).Scan(&jwsData)
 	if err != nil {
 		if err.Error() == "sql: no rows in result set" {
 			logger.Printf("err='%s'", err)
@@ -487,7 +504,7 @@ func (state *RuntimeState) GetSigned(username string, dataType int) (bool, strin
 			return false, "", err
 		}
 	}
-	storageJWT, err := state.getStorageDataFromStorageStringDataJWT(jws_data)
+	storageJWT, err := state.getStorageDataFromStorageStringDataJWT(jwsData)
 	if err != nil {
 		return false, "", err
 	}

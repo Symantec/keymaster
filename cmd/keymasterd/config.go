@@ -53,6 +53,7 @@ type baseConfig struct {
 type LdapConfig struct {
 	Bind_Pattern     string
 	LDAP_Target_URLs string
+	DisableAuthCache bool `yaml:"disable_auth_cache"`
 }
 
 type UserInfoLDAPSource struct {
@@ -356,10 +357,14 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	}
 	if len(runtimeState.Config.Ldap.LDAP_Target_URLs) > 0 {
 		const timeoutSecs = 3
+		pwdCache := &runtimeState
+		if runtimeState.Config.Ldap.DisableAuthCache {
+			pwdCache = nil
+		}
 		runtimeState.passwordChecker, err = ldap.New(
 			strings.Split(runtimeState.Config.Ldap.LDAP_Target_URLs, ","),
 			[]string{runtimeState.Config.Ldap.Bind_Pattern},
-			timeoutSecs, nil, &runtimeState,
+			timeoutSecs, nil, pwdCache,
 			logger)
 		if err != nil {
 			return runtimeState, err
