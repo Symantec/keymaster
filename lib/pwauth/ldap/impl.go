@@ -29,8 +29,8 @@ func newAuthenticator(urllist []string, bindPattern []string,
 	}
 	authenticator.bindPattern = bindPattern
 	authenticator.timeoutSecs = timeoutSecs
-	if timeoutSecs*len(authenticator.ldapURL) > browserResponseTimeoutSeconds {
-		authenticator.timeoutSecs = browserResponseTimeoutSeconds / len(authenticator.ldapURL)
+	if timeoutSecs*uint(len(authenticator.ldapURL)) > uint(browserResponseTimeoutSeconds) {
+		authenticator.timeoutSecs = uint(browserResponseTimeoutSeconds) / uint(len(authenticator.ldapURL))
 	}
 	authenticator.rootCAs = rootCAs
 	authenticator.logger = logger
@@ -54,11 +54,7 @@ func (pa *PasswordAuthenticator) updateOrDeletePasswordHash(valid bool, username
 			return nil
 		}
 		Expiration := time.Now().Add(pa.expirationDuration)
-		if pa.storage == nil {
-			pa.cachedCredentials[username] = cacheCredentialEntry{
-				Hash:       hash,
-				Expiration: Expiration}
-		} else {
+		if pa.storage != nil {
 			err := pa.storage.UpsertSigned(username, passwordDataType, Expiration.Unix(), hash)
 			if err != nil && pa.logger != nil {
 				pa.logger.Debugf(0, "Failure inserting password into db for user %s", username)
@@ -66,15 +62,7 @@ func (pa *PasswordAuthenticator) updateOrDeletePasswordHash(valid bool, username
 		}
 
 	} else {
-		if pa.storage == nil {
-			cachedCred, ok := pa.cachedCredentials[username]
-			if ok {
-				err := authutil.Argon2CompareHashAndPassword(cachedCred.Hash, password)
-				if err == nil {
-					delete(pa.cachedCredentials, username)
-				}
-			}
-		} else {
+		if pa.storage != nil {
 			ok, hash, err := pa.storage.GetSigned(username, passwordDataType)
 			if err != nil {
 				return nil
@@ -111,18 +99,7 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 
 		}
 	}
-	if pa.storage == nil {
-		cachedCred, ok := pa.cachedCredentials[username]
-		if ok {
-			//Check validity
-			err = authutil.Argon2CompareHashAndPassword(cachedCred.Hash, password)
-			if err == nil {
-				if cachedCred.Expiration.Sub(time.Now()) > 0 {
-					return true, nil
-				}
-			}
-		}
-	} else {
+	if pa.storage != nil {
 		ok, hash, err := pa.storage.GetSigned(username, passwordDataType)
 		if err != nil {
 			return false, nil

@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Symantec/keymaster/lib/simplestorage/memstore"
+
 	"github.com/vjeantet/ldapserver"
 )
 
@@ -233,7 +235,8 @@ func TestPasswordAuthetnicateCache(t *testing.T) {
 	if !ok {
 		t.Fatal("cannot add certs to certpool")
 	}
-	authn, err := newAuthenticator([]string{localLDAPSURL}, []string{"%s"}, 1, certPool, nil, nil)
+	cache := memstore.New()
+	authn, err := newAuthenticator([]string{localLDAPSURL}, []string{"%s"}, 1, certPool, cache, nil)
 	//ok, err := CheckHtpasswdUserPassword("username", "password", []byte(userdbContent))
 	if err != nil {
 		t.Fatal(err)
