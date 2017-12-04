@@ -137,6 +137,7 @@ type RuntimeState struct {
 
 const redirectPath = "/auth/oauth2/callback"
 const secsBetweenCleanup = 30
+const maxAgeU2FVerifySeconds = 30
 
 var (
 	Version          = "No version provided"
@@ -1615,6 +1616,7 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	//save cached copy
 	var localAuth localUserData
 	localAuth.U2fAuthChallenge = c
+	localAuth.ExpiresAt = time.Now().Add(maxAgeU2FVerifySeconds * time.Second)
 	state.Mutex.Lock()
 	state.localAuthData[authUser] = localAuth
 	state.Mutex.Unlock()
