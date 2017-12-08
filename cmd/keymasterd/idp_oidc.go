@@ -329,9 +329,21 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}
-	logger.Debugf(3, "username=%s, pass%s", clientID, pass)
+	// https://tools.ietf.org/html/rfc6749#section-2.3.1 says the client id and password
+	// are actually url-encoded
+	logger.Debugf(3, "Pre escaped auth: username=%s, pass=%s", clientID, pass)
+	unescapedClientID, err := url.QueryUnescape(clientID)
+	if err == nil {
+		clientID = unescapedClientID
+	}
+	unescapedPass, err := url.QueryUnescape(pass)
+	if err == nil {
+		pass = unescapedPass
+	}
+	logger.Debugf(3, "username=%s, pass=%s", clientID, pass)
 	valid := state.idpOpenIDCValidClientSecret(clientID, pass)
 	if !valid {
+		logger.Debugf(0, "Error invalid client secret")
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}
@@ -339,17 +351,20 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	//validity checks
 	// 1. Ensure authoriation client was issued to the authenticated client
 	if clientID != keymasterToken.Subject {
+		logger.Debugf(0, "Unmatching token Value")
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}
 	// 2. verify authorization code is valid
 	// 2.a -> expiration
 	if keymasterToken.Expiration < time.Now().Unix() {
+		logger.Debugf(0, "Expired Token")
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}
 	// verify redirect uri matches the one setup in the original request:
 	if keymasterToken.RedirectURI != requestRedirectURLString {
+		logger.Debugf(0, "Invalid Redirect Target")
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}
