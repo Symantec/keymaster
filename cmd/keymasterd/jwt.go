@@ -139,17 +139,13 @@ func (state *RuntimeState) getStorageDataFromStorageStringDataJWT(serializedToke
 		logger.Printf("err=%s", err)
 		return rvalue, err
 	}
-	//At this stage is now crypto verified, now is time to verify sane values
+	// At this stage is now crypto verified (data actually comes from a valid signer),
+	// Now is time to do semantic validation
 	issuer := state.idpGetIssuer()
 	if inboundJWT.Issuer != issuer || inboundJWT.TokenType != "storage_data" ||
 		inboundJWT.NotBefore > time.Now().Unix() {
 		err = errors.New("invalid JWT values")
 		return rvalue, err
 	}
-	/*
-		rvalue.Username = inboundJWT.Subject
-		rvalue.AuthType = inboundJWT.AuthType
-		rvalue.ExpiresAt = time.Unix(inboundJWT.Expiration, 0)
-	*/
 	return inboundJWT, nil
 }
