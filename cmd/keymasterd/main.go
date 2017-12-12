@@ -73,6 +73,18 @@ type authInfoJWT struct {
 	AuthType   int      `json:"auth_type"`
 }
 
+type storageStringDataJWT struct {
+	Issuer     string   `json:"iss,omitempty"`
+	Subject    string   `json:"sub,omitempty"`
+	Audience   []string `json:"aud,omitempty"`
+	NotBefore  int64    `json:"nbf,omitempty"`
+	Expiration int64    `json:"exp"`
+	IssuedAt   int64    `json:"iat,omitempty"`
+	TokenType  string   `json:"token_type"`
+	DataType   int      `json:"data_type"`
+	Data       string   `json:"data"`
+}
+
 type u2fAuthData struct {
 	Enabled      bool
 	CreatedAt    time.Time
@@ -274,7 +286,7 @@ func checkUserPassword(username string, password string, config AppConfigFile, p
 	if passwordChecker != nil {
 		logger.Debugf(3, "checking auth with passwordChecker")
 		isLDAP := false
-		if len(config.Ldap.LDAP_Target_URLs) > 0 {
+		if len(config.Ldap.LDAPTargetURLs) > 0 {
 			isLDAP = true
 		}
 

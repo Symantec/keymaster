@@ -8,12 +8,16 @@ import (
 
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/keymaster/lib/authutil"
+	"github.com/Symantec/keymaster/lib/simplestorage"
 )
 
 const defaultCacheDuration = time.Hour * 96
+const passwordDataType = 1
+const browserResponseTimeoutSeconds = 7
 
 func newAuthenticator(urllist []string, bindPattern []string,
-	timeoutSecs uint, rootCAs *x509.CertPool, logger log.DebugLogger) (
+	timeoutSecs uint, rootCAs *x509.CertPool,
+	storage simplestorage.SimpleStore, logger log.DebugLogger) (
 	*PasswordAuthenticator, error) {
 	var authenticator PasswordAuthenticator
 	for _, stringURL := range urllist {
@@ -25,9 +29,13 @@ func newAuthenticator(urllist []string, bindPattern []string,
 	}
 	authenticator.bindPattern = bindPattern
 	authenticator.timeoutSecs = timeoutSecs
+	if timeoutSecs*uint(len(authenticator.ldapURL)) > uint(browserResponseTimeoutSeconds) {
+		authenticator.timeoutSecs = uint(browserResponseTimeoutSeconds) / uint(len(authenticator.ldapURL))
+	}
 	authenticator.rootCAs = rootCAs
 	authenticator.logger = logger
 	authenticator.expirationDuration = defaultCacheDuration
+	authenticator.storage = storage
 	authenticator.cachedCredentials = make(map[string]cacheCredentialEntry)
 	return &authenticator, nil
 }
@@ -45,16 +53,25 @@ func (pa *PasswordAuthenticator) updateOrDeletePasswordHash(valid bool, username
 			}
 			return nil
 		}
-		pa.cachedCredentials[username] = cacheCredentialEntry{
-			Hash:       hash,
-			Expiration: time.Now().Add(pa.expirationDuration)}
+		Expiration := time.Now().Add(pa.expirationDuration)
+		if pa.storage != nil {
+			err := pa.storage.UpsertSigned(username, passwordDataType, Expiration.Unix(), hash)
+			if err != nil && pa.logger != nil {
+				pa.logger.Debugf(0, "Failure inserting password into db for user %s", username)
+			}
+		}
 
 	} else {
-		cachedCred, ok := pa.cachedCredentials[username]
-		if ok {
-			err := authutil.Argon2CompareHashAndPassword(cachedCred.Hash, password)
-			if err == nil {
-				delete(pa.cachedCredentials, username)
+		if pa.storage != nil {
+			ok, hash, err := pa.storage.GetSigned(username, passwordDataType)
+			if err != nil {
+				return nil
+			}
+			if ok {
+				err := authutil.Argon2CompareHashAndPassword(hash, password)
+				if err == nil {
+					pa.storage.DeleteSigned(username, passwordDataType)
+				}
 			}
 		}
 	}
@@ -82,15 +99,19 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 
 		}
 	}
-	cachedCred, ok := pa.cachedCredentials[username]
-	if ok {
-		//Check validity
-		err = authutil.Argon2CompareHashAndPassword(cachedCred.Hash, password)
-		if err == nil {
-			if cachedCred.Expiration.Sub(time.Now()) > 0 {
+	if pa.storage != nil {
+		ok, hash, err := pa.storage.GetSigned(username, passwordDataType)
+		if err != nil {
+			return false, nil
+		}
+		if ok {
+			err = authutil.Argon2CompareHashAndPassword(hash, password)
+			if err == nil {
 				return true, nil
 			}
 		}
+
 	}
+
 	return false, nil
 }

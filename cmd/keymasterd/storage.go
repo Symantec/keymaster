@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/gob"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,7 +73,13 @@ func initDBPostgres(state *RuntimeState) (err error) {
 		sqlStmt := `create table if not exists user_profile (id serial not null primary key, username text unique, profile_data bytea);`
 		_, err = state.db.Exec(sqlStmt)
 		if err != nil {
-			logger.Printf("%q: %s\n", err, sqlStmt)
+			logger.Printf("init postgres err: %s: %q\n", err, sqlStmt)
+			return err
+		}
+		sqlStmt = `create table if not exists expiring_signed_user_data(id serial not null primary key, username text not null, jws_data text not null, type integer not null, expiration_epoch integer not null, update_epoch integer not null, UNIQUE(username,type));`
+		_, err = state.db.Exec(sqlStmt)
+		if err != nil {
+			logger.Printf("init postgres err: %s: %q\n", err, sqlStmt)
 			return err
 		}
 	}
@@ -88,6 +95,23 @@ func initDBSQlite(state *RuntimeState) (err error) {
 	return err
 }
 
+var sqliteinitializationStatements = []string{
+	`create table if not exists user_profile (id integer not null primary key, username text unique, profile_data blob);`,
+	`create table if not exists expiring_signed_user_data(id integer not null primary key, username text not null, jws_data text not null, type integer not null, expiration_epoch integer not null, update_epoch integer no null, UNIQUE(username,type));`,
+}
+
+func initializeSQLitetables(db *sql.DB) error {
+	for _, sqlStmt := range sqliteinitializationStatements {
+		logger.Debugf(2, "initializing sqlite, statement =%q", sqlStmt)
+		_, err := db.Exec(sqlStmt)
+		if err != nil {
+			logger.Printf("%s: %q\n", err, sqlStmt)
+			return err
+		}
+	}
+	return nil
+}
+
 // This call initializes the database if it does not exist.
 // TODO: update  to perform auto-updates of the db.
 func initFileDBSQLite(dbFilename string, currentDB *sql.DB) (*sql.DB, error) {
@@ -101,14 +125,10 @@ func initFileDBSQLite(dbFilename string, currentDB *sql.DB) (*sql.DB, error) {
 			return nil, err
 		}
 		logger.Printf("post DB open")
-		// create profile table
-		sqlStmt := `create table user_profile (id integer not null primary key, username text unique, profile_data blob);`
-		_, err = fileDB.Exec(sqlStmt)
+		err = initializeSQLitetables(fileDB)
 		if err != nil {
-			logger.Printf("%q: %s\n", err, sqlStmt)
 			return nil, err
 		}
-
 		return fileDB, nil
 	}
 
@@ -116,6 +136,10 @@ func initFileDBSQLite(dbFilename string, currentDB *sql.DB) (*sql.DB, error) {
 	if currentDB == nil {
 
 		fileDB, err := sql.Open("sqlite3", dbFilename)
+		if err != nil {
+			return nil, err
+		}
+		err = initializeSQLitetables(fileDB)
 		if err != nil {
 			return nil, err
 		}
@@ -134,9 +158,26 @@ func (state *RuntimeState) BackgroundDBCopy(initialSleep time.Duration) {
 		} else {
 			logger.Printf("db copy success")
 		}
+		cleanupDBData(state.db)
+		cleanupDBData(state.cacheDB)
 		time.Sleep(time.Second * 300)
 	}
 
+}
+
+func cleanupDBData(db *sql.DB) error {
+	if db == nil {
+		err := errors.New("nil database on cleanup")
+		return err
+	}
+	queryStr := fmt.Sprintf("DELETE from expiring_signed_user_data WHERE expiration_epoch < %d", time.Now().Unix())
+	rows, err := db.Query(queryStr)
+	if err != nil {
+		logger.Printf("err='%s'", err)
+		return err
+	}
+	defer rows.Close()
+	return nil
 }
 
 func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error {
@@ -144,6 +185,7 @@ func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error
 		err := errors.New("nil databases")
 		return err
 	}
+	// Copy user profiles
 	rows, err := source.Query("SELECT username,profile_data FROM user_profile")
 	if err != nil {
 		logger.Printf("err='%s'", err)
@@ -170,7 +212,6 @@ func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error
 			profileBytes []byte
 		)
 		if err := rows.Scan(&username, &profileBytes); err != nil {
-			//log.Fatal(err)
 			logger.Printf("err='%s'", err)
 			return err
 		}
@@ -179,13 +220,13 @@ func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error
 			logger.Printf("err='%s'", err)
 			return err
 		}
-		//fmt.Printf("%s is %d\n", name, age)
 	}
 	if err := rows.Err(); err != nil {
 		//log.Fatal(err)
 		logger.Printf("err='%s'", err)
 		return err
 	}
+
 	err = tx.Commit()
 	if err != nil {
 		logger.Printf("err='%s'", err)
@@ -402,5 +443,107 @@ func (state *RuntimeState) SaveUserProfile(username string, profile *userProfile
 		return err
 	}
 	metricLogExternalServiceDuration("storage-save", time.Since(start))
+	return nil
+}
+
+var deleteSignedUserDataStmt = map[string]string{
+	"sqlite":   "delete from expiring_signed_user_data where username = ? and type = ?",
+	"postgres": "delete from expiring_signed_user_data where username = $1 and type = $2",
+}
+
+func (state *RuntimeState) DeleteSigned(username string, dataType int) error {
+
+	//insert into DB
+	tx, err := state.db.Begin()
+	if err != nil {
+		return err
+	}
+	stmtText := deleteSignedUserDataStmt[state.dbType]
+	stmt, err := tx.Prepare(stmtText)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.Exec(username, dataType)
+	if err != nil {
+		return err
+	}
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+var getSignedUserDataStmt = map[string]string{
+	"sqlite":   "select jws_data from expiring_signed_user_data where username = ? and type =? and expiration_epoch > ?",
+	"postgres": "select jws_data from expiring_signed_user_data where username = $1 and type = $2 and expiration_epoch > $3",
+}
+
+func (state *RuntimeState) GetSigned(username string, dataType int) (bool, string, error) {
+
+	var jwsData string
+
+	stmtText := getSignedUserDataStmt[state.dbType]
+	stmt, err := state.db.Prepare(stmtText)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	defer stmt.Close()
+	err = stmt.QueryRow(username, dataType, time.Now().Unix()).Scan(&jwsData)
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			logger.Printf("err='%s'", err)
+			return false, "", nil
+		} else {
+			logger.Printf("Problem with db ='%s'", err)
+			return false, "", err
+		}
+	}
+	storageJWT, err := state.getStorageDataFromStorageStringDataJWT(jwsData)
+	if err != nil {
+		return false, "", err
+	}
+	if storageJWT.Subject != username {
+		return false, "", errors.New("inconsistent data coming from DB")
+	}
+
+	return true, storageJWT.Data, nil
+}
+
+var saveSignedUserDataStmt = map[string]string{
+	"sqlite":   "insert or replace into expiring_signed_user_data(username, type, jws_data, expiration_epoch, update_epoch) values(?,?, ?, ?, ?)",
+	"postgres": "insert into expiring_signed_user_data(username, type, jws_data, expiration_epoch, update_epoch) values ($1,$2,$3,$4, $5) ON CONFLICT(username,type) DO UPDATE SET  jws_data = excluded.jws_data, expiration_epoch = excluded.expiration_epoch",
+}
+
+func (state *RuntimeState) UpsertSigned(username string, dataType int, expirationEpoch int64, data string) error {
+	//expirationEpoch := expiration.Unix()
+	stringData, err := state.genNewSerializedStorageStringDataJWT(username, dataType, data, expirationEpoch)
+	if err != nil {
+		return err
+	}
+	start := time.Now()
+	//insert into DB
+	tx, err := state.db.Begin()
+	if err != nil {
+		return err
+	}
+	stmtText := saveSignedUserDataStmt[state.dbType]
+	stmt, err := tx.Prepare(stmtText)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	_, err = stmt.Exec(username, dataType, stringData, expirationEpoch, time.Now().Unix())
+	if err != nil {
+		return err
+	}
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+	metricLogExternalServiceDuration("storage-save", time.Since(start))
+
 	return nil
 }

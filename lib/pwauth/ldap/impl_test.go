@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Symantec/keymaster/lib/simplestorage/memstore"
+
 	"github.com/vjeantet/ldapserver"
 )
 
@@ -167,12 +169,12 @@ func init() {
 		config, _ := getTLSconfig()
 		s.Listener = tls.NewListener(s.Listener, config)
 	}
-	go server.ListenAndServe(":10636", secureConn)
+	go server.ListenAndServe(":10638", secureConn)
 
 	//we also make a simple tls listener
 	//
 	config, _ := getTLSconfig()
-	ln, _ := tls.Listen("tcp", ":10637", config)
+	ln, _ := tls.Listen("tcp", ":10639", config)
 	go func(ln net.Listener) {
 		for {
 			conn, err := ln.Accept()
@@ -190,7 +192,7 @@ func init() {
 	time.Sleep(20 * time.Millisecond)
 }
 
-const localLDAPSURL = "ldaps://localhost:10636"
+const localLDAPSURL = "ldaps://localhost:10638"
 
 func TestPasswordAuthetnicateSimple(t *testing.T) {
 	certPool := x509.NewCertPool()
@@ -198,7 +200,7 @@ func TestPasswordAuthetnicateSimple(t *testing.T) {
 	if !ok {
 		t.Fatal("cannot add certs to certpool")
 	}
-	authn, err := newAuthenticator([]string{localLDAPSURL}, []string{"%s"}, 0, certPool, nil)
+	authn, err := newAuthenticator([]string{localLDAPSURL}, []string{"%s"}, 0, certPool, nil, nil)
 	//ok, err := CheckHtpasswdUserPassword("username", "password", []byte(userdbContent))
 	if err != nil {
 		t.Fatal(err)
@@ -233,7 +235,8 @@ func TestPasswordAuthetnicateCache(t *testing.T) {
 	if !ok {
 		t.Fatal("cannot add certs to certpool")
 	}
-	authn, err := newAuthenticator([]string{localLDAPSURL}, []string{"%s"}, 1, certPool, nil)
+	cache := memstore.New()
+	authn, err := newAuthenticator([]string{localLDAPSURL}, []string{"%s"}, 1, certPool, cache, nil)
 	//ok, err := CheckHtpasswdUserPassword("username", "password", []byte(userdbContent))
 	if err != nil {
 		t.Fatal(err)
