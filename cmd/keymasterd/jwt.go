@@ -139,7 +139,7 @@ func (state *RuntimeState) getStorageDataFromStorageStringDataJWT(serializedToke
 		logger.Printf("err=%s", err)
 		return rvalue, err
 	}
-	// At this stage is now crypto verified (data actually comes from a valid signer),
+	// At this stage crypto has been verified (data actually comes from a valid signer),
 	// Now is time to do semantic validation
 	issuer := state.idpGetIssuer()
 	if inboundJWT.Issuer != issuer || inboundJWT.TokenType != "storage_data" ||

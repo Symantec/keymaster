@@ -286,7 +286,7 @@ func checkUserPassword(username string, password string, config AppConfigFile, p
 	if passwordChecker != nil {
 		logger.Debugf(3, "checking auth with passwordChecker")
 		isLDAP := false
-		if len(config.Ldap.LDAP_Target_URLs) > 0 {
+		if len(config.Ldap.LDAPTargetURLs) > 0 {
 			isLDAP = true
 		}
 
