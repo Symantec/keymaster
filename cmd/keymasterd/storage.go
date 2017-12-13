@@ -193,6 +193,14 @@ func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error
 	}
 	defer rows.Close()
 
+	queryStr := fmt.Sprintf("SELECT username, type, jws_data, expiration_epoch,update_epoch FROM expiring_signed_user_data WHERE expiration_epoch > %d", time.Now().Unix())
+	genericRows, err := source.Query(queryStr)
+	if err != nil {
+		logger.Printf("err='%s'", err)
+		return err
+	}
+	defer genericRows.Close()
+
 	tx, err := destination.Begin()
 	if err != nil {
 		logger.Printf("err='%s'", err)
@@ -225,6 +233,32 @@ func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error
 		//log.Fatal(err)
 		logger.Printf("err='%s'", err)
 		return err
+	}
+	expiringUpsertText := saveSignedUserDataStmt[destinationType]
+	expiringUpsertStmt, err := tx.Prepare(expiringUpsertText)
+	if err != nil {
+		logger.Printf("err='%s'", err)
+		return err
+	}
+	defer expiringUpsertStmt.Close()
+	for genericRows.Next() {
+		var (
+			username        string
+			dataType        int
+			jwsData         string
+			expirationEpoch int64
+			updateEpoch     int64
+		)
+		if err := genericRows.Scan(&username, &dataType, &jwsData, &expirationEpoch, &updateEpoch); err != nil {
+			logger.Printf("err='%s'", err)
+			return err
+		}
+		//username, type, jws_data, expiration_epoch, update_epoch
+		_, err = expiringUpsertStmt.Exec(username, dataType, jwsData, expirationEpoch, updateEpoch)
+		if err != nil {
+			logger.Printf("err='%s'", err)
+			return err
+		}
 	}
 
 	err = tx.Commit()
@@ -476,36 +510,93 @@ func (state *RuntimeState) DeleteSigned(username string, dataType int) error {
 	return nil
 }
 
+type getSignedData struct {
+	JWSData string
+	Err     error
+}
+
 var getSignedUserDataStmt = map[string]string{
 	"sqlite":   "select jws_data from expiring_signed_user_data where username = ? and type =? and expiration_epoch > ?",
 	"postgres": "select jws_data from expiring_signed_user_data where username = $1 and type = $2 and expiration_epoch > $3",
 }
 
 func (state *RuntimeState) GetSigned(username string, dataType int) (bool, string, error) {
+	logger.Printf("top of GetSigned")
+
+	//var jwsData string
+	ch := make(chan getSignedData, 1)
+	//start := time.Now()
+	go func(username string, dataType int) { //loads profile from DB
+		var signedDataMessage getSignedData
+
+		stmtText := getSignedUserDataStmt[state.dbType]
+		stmt, err := state.db.Prepare(stmtText)
+		if err != nil {
+			logger.Print("Error Preparing statement")
+			logger.Fatal(err)
+		}
+		defer stmt.Close()
+		if state.remoteDBQueryTimeout == 0 {
+			time.Sleep(10 * time.Millisecond)
+		}
+		//profilMessage.Err = stmt.QueryRow(username).Scan(&profileMessage.ProfileBytes)
+		//ch <- profileMessage
+		signedDataMessage.Err = stmt.QueryRow(username, dataType, time.Now().Unix()).Scan(&signedDataMessage.JWSData)
+		ch <- signedDataMessage
+	}(username, dataType)
 
 	var jwsData string
 
-	stmtText := getSignedUserDataStmt[state.dbType]
-	stmt, err := state.db.Prepare(stmtText)
-	if err != nil {
-		logger.Fatal(err)
-	}
-	defer stmt.Close()
-	err = stmt.QueryRow(username, dataType, time.Now().Unix()).Scan(&jwsData)
-	if err != nil {
-		if err.Error() == "sql: no rows in result set" {
-			logger.Printf("err='%s'", err)
-			return false, "", nil
-		} else {
-			logger.Printf("Problem with db ='%s'", err)
-			return false, "", err
+	select {
+	case dbMessage := <-ch:
+		logger.Debugf(2, "got data from db. dbMessage=%+v", dbMessage)
+		err := dbMessage.Err
+		if err != nil {
+			err = dbMessage.Err
+			if err.Error() == "sql: no rows in result set" {
+				logger.Printf("err='%s'", err)
+				return false, "", nil
+			} else {
+				logger.Printf("Problem with db ='%s'", err)
+				return false, "", err
+			}
 		}
+		jwsData = dbMessage.JWSData
+
+	case <-time.After(state.remoteDBQueryTimeout):
+		logger.Printf("GOT a timeout")
+		// load from cache
+		stmtText := getSignedUserDataStmt["sqlite"]
+		stmt, err := state.cacheDB.Prepare(stmtText)
+		if err != nil {
+			logger.Print("Error Preparing statement")
+			logger.Fatal(err)
+		}
+
+		defer stmt.Close()
+		//err = stmt.QueryRow(username).Scan(&profileBytes)
+		err = stmt.QueryRow(username, dataType, time.Now().Unix()).Scan(&jwsData)
+		if err != nil {
+			if err.Error() == "sql: no rows in result set" {
+				logger.Printf("err='%s'", err)
+				return false, "", nil
+			} else {
+				logger.Printf("Problem with db ='%s'", err)
+				return false, "", err
+			}
+
+		}
+		logger.Printf("GOT data from db cache")
+
 	}
+	logger.Printf("GOT some jwsdata data")
 	storageJWT, err := state.getStorageDataFromStorageStringDataJWT(jwsData)
 	if err != nil {
+		logger.Debugf(2, "failed to get storage data %s data=%s", err, jwsData)
 		return false, "", err
 	}
 	if storageJWT.Subject != username {
+		logger.Debugf(2, "%s for %s", err, username)
 		return false, "", errors.New("inconsistent data coming from DB")
 	}
 
@@ -518,6 +609,7 @@ var saveSignedUserDataStmt = map[string]string{
 }
 
 func (state *RuntimeState) UpsertSigned(username string, dataType int, expirationEpoch int64, data string) error {
+	logger.Debugf(2, "top of UpsertSigned")
 	//expirationEpoch := expiration.Unix()
 	stringData, err := state.genNewSerializedStorageStringDataJWT(username, dataType, data, expirationEpoch)
 	if err != nil {
