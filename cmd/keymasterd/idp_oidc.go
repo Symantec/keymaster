@@ -331,7 +331,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	}
 	// https://tools.ietf.org/html/rfc6749#section-2.3.1 says the client id and password
 	// are actually url-encoded
-	logger.Debugf(3, "Pre escaped auth: username=%s, pass=%s", clientID, pass)
+	//logger.Debugf(3, "Pre escaped auth: username=%s, pass=%s", clientID, pass)
 	unescapedClientID, err := url.QueryUnescape(clientID)
 	if err == nil {
 		clientID = unescapedClientID
@@ -340,7 +340,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	if err == nil {
 		pass = unescapedPass
 	}
-	logger.Debugf(3, "username=%s, pass=%s", clientID, pass)
+	//logger.Debugf(3, "username=%s, pass=%s", clientID, pass)
 	valid := state.idpOpenIDCValidClientSecret(clientID, pass)
 	if !valid {
 		logger.Debugf(0, "Error invalid client secret")
