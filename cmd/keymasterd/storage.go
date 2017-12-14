@@ -73,16 +73,14 @@ func initDBPostgres(state *RuntimeState) (err error) {
 		sqlStmt := `create table if not exists user_profile (id serial not null primary key, username text unique, profile_data bytea);`
 		_, err = state.db.Exec(sqlStmt)
 		if err != nil {
-			logger.Printf("%q: %s\n", err, sqlStmt)
+			logger.Printf("init postgres err: %s: %q\n", err, sqlStmt)
 			return err
 		}
 		sqlStmt = `create table if not exists expiring_signed_user_data(id serial not null primary key, username text not null, jws_data text not null, type integer not null, expiration_epoch integer not null, update_epoch integer not null, UNIQUE(username,type));`
 		_, err = state.db.Exec(sqlStmt)
 		if err != nil {
-			logger.Printf("%q: %s\n", err, sqlStmt)
+			logger.Printf("init postgres err: %s: %q\n", err, sqlStmt)
 			return err
-		} else {
-			logger.Printf("created table?")
 		}
 	}
 
@@ -104,10 +102,10 @@ var sqliteinitializationStatements = []string{
 
 func initializeSQLitetables(db *sql.DB) error {
 	for _, sqlStmt := range sqliteinitializationStatements {
-		logger.Debugf(2, "initializing sqlite, statement =%s", sqlStmt)
+		logger.Debugf(2, "initializing sqlite, statement =%q", sqlStmt)
 		_, err := db.Exec(sqlStmt)
 		if err != nil {
-			logger.Printf("%q: %s\n", err, sqlStmt)
+			logger.Printf("%s: %q\n", err, sqlStmt)
 			return err
 		}
 	}
@@ -598,9 +596,8 @@ func (state *RuntimeState) GetSigned(username string, dataType int) (bool, strin
 		return false, "", err
 	}
 	if storageJWT.Subject != username {
-		err := errors.New("inconsistent data coming from DB")
 		logger.Debugf(2, "%s for %s", err, username)
-		return false, "", err
+		return false, "", errors.New("inconsistent data coming from DB")
 	}
 
 	return true, storageJWT.Data, nil
