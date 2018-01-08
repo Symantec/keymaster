@@ -48,6 +48,7 @@ type baseConfig struct {
 	AllowedAuthBackendsForCerts []string `yaml:"allowed_auth_backends_for_certs"`
 	AllowedAuthBackendsForWebUI []string `yaml:"allowed_auth_backends_for_webui"`
 	AdminUsers                  []string `yaml:"admin_users"`
+	AdminGroups                 []string `yaml:"admin_groups"`
 }
 
 type LdapConfig struct {

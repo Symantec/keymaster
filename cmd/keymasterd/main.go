@@ -1727,6 +1727,24 @@ func (state *RuntimeState) IsAdminUser(user string) bool {
 			return true
 		}
 	}
+	if len(state.Config.Base.AdminGroups) > 0 {
+		groups, err := state.getUserGroups(user)
+		if err == nil {
+			// Store groups to which this user belongs in a set.
+			userGroupSet := make(map[string]struct{})
+			for _, group := range groups {
+				userGroupSet[group] = struct{}{}
+			}
+			// Check each admin group from config file.
+			// If user belongs to one of these groups then they are an admin
+			// user.
+			for _, adminGroup := range state.Config.Base.AdminGroups {
+				if _, ok := userGroupSet[adminGroup]; ok {
+					return true
+				}
+			}
+		}
+	}
 	return false
 }
 
