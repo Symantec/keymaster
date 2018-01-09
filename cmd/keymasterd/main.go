@@ -29,6 +29,7 @@ import (
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/serverlogger"
 	"github.com/Symantec/Dominator/lib/srpc"
+	"github.com/Symantec/keymaster/keymasterd/admincache"
 	"github.com/Symantec/keymaster/keymasterd/eventnotifier"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
@@ -133,6 +134,7 @@ type RuntimeState struct {
 	htmlTemplate         *template.Template
 	passwordChecker      pwauth.PasswordAuthenticator
 	KeymasterPublicKeys  []crypto.PublicKey
+	isAdminCache         *admincache.Cache
 }
 
 const redirectPath = "/auth/oauth2/callback"
@@ -1721,31 +1723,53 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 	http.Error(w, "error verifying response", http.StatusInternalServerError)
 }
 
-func (state *RuntimeState) IsAdminUser(user string) bool {
+func (state *RuntimeState) _IsAdminUser(user string) (bool, error) {
 	for _, adminUser := range state.Config.Base.AdminUsers {
 		if user == adminUser {
-			return true
+			return true, nil
 		}
 	}
 	if len(state.Config.Base.AdminGroups) > 0 {
 		groups, err := state.getUserGroups(user)
-		if err == nil {
-			// Store groups to which this user belongs in a set.
-			userGroupSet := make(map[string]struct{})
-			for _, group := range groups {
-				userGroupSet[group] = struct{}{}
-			}
-			// Check each admin group from config file.
-			// If user belongs to one of these groups then they are an admin
-			// user.
-			for _, adminGroup := range state.Config.Base.AdminGroups {
-				if _, ok := userGroupSet[adminGroup]; ok {
-					return true
-				}
+		if err != nil {
+			return false, err
+		}
+		// Store groups to which this user belongs in a set.
+		userGroupSet := make(map[string]struct{})
+		for _, group := range groups {
+			userGroupSet[group] = struct{}{}
+		}
+		// Check each admin group from config file.
+		// If user belongs to one of these groups then they are an admin
+		// user.
+		for _, adminGroup := range state.Config.Base.AdminGroups {
+			if _, ok := userGroupSet[adminGroup]; ok {
+				return true, nil
 			}
 		}
 	}
-	return false
+	return false, nil
+}
+
+func (state *RuntimeState) IsAdminUser(user string) bool {
+	isAdmin, valid := state.isAdminCache.Get(user)
+
+	// If cached entry is valid, return it as is.
+	if valid {
+		return isAdmin
+	}
+
+	// Entry has expired, do expensive _IsAdminUser call
+	newIsAdmin, err := state._IsAdminUser(user)
+	if err == nil {
+
+		// On success, cache and return result
+		state.isAdminCache.Put(user, newIsAdmin)
+		return newIsAdmin
+	}
+	// Otherwise, re-cache and return previously cached value
+	state.isAdminCache.Put(user, isAdmin)
+	return isAdmin
 }
 
 func (state *RuntimeState) IsAdminUserAndU2F(user string, loginLevel int) bool {

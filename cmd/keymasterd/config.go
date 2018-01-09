@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Symantec/keymaster/keymasterd/admincache"
 	"github.com/Symantec/keymaster/lib/pwauth/command"
 	"github.com/Symantec/keymaster/lib/pwauth/ldap"
 	"github.com/Symantec/keymaster/lib/vip"
@@ -168,6 +169,7 @@ func (state *RuntimeState) signerPublicKeyToKeymasterKeys() error {
 
 func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	var runtimeState RuntimeState
+	runtimeState.isAdminCache = admincache.New(5 * time.Minute)
 	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
 		err = errors.New("mising config file failure")
 		return runtimeState, err
