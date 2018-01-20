@@ -373,9 +373,9 @@ func getClientType(r *http.Request) string {
 }
 
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.Request,
-	loginDestination string) error {
+	loginDestination string, tryShowU2f bool) error {
 	JSSources := []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js"}
-	showU2F := browserSupportsU2F(r)
+	showU2F := browserSupportsU2F(r) && tryShowU2f
 	if showU2F {
 		JSSources = []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/webui-2fa-u2f.js"}
 	}
@@ -456,7 +456,7 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter, r *http.R
 				return
 			}
 			if (info.AuthType & AuthTypePassword) == AuthTypePassword {
-				state.writeHTML2FAAuthPage(w, r, loginDestnation)
+				state.writeHTML2FAAuthPage(w, r, loginDestnation, true)
 				return
 			}
 			state.writeHTMLLoginPage(w, r, loginDestnation)
@@ -1249,7 +1249,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 			http.Redirect(w, r, loginDestination, 302)
 		} else {
 			//Go 2FA
-			state.writeHTML2FAAuthPage(w, r, loginDestination)
+			state.writeHTML2FAAuthPage(w, r, loginDestination, userHasU2FTokens)
 		}
 	default:
 		w.WriteHeader(200)
