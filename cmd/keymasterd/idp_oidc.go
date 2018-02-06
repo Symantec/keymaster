@@ -308,7 +308,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad code")
 		return
 	}
-	logger.Printf("tok=%+v", tok)
+	logger.Printf("token request tok=%+v", tok)
 	//out := jwt.Claims{}
 	keymasterToken := keymasterdCodeToken{}
 	//if err := tok.Claims(state.Signer.Public(), &keymasterToken); err != nil {
@@ -324,21 +324,31 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	//formClientID := r.Form.Get("clientID")
 	logger.Printf("%+v", r)
 
+	unescapeAuthCredentials := true
 	clientID, pass, ok := r.BasicAuth()
 	if !ok {
-		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-		return
+		logger.Printf("warn: basic auth Missing")
+		clientID = r.Form.Get("client_id")
+		pass = r.Form.Get("client_secret")
+		if len(clientID) < 1 || len(pass) < 1 {
+			logger.Printf("Cannot get auth credentials in auth request")
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+			return
+		}
+		unescapeAuthCredentials = false
 	}
 	// https://tools.ietf.org/html/rfc6749#section-2.3.1 says the client id and password
 	// are actually url-encoded
 	//logger.Debugf(3, "Pre escaped auth: username=%s, pass=%s", clientID, pass)
-	unescapedClientID, err := url.QueryUnescape(clientID)
-	if err == nil {
-		clientID = unescapedClientID
-	}
-	unescapedPass, err := url.QueryUnescape(pass)
-	if err == nil {
-		pass = unescapedPass
+	if unescapeAuthCredentials {
+		unescapedClientID, err := url.QueryUnescape(clientID)
+		if err == nil {
+			clientID = unescapedClientID
+		}
+		unescapedPass, err := url.QueryUnescape(pass)
+		if err == nil {
+			pass = unescapedPass
+		}
 	}
 	//logger.Debugf(3, "username=%s, pass=%s", clientID, pass)
 	valid := state.idpOpenIDCValidClientSecret(clientID, pass)
@@ -534,11 +544,15 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 	}
 
 	//Get email from ldap if available
-	email := fmt.Sprintf("%s@%s", parsedAccessToken.Username, state.HostIdentity)
+	defaultEmailDomain := state.HostIdentity
+	if len(state.Config.OpenIDConnectIDP.DefaultEmailDomain) > 3 {
+		defaultEmailDomain = state.Config.OpenIDConnectIDP.DefaultEmailDomain
+	}
+	email := fmt.Sprintf("%s@%s", parsedAccessToken.Username, defaultEmailDomain)
 	userAttributeMap, err := state.getUserAttributes(parsedAccessToken.Username, []string{"mail"})
 	if err != nil {
-		logger.Printf("failed to get user attributes %s", err)
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		logger.Printf("warn: failed to get user attributes for %s, %s", parsedAccessToken.Username, err)
+		//state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 	}
 	if userAttributeMap != nil {
 		mailList, ok := userAttributeMap["mail"]
