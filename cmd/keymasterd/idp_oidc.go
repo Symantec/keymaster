@@ -551,7 +551,6 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 	userAttributeMap, err := state.getUserAttributes(parsedAccessToken.Username, []string{"mail"})
 	if err != nil {
 		logger.Printf("warn: failed to get user attributes for %s, %s", parsedAccessToken.Username, err)
-		//state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 	}
 	if userAttributeMap != nil {
 		mailList, ok := userAttributeMap["mail"]
