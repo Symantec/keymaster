@@ -89,7 +89,8 @@ type OpenIDConnectClientConfig struct {
 }
 
 type OpenIDConnectIDPConfig struct {
-	Client []OpenIDConnectClientConfig `yaml:"clients"`
+	DefaultEmailDomain string                      `yaml:"default_email_domain"`
+	Client             []OpenIDConnectClientConfig `yaml:"clients"`
 }
 
 type ProfileStorageConfig struct {
