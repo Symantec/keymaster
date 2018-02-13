@@ -152,7 +152,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 		logger.Printf("%v", err)
 		return
 	}
-	logger.Printf("AuthUser of idc auth: %s", authUser)
+	logger.Debugf(1, "AuthUser of idc auth: %s", authUser)
 	// requst MUST be a GET or POST
 	if !(r.Method == "GET" || r.Method == "POST") {
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Method for Auth Handler")
@@ -163,7 +163,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
-	logger.Printf("Auth request =%+v", r)
+	logger.Debugf(2, "Auth request =%+v", r)
 	//logger.Printf("IDC auth from=%v", r.Form)
 	if r.Form.Get("response_type") != "code" {
 		logger.Debugf(1, "Invalid response_type")
@@ -232,6 +232,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 
 	redirectPath := fmt.Sprintf("%s?code=%s&state=%s", requestRedirectURLString, raw, url.QueryEscape(r.Form.Get("state")))
 	logger.Debugf(3, "auth request is valid, redirect path=%s", redirectPath)
+	logger.Printf("IDP: Successful oauth2 authorization:  user=%s redirect url=%s", authUser, requestRedirectURLString)
 	http.Redirect(w, r, redirectPath, 302)
 	//logger.Printf("raw jwt =%v", raw)
 }
@@ -295,7 +296,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid redirect uri")
 		return
 	}
-	logger.Printf("token request =%+v", r)
+	logger.Debugf(1, "token request =%+v", r)
 	codeString := r.Form.Get("code")
 	if codeString == "" {
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "nil code")
@@ -308,7 +309,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad code")
 		return
 	}
-	logger.Printf("token request tok=%+v", tok)
+	logger.Debugf(2, "token request tok=%+v", tok)
 	//out := jwt.Claims{}
 	keymasterToken := keymasterdCodeToken{}
 	//if err := tok.Claims(state.Signer.Public(), &keymasterToken); err != nil {
@@ -322,12 +323,12 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	//now is time to extract the values..
 
 	//formClientID := r.Form.Get("clientID")
-	logger.Printf("%+v", r)
+	logger.Debugf(2, "%+v", r)
 
 	unescapeAuthCredentials := true
 	clientID, pass, ok := r.BasicAuth()
 	if !ok {
-		logger.Printf("warn: basic auth Missing")
+		logger.Debugf(1, "warn: basic auth Missing")
 		clientID = r.Form.Get("client_id")
 		pass = r.Form.Get("client_secret")
 		if len(clientID) < 1 || len(pass) < 1 {
@@ -339,7 +340,6 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	}
 	// https://tools.ietf.org/html/rfc6749#section-2.3.1 says the client id and password
 	// are actually url-encoded
-	//logger.Debugf(3, "Pre escaped auth: username=%s, pass=%s", clientID, pass)
 	if unescapeAuthCredentials {
 		unescapedClientID, err := url.QueryUnescape(clientID)
 		if err == nil {
@@ -350,7 +350,6 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 			pass = unescapedPass
 		}
 	}
-	//logger.Debugf(3, "username=%s, pass=%s", clientID, pass)
 	valid := state.idpOpenIDCValidClientSecret(clientID, pass)
 	if !valid {
 		logger.Debugf(0, "Error invalid client secret")
@@ -506,7 +505,7 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 		}
 		accessToken = r.Form.Get("access_token")
 	}
-	logger.Printf("access_token='%s'", accessToken)
+	logger.Debugf(1, "access_token='%s'", accessToken)
 
 	if accessToken == "" {
 		logger.Printf("access_token='%s'", accessToken)
@@ -520,7 +519,7 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad access token")
 		return
 	}
-	logger.Printf("tok=%+v", tok)
+	logger.Debugf(1, "tok=%+v", tok)
 
 	parsedAccessToken := userInfoToken{}
 	//if err := tok.Claims(state.Signer.Public(), &parsedAccessToken); err != nil {
@@ -529,11 +528,11 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad code")
 		return
 	}
-	logger.Printf("out=%+v", parsedAccessToken)
+	logger.Debugf(1, "out=%+v", parsedAccessToken)
 
 	//now we check for validity
 	if parsedAccessToken.Expiration < time.Now().Unix() {
-		logger.Debugf(1, "expired token attempted to be used for bearer")
+		logger.Printf("expired token attempted to be used for bearer")
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
 	}
@@ -552,7 +551,6 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 	userAttributeMap, err := state.getUserAttributes(parsedAccessToken.Username, []string{"mail"})
 	if err != nil {
 		logger.Printf("warn: failed to get user attributes for %s, %s", parsedAccessToken.Username, err)
-		//state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 	}
 	if userAttributeMap != nil {
 		mailList, ok := userAttributeMap["mail"]
@@ -573,10 +571,12 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 	if err != nil {
 		log.Fatal(err)
 	}
-	logger.Printf("userinfo=%+v\n b=%s", userInfo, b)
+	logger.Debugf(1, "userinfo=%+v\n b=%s", userInfo, b)
 
 	var out bytes.Buffer
 	json.Indent(&out, b, "", "\t")
 	w.Header().Set("Content-Type", "application/json")
 	out.WriteTo(w)
+
+	logger.Printf("200 Successful userinfo request %s", b)
 }
