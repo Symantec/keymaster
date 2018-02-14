@@ -37,6 +37,7 @@ type loginPageTemplateData struct {
 	ShowOauth2       bool
 	HideStdLogin     bool
 	LoginDestination string
+	ErrorMessage     string
 }
 
 //Should be a template
@@ -56,6 +57,9 @@ const loginFormText = `
     {{template "header" .}}
         <div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
         <h2> Keymaster Login </h2>
+	{{if .ErrorMessage}}
+	<p style="color:red;">{{.ErrorMessage}} </p>
+	{{end}}
 	{{if .ShowOauth2}}
 	<p>
 	<a href="/auth/oauth2/login"> Oauth2 Login </a>

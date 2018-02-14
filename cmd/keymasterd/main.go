@@ -395,13 +395,14 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.R
 }
 
 func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter, r *http.Request,
-	loginDestination string) error {
+	loginDestination string, errorMessage string) error {
 	//footerText := state.getFooterText()
 	displayData := loginPageTemplateData{
 		Title:            "Keymaster Login",
 		ShowOauth2:       state.Config.Oauth2.Enabled,
 		HideStdLogin:     state.Config.Base.HideStandardLogin,
-		LoginDestination: loginDestination}
+		LoginDestination: loginDestination,
+		ErrorMessage:     errorMessage}
 	err := state.htmlTemplate.ExecuteTemplate(w, "loginPage", displayData)
 	if err != nil {
 		logger.Printf("Failed to execute %v", err)
@@ -442,24 +443,24 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter, r *http.R
 			}
 			if authCookie == nil {
 				// TODO: change by a message followed by an HTTP redirection
-				state.writeHTMLLoginPage(w, r, loginDestnation)
+				state.writeHTMLLoginPage(w, r, loginDestnation, message)
 				return
 			}
 			info, err := state.getAuthInfoFromAuthJWT(authCookie.Value)
 			if err != nil {
 				logger.Debugf(3, "write failure state, error from getinfo authInfoJWT")
-				state.writeHTMLLoginPage(w, r, loginDestnation)
+				state.writeHTMLLoginPage(w, r, loginDestnation, "")
 				return
 			}
 			if info.ExpiresAt.Before(time.Now()) {
-				state.writeHTMLLoginPage(w, r, loginDestnation)
+				state.writeHTMLLoginPage(w, r, loginDestnation, "")
 				return
 			}
 			if (info.AuthType & AuthTypePassword) == AuthTypePassword {
 				state.writeHTML2FAAuthPage(w, r, loginDestnation, true)
 				return
 			}
-			state.writeHTMLLoginPage(w, r, loginDestnation)
+			state.writeHTMLLoginPage(w, r, loginDestnation, message)
 			return
 
 		default:
@@ -589,7 +590,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 			return "", AuthTypeNone, err
 		}
 		if !valid {
-			state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+			state.writeFailureResponse(w, r, http.StatusUnauthorized, "Invalid Username/Password")
 			err := errors.New("Invalid Credentials")
 			return "", AuthTypeNone, err
 		}
@@ -1070,7 +1071,7 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 	case "loginForm":
 		w.WriteHeader(200)
 		//fmt.Fprintf(w, "%s", loginFormText)
-		state.writeHTMLLoginPage(w, r, profilePath)
+		state.writeHTMLLoginPage(w, r, profilePath, "")
 		return
 	case "x509ca":
 		pemCert := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: state.caCertDer}))
@@ -1182,7 +1183,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if !valid {
-		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "Invalid Username/Password")
 		logger.Printf("Invalid login for %s", username)
 		//err := errors.New("Invalid Credentials")
 		return
@@ -1996,7 +1997,7 @@ func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Req
 	if r.URL.Path[:] == "/" {
 		//landing page
 		if r.Method == "GET" && len(r.Cookies()) < 1 {
-			state.writeHTMLLoginPage(w, r, profilePath)
+			state.writeHTMLLoginPage(w, r, profilePath, "")
 			return
 		}
 
