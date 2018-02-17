@@ -1,5 +1,5 @@
 Name:           keymaster
-Version:        0.7.2
+Version:        0.7.3
 Release:        1%{?dist}
 Summary:        Short term access certificate generator and client
 
@@ -44,6 +44,7 @@ install -p -m 0644 cmd/keymasterd/static_files/jquery-1.12.4.patched.min.js %{bu
 install -d %{buildroot}/%{_datarootdir}/keymasterd/customization_data/templates
 install -p -m 0644 cmd/keymasterd/customization_data/templates/header_extra.tmpl %{buildroot}/%{_datarootdir}/keymasterd/customization_data/templates/header_extra.tmpl
 install -p -m 0644 cmd/keymasterd/customization_data/templates/footer_extra.tmpl %{buildroot}/%{_datarootdir}/keymasterd/customization_data/templates/footer_extra.tmpl
+install -p -m 0644 cmd/keymasterd/customization_data/templates/login_extra.tmpl %{buildroot}/%{_datarootdir}/keymasterd/customization_data/templates/login_extra.tmpl
 install -d %{buildroot}/%{_datarootdir}/keymasterd/customization_data/web_resources
 install -p -m 0644 cmd/keymasterd/customization_data/web_resources/customization.css %{buildroot}/%{_datarootdir}/keymasterd/customization_data/web_resources/customization.css
 %pre

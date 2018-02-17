@@ -124,7 +124,7 @@ func (state *RuntimeState) loadTemplates() (err error) {
 		return err
 	}
 	state.htmlTemplate = template.New("main")
-	templateFiles := []string{"footer_extra.tmpl", "header_extra.tmpl"}
+	templateFiles := []string{"footer_extra.tmpl", "header_extra.tmpl", "login_extra.tmpl"}
 	for _, templateFilename := range templateFiles {
 		templatePath := filepath.Join(templatesPath, templateFilename)
 		_, err = state.htmlTemplate.ParseFiles(templatePath)
