@@ -119,10 +119,11 @@ type userInfoResponseBody struct {
 }
 
 type authenticateUserWithPushRequest struct {
-	RequestId          string `xml:"requestId"`
-	UserId             string `xml:"userId"`
-	PushMessageText    string
-	DisplayMessageTest string
+	RequestId             string `xml:"requestId"`
+	UserId                string `xml:"userId"`
+	PushMessageText       string
+	DisplayMessageText    string
+	DisplayMessageProfile string
 }
 
 const authenticateUserWithPushRequestTemplate = `<?xml version="1.0"?>
@@ -135,7 +136,7 @@ const authenticateUserWithPushRequestTemplate = `<?xml version="1.0"?>
       <pushAuthData>
         <displayParameters>
           <Key>push.message.text</Key>
-          <Value>Symantec Push Authentication Request</Value>
+	   <Value>Symantec Push Authentication Request</Value>
         </displayParameters>
         <displayParameters>
           <Key>display.message.title</Key>
@@ -143,11 +144,11 @@ const authenticateUserWithPushRequestTemplate = `<?xml version="1.0"?>
         </displayParameters>
         <displayParameters>
           <Key>display.message.text</Key>
-          <Value>Sign In request from Test</Value>
+          <Value>{{.DisplayMessageText}}</Value>
         </displayParameters>
         <displayParameters>
           <Key>display.message.profile</Key>
-          <Value>SECURE ASSET</Value>
+	  <Value>{{.DisplayMessageProfile}}</Value>
         </displayParameters>
         <requestParameters>
           <Key>request.timeout</Key>
@@ -244,8 +245,8 @@ fail poll response
 */
 
 type PollResponseDeviceInfo struct {
-	Key   string `xml:"Value"`
-	Value string `xml:"Key"`
+	Key   string `xml:"Key"`
+	Value string `xml:"Value"`
 }
 
 type vipResponsePollPushTransactionStatus struct {
@@ -255,7 +256,7 @@ type vipResponsePollPushTransactionStatus struct {
 	AuthnTime      string                   `xml:"authnTime,omitempty"`
 	CredentialId   string                   `xml:"credentialId,omitempty"`
 	CredentialType string                   `xml:"credentialType,omitempty"`
-	deviceInfo     []PollResponseDeviceInfo `xml:deviceInfo,omitempty`
+	DeviceInfo     []PollResponseDeviceInfo `xml:"deviceInfo,omitempty"`
 }
 
 type vipResponsePollPushStatus struct {
@@ -313,6 +314,9 @@ type Client struct {
 	VipUserServicesURL              string
 	VipUserServiceAuthenticationURL string
 	RootCAs                         *x509.CertPool
+	VipPushMessageText              string //what is shown on the shown on the alarm
+	VipPushDisplayMessageText       string // what is shown after
+	VipPushDisplayMessageProfile    string // The url?
 }
 
 func NewClient(certPEMBlock, keyPEMBlock []byte) (client Client, err error) {
@@ -326,6 +330,11 @@ func NewClient(certPEMBlock, keyPEMBlock []byte) (client Client, err error) {
 	client.VipUserServicesURL = "https://userservices-auth.vip.symantec.com/vipuserservices/QueryService_1_8"
 	//https://userservices-auth.vip.symantec.com/vipuserservices/QueryService_1_8
 	client.VipUserServiceAuthenticationURL = "https://userservices-auth.vip.symantec.com/vipuserservices/AuthenticationService_1_8"
+
+	client.VipPushMessageText = "Symantec Push Authentication Request"
+	client.VipPushDisplayMessageText = "Sign In request from Some site"
+	client.VipPushDisplayMessageProfile = "www.example.com"
+
 	return client, nil
 }
 
@@ -462,7 +471,7 @@ func (client *Client) GetActiveTokens(userID string) ([]string, error) {
 	*/
 	var enabledTokenID []string
 	for _, credentialBinding := range response.Body.VipResponseGetUserInfo.CredentialBindingDetail {
-		//fmt.Printf("\n%+v\n", credentialBinding)
+		fmt.Printf("\n%+v\n", credentialBinding)
 		if credentialBinding.CredentialStatus != "ENABLED" {
 			continue
 		}
@@ -495,8 +504,12 @@ func (client *Client) ValidateUserOTP(userID string, OTPValue int) (bool, error)
 
 func (client *Client) StartUserVIPPush(userID string) (transactionID string, err error) {
 	requestID := genNewRequestID()
-	vipPushRequest := authenticateUserWithPushRequest{RequestId: requestID,
-		UserId: userID}
+	vipPushRequest := authenticateUserWithPushRequest{
+		RequestId:             requestID,
+		UserId:                userID,
+		PushMessageText:       client.VipPushMessageText,
+		DisplayMessageText:    client.VipPushDisplayMessageText,
+		DisplayMessageProfile: client.VipPushDisplayMessageProfile}
 	tmpl, err := template.New("pushRequest").Parse(authenticateUserWithPushRequestTemplate)
 	if err != nil {
 		panic(err)
