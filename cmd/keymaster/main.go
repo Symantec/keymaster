@@ -20,7 +20,9 @@ import (
 	"github.com/Symantec/keymaster/lib/client/util"
 )
 
-const DefaultKeysLocation = "/.ssh/"
+const DefaultSSHKeysLocation = "/.ssh/"
+const DefaultTLSKeysLocation = "/.ssl/"
+
 const FilePrefix = "keymaster"
 
 var (
@@ -108,14 +110,21 @@ func setupCerts(
 	configContents config.AppConfigFile,
 	logger log.DebugLogger) {
 	// create dirs
-	privateKeyPath := filepath.Join(homeDir, DefaultKeysLocation, FilePrefix)
-	sshConfigPath, _ := filepath.Split(privateKeyPath)
+	privateSSHKeyPath := filepath.Join(homeDir, DefaultSSHKeysLocation, FilePrefix)
+	sshConfigPath, _ := filepath.Split(privateSSHKeyPath)
 	err := os.MkdirAll(sshConfigPath, 0700)
 	if err != nil {
 		logger.Fatal(err)
 	}
+	privateTLSKeyPath := filepath.Join(homeDir, DefaultTLSKeysLocation, FilePrefix)
+	tlsConfigPath, _ := filepath.Split(privateTLSKeyPath)
+	err = os.MkdirAll(tlsConfigPath, 0700)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
 	// get signer
-	tempPrivateKeyPath := filepath.Join(homeDir, DefaultKeysLocation, "keymaster-temp")
+	tempPrivateKeyPath := filepath.Join(homeDir, DefaultSSHKeysLocation, "keymaster-temp")
 	signer, tempPublicKeyPath, err := util.GenKeyPair(
 		tempPrivateKeyPath, userName+"@keymaster", logger)
 	if err != nil {
@@ -149,38 +158,46 @@ func setupCerts(
 	//..
 	if _, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
 		// TODO(rgooch): Parse certificate to get actual lifetime.
-		cmd := exec.Command("ssh-add", "-d", privateKeyPath)
+		cmd := exec.Command("ssh-add", "-d", privateSSHKeyPath)
 		cmd.Run()
 	}
 
 	//rename files to expected paths
-	err = os.Rename(tempPrivateKeyPath, privateKeyPath)
+	err = os.Rename(tempPrivateKeyPath, privateSSHKeyPath)
 	if err != nil {
 		err := errors.New("Could not rename private Key")
 		logger.Fatal(err)
 	}
 
-	err = os.Rename(tempPublicKeyPath, privateKeyPath+".pub")
+	err = os.Rename(tempPublicKeyPath, privateSSHKeyPath+".pub")
 	if err != nil {
 		err := errors.New("Could not rename public Key")
 		logger.Fatal(err)
 	}
+	// Now handle the key in the tls directory
+	tlsPrivateKeyName := filepath.Join(homeDir, DefaultTLSKeysLocation, "keymaster-key.pem")
+	os.Remove(tlsPrivateKeyName)
+	err = os.Symlink(privateSSHKeyPath, tlsPrivateKeyName)
+	if err != nil {
+		err := errors.New("Could not create new symlink for TLS key")
+		logger.Fatal(err)
+	}
 
 	// now we write the cert file...
-	sshCertPath := privateKeyPath + "-cert.pub"
+	sshCertPath := privateSSHKeyPath + "-cert.pub"
 	err = ioutil.WriteFile(sshCertPath, sshCert, 0644)
 	if err != nil {
 		err := errors.New("Could not write ssh cert")
 		logger.Fatal(err)
 	}
-	x509CertPath := privateKeyPath + "-x509Cert.pem"
+	x509CertPath := privateTLSKeyPath + "-x509Cert.pem"
 	err = ioutil.WriteFile(x509CertPath, x509Cert, 0644)
 	if err != nil {
 		err := errors.New("Could not write ssh cert")
 		logger.Fatal(err)
 	}
 	if kubernetesCert != nil {
-		kubernetesCertPath := privateKeyPath + "-kubernetesCert.pem"
+		kubernetesCertPath := privateTLSKeyPath + "-kubernetesCert.pem"
 		err = ioutil.WriteFile(kubernetesCertPath, kubernetesCert, 0644)
 		if err != nil {
 			err := errors.New("Could not write ssh cert")
@@ -192,7 +209,7 @@ func setupCerts(
 	if _, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
 		// TODO(rgooch): Parse certificate to get actual lifetime.
 		lifetime := fmt.Sprintf("%ds", uint64((*twofa.Duration).Seconds()))
-		cmd := exec.Command("ssh-add", "-t", lifetime, privateKeyPath)
+		cmd := exec.Command("ssh-add", "-t", lifetime, privateSSHKeyPath)
 		cmd.Run()
 	}
 }
