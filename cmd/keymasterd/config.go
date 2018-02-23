@@ -335,6 +335,9 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		if err != nil {
 			return runtimeState, err
 		}
+		client.VipPushMessageText = "Keymaster Push Authentication Request"
+		client.VipPushDisplayMessageText = "Keymaster 2FA request from:"
+		client.VipPushDisplayMessageProfile = u2fAppID //TODO change this for host identity
 		runtimeState.Config.SymantecVIP.Client = &client
 	}
 

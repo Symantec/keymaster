@@ -136,7 +136,7 @@ const authenticateUserWithPushRequestTemplate = `<?xml version="1.0"?>
       <pushAuthData>
         <displayParameters>
           <Key>push.message.text</Key>
-	   <Value>Symantec Push Authentication Request</Value>
+	   <Value>{{.PushMessageText}}</Value>
         </displayParameters>
         <displayParameters>
           <Key>display.message.title</Key>
