@@ -175,7 +175,7 @@ func setupCerts(
 		logger.Fatal(err)
 	}
 	// Now handle the key in the tls directory
-	tlsPrivateKeyName := filepath.Join(homeDir, DefaultTLSKeysLocation, "keymaster-key.pem")
+	tlsPrivateKeyName := filepath.Join(homeDir, DefaultTLSKeysLocation, "keymaster.key")
 	os.Remove(tlsPrivateKeyName)
 	err = os.Symlink(privateSSHKeyPath, tlsPrivateKeyName)
 	if err != nil {
@@ -190,14 +190,14 @@ func setupCerts(
 		err := errors.New("Could not write ssh cert")
 		logger.Fatal(err)
 	}
-	x509CertPath := privateTLSKeyPath + "-x509Cert.pem"
+	x509CertPath := privateTLSKeyPath + ".cert"
 	err = ioutil.WriteFile(x509CertPath, x509Cert, 0644)
 	if err != nil {
 		err := errors.New("Could not write ssh cert")
 		logger.Fatal(err)
 	}
 	if kubernetesCert != nil {
-		kubernetesCertPath := privateTLSKeyPath + "-kubernetesCert.pem"
+		kubernetesCertPath := privateTLSKeyPath + "-kubernetes.cert"
 		err = ioutil.WriteFile(kubernetesCertPath, kubernetesCert, 0644)
 		if err != nil {
 			err := errors.New("Could not write ssh cert")
