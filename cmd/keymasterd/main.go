@@ -111,6 +111,12 @@ type pendingAuth2Request struct {
 	ctx       context.Context
 }
 
+type pushPollTransaction struct {
+	ExpiresAt     time.Time
+	Username      string
+	TransactionID string
+}
+
 type RuntimeState struct {
 	Config              AppConfigFile
 	SSHCARawFileContent []byte
@@ -120,6 +126,7 @@ type RuntimeState struct {
 	KerberosRealm       *string
 	caCertDer           []byte
 	//authCookie          map[string]authInfo
+	vipPushCookie map[string]pushPollTransaction
 	localAuthData map[string]localUserData
 	SignerIsReady chan bool
 	Mutex         sync.Mutex
@@ -268,6 +275,13 @@ func (state *RuntimeState) performStateCleanup(secsBetweenCleanup int) {
 		}
 		finalPendingLocal := len(state.localAuthData)
 
+		for key, vipCookie := range state.vipPushCookie {
+			if vipCookie.ExpiresAt.Before(time.Now()) {
+				delete(state.vipPushCookie, key)
+			}
+
+		}
+
 		state.Mutex.Unlock()
 		logger.Debugf(3, "Pending Cookie sizes: before(%d) after(%d)",
 			initPendingSize, finalPendingSize)
@@ -377,7 +391,7 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.R
 	JSSources := []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js"}
 	showU2F := browserSupportsU2F(r) && tryShowU2f
 	if showU2F {
-		JSSources = []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/webui-2fa-u2f.js"}
+		JSSources = []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/webui-2fa-u2f.js", "/static/webui-2fa-symc-vip.js"}
 	}
 	displayData := secondFactorAuthTemplateData{
 		Title:            "Keymaster 2FA Auth",
@@ -484,7 +498,7 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("X-XSS-Protection", "1")
 	//w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self' code.jquery.com; connect-src 'self'; img-src 'self'; style-src 'self';")
-	w.Header().Set("Content-Security-Policy", "default-src 'self' ;style-src 'self' fonts.googleapis.com 'unsafe-inline'; font-src fonts.gstatic.com fonts.googleapis.com")
+	w.Header().Set("Content-Security-Policy", "default-src 'self' 'unsafe-eval' ;style-src 'self' fonts.googleapis.com 'unsafe-inline'; font-src fonts.gstatic.com fonts.googleapis.com")
 
 	if signerIsNull {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -1104,6 +1118,8 @@ func (state *RuntimeState) userHasU2FTokens(username string) (bool, error) {
 }
 
 const authCookieName = "auth_cookie"
+const vipTransactionCookieName = "vip_push_cookie"
+const maxAgeSecondsVIPCookie = 120
 const randomStringEntropyBytes = 32
 const maxAgeSecondsAuthCookie = 57600
 
@@ -1115,6 +1131,20 @@ func genRandomString() (string, error) {
 		return "", err
 	}
 	return base64.URLEncoding.EncodeToString(rb), nil
+}
+
+func (state *RuntimeState) startVIPPush(cookieVal string, username string) error {
+	transactionId, err := state.Config.SymantecVIP.Client.StartUserVIPPush(username)
+	if err != nil {
+		logger.Println(err)
+		return err
+	}
+	newLocalData := pushPollTransaction{Username: username, TransactionID: transactionId, ExpiresAt: time.Now().Add(maxAgeSecondsVIPCookie * time.Second)}
+	state.Mutex.Lock()
+	state.vipPushCookie[cookieVal] = newLocalData
+	state.Mutex.Unlock()
+
+	return nil
 }
 
 //const loginPath = "/api/v0/login"
@@ -1250,6 +1280,18 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 			http.Redirect(w, r, loginDestination, 302)
 		} else {
 			//Go 2FA
+			if (requiredAuth & AuthTypeSymantecVIP) == AuthTypeSymantecVIP {
+				// set VIP cookie
+				cookieValue, err := genRandomString()
+				if err == nil { //Beware inverted Logic
+
+					expiration := time.Now().Add(maxAgeSecondsVIPCookie * time.Second)
+					vipPushCookie := http.Cookie{Name: vipTransactionCookieName,
+						Value: cookieValue, Expires: expiration,
+						Path: "/", HttpOnly: true, Secure: true}
+					http.SetCookie(w, &vipPushCookie)
+				}
+			}
 			state.writeHTML2FAAuthPage(w, r, loginDestination, userHasU2FTokens)
 		}
 	default:
@@ -1399,8 +1441,143 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	return
 }
 
-////////////////////////////
+///////////////////////////
+const vipPushStartPath = "/api/v0/vipPushStart"
 
+func (state *RuntimeState) vipPushStartHandler(w http.ResponseWriter, r *http.Request) {
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
+	if !state.Config.SymantecVIP.Enabled {
+		logger.Printf("asked for push status but VIP is not enabled")
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "")
+		return
+	}
+	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
+	if err != nil {
+		logger.Printf("%v", err)
+
+		return
+	}
+	logger.Printf("authuser=%s", authUser)
+	vipPushCookie, err := r.Cookie(vipTransactionCookieName)
+	if err != nil {
+		logger.Printf("%v", err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing Cookie")
+		return
+	}
+	state.Mutex.Lock()
+	pushTransaction, ok := state.vipPushCookie[vipPushCookie.Value]
+	state.Mutex.Unlock()
+	if ok {
+		err := errors.New("push transaction found will not start anotherone")
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Cookie not setup ")
+		return
+	}
+	if len(pushTransaction.TransactionID) > 0 {
+		err := errors.New("push transaction already started found")
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "push already sent")
+		return
+	}
+	err = state.startVIPPush(vipPushCookie.Value, authUser)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Cookie not setup ")
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	return
+}
+
+////////////////////////////
+const vipPollCheckPath = "/api/v0/vipPollCheck"
+
+func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Request) {
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
+	if !state.Config.SymantecVIP.Enabled {
+		logger.Printf("asked for push status but VIP is not enabled")
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "")
+		return
+	}
+
+	//Check for valid method here?
+	switch r.Method {
+	case "GET":
+		logger.Debugf(3, "Got client GET connection")
+		err := r.ParseForm()
+		if err != nil {
+			logger.Println(err)
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+			return
+		}
+	case "POST":
+		logger.Debugf(3, "Got client POST connection")
+		err := r.ParseForm()
+		if err != nil {
+			logger.Println(err)
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+			return
+		}
+	default:
+		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		return
+	}
+	authUser, currentAuthLevel, err := state.checkAuth(w, r, AuthTypeAny)
+	if err != nil {
+		logger.Printf("%v", err)
+
+		return
+	}
+	logger.Printf("authuser=%s", authUser)
+	vipPollCookie, err := r.Cookie(vipTransactionCookieName)
+	if err != nil {
+		logger.Printf("%v", err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing Cookie")
+		return
+	}
+	state.Mutex.Lock()
+	pushTransaction, ok := state.vipPushCookie[vipPollCookie.Value]
+	state.Mutex.Unlock()
+	if !ok {
+		err := errors.New("push transaction not found")
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "Error parsing form")
+		return
+	}
+	//TODO: check username
+	valid, err := state.Config.SymantecVIP.Client.VipPushHasBeenApproved(pushTransaction.TransactionID)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error checking push transaction")
+		return
+	}
+	if !valid {
+		err := errors.New("Not yet")
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "Error parsing form")
+		return
+	}
+
+	// OTP check was  successful
+	_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeSymantecVIP)
+	if err != nil {
+		logger.Printf("Autch Cookie NOT found ? %s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
+		return
+	}
+
+	// TODO make something more fancy: JSON?
+	w.WriteHeader(http.StatusOK)
+	return
+
+}
+
+////////////////////////////
 func getRegistrationArray(U2fAuthData map[int64]*u2fAuthData) (regArray []u2f.Registration) {
 	for _, data := range U2fAuthData {
 		if data.Enabled {
@@ -2093,6 +2270,8 @@ func main() {
 	serviceMux.HandleFunc(oauth2LoginBeginPath, runtimeState.oauth2DoRedirectoToProviderHandler)
 	serviceMux.HandleFunc(redirectPath, runtimeState.oauth2RedirectPathHandler)
 	serviceMux.HandleFunc(clientConfHandlerPath, runtimeState.serveClientConfHandler)
+	serviceMux.HandleFunc(vipPushStartPath, runtimeState.vipPushStartHandler)
+	serviceMux.HandleFunc(vipPollCheckPath, runtimeState.VIPPollCheckHandler)
 
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 

@@ -188,6 +188,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	runtimeState.pendingOauth2 = make(map[string]pendingAuth2Request)
 	runtimeState.SignerIsReady = make(chan bool, 1)
 	runtimeState.localAuthData = make(map[string]localUserData)
+	runtimeState.vipPushCookie = make(map[string]pushPollTransaction)
 
 	//verify config
 	if len(runtimeState.Config.Base.HostIdentity) > 0 {
