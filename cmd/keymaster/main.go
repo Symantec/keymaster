@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -179,8 +180,22 @@ func setupCerts(
 	os.Remove(tlsPrivateKeyName)
 	err = os.Symlink(privateSSHKeyPath, tlsPrivateKeyName)
 	if err != nil {
-		err := errors.New("Could not create new symlink for TLS key")
-		logger.Fatal(err)
+		// Try to copy instead (windows symlink does not work)
+		from, err := os.Open(privateSSHKeyPath)
+		if err != nil {
+			logger.Fatal(err)
+		}
+		defer from.Close()
+		to, err := os.OpenFile(tlsPrivateKeyName, os.O_RDWR|os.O_CREATE, 0660)
+		if err != nil {
+			logger.Fatal(err)
+		}
+		defer to.Close()
+
+		_, err = io.Copy(to, from)
+		if err != nil {
+			logger.Fatal(err)
+		}
 	}
 
 	// now we write the cert file...
