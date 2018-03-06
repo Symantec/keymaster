@@ -1205,6 +1205,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		logger.Println(err)
 		return
 	}
+	eventNotifier.PublishAuthEvent(eventmon.AuthTypePassword, username)
 
 	returnAcceptType := "application/json"
 	acceptHeader, ok := r.Header["Accept"]
@@ -1363,9 +1364,10 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	// OTP check was  successful
+	eventNotifier.PublishAuthEvent(eventmon.AuthTypeSymantecVIP, authUser)
 	_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeSymantecVIP)
 	if err != nil {
-		logger.Printf("Autch Cookie NOT found ? %s", err)
+		logger.Printf("Auth Cookie NOT found ? %s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
 		return
 	}
@@ -1706,10 +1708,11 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 
 			_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeU2F)
 			if err != nil {
-				logger.Printf("Autch Cookie NOT found ? %s", err)
+				logger.Printf("Auth Cookie NOT found ? %s", err)
 				state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure updating vip token")
 				return
 			}
+			eventNotifier.PublishAuthEvent(eventmon.AuthTypeU2F, authUser)
 
 			// TODO: update local cookie state
 			w.Write([]byte("success"))
