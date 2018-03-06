@@ -19,6 +19,15 @@ const (
 	durationMonth = durationDay * 31
 )
 
+type counterType struct {
+	authPassword    uint64
+	authSymantecVIP uint64
+	authU2F         uint64
+	ssh             uint64
+	webLogin        uint64
+	x509            uint64
+}
+
 func (s state) showActivityHandler(w http.ResponseWriter, req *http.Request) {
 	writer := bufio.NewWriter(w)
 	defer writer.Flush()
@@ -39,6 +48,7 @@ func (s state) showActivityHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func (s state) writeActivity(writer io.Writer) {
+	fmt.Fprintln(writer, "SSH/Web/X509 Password/SymantecVIP/U2F")
 	fmt.Fprintln(writer, `<table border="1" style="width:100%">`)
 	fmt.Fprintln(writer, "  <tr>")
 	fmt.Fprintln(writer, "    <th>Username</th>")
@@ -72,40 +82,76 @@ func (s state) writeActivity(writer io.Writer) {
 
 func writeUser(writer io.Writer, username string,
 	events []eventrecorder.EventType) {
-	var countOverLastDay, countOverLastWeek, countOverLastMonth uint64
+	var countOverLastDay, countOverLastWeek, countOverLastMonth counterType
 	now := time.Now()
 	minLifetime := durationMonth * 120
 	maxLifetime := time.Duration(-1)
 	lifetimes := make([]int, 0, len(events))
 	for _, event := range events {
+		if event.LifetimeSeconds > 0 {
+			lifetime := time.Duration(event.LifetimeSeconds) * time.Second
+			lifetimes = append(lifetimes, int(event.LifetimeSeconds))
+			if lifetime < minLifetime {
+				minLifetime = lifetime
+			}
+			if lifetime > maxLifetime {
+				maxLifetime = lifetime
+			}
+		}
 		age := now.Sub(time.Unix(int64(event.CreateTime), 0))
-		lifetime := time.Duration(event.LifetimeSeconds) * time.Second
-		lifetimes = append(lifetimes, int(event.LifetimeSeconds))
 		if age <= durationDay {
-			countOverLastDay++
+			countOverLastDay.increment(event)
 		}
 		if age <= durationWeek {
-			countOverLastWeek++
+			countOverLastWeek.increment(event)
 		}
 		if age <= durationMonth {
-			countOverLastMonth++
-		}
-		if lifetime < minLifetime {
-			minLifetime = lifetime
-		}
-		if lifetime > maxLifetime {
-			maxLifetime = lifetime
+			countOverLastMonth.increment(event)
 		}
 	}
-	sort.Ints(lifetimes)
-	medLifetime := time.Duration(lifetimes[len(lifetimes)/2]) * time.Second
 	fmt.Fprintf(writer, "  <tr>\n")
 	fmt.Fprintf(writer, "    <td>%s</td>\n", username)
-	fmt.Fprintf(writer, "    <td>%d</td>\n", countOverLastDay)
-	fmt.Fprintf(writer, "    <td>%d</td>\n", countOverLastWeek)
-	fmt.Fprintf(writer, "    <td>%d</td>\n", countOverLastMonth)
-	fmt.Fprintf(writer, "    <td>%s</td>\n", format.Duration(minLifetime))
-	fmt.Fprintf(writer, "    <td>%s</td>\n", format.Duration(medLifetime))
-	fmt.Fprintf(writer, "    <td>%s</td>\n", format.Duration(maxLifetime))
+	fmt.Fprintf(writer, "    <td>%s</td>\n", countOverLastDay.string())
+	fmt.Fprintf(writer, "    <td>%s</td>\n", countOverLastWeek.string())
+	fmt.Fprintf(writer, "    <td>%s</td>\n", countOverLastMonth.string())
+	if len(lifetimes) > 0 {
+		sort.Ints(lifetimes)
+		medLifetime := time.Duration(lifetimes[len(lifetimes)/2]) * time.Second
+		fmt.Fprintf(writer, "    <td>%s</td>\n", format.Duration(minLifetime))
+		fmt.Fprintf(writer, "    <td>%s</td>\n", format.Duration(medLifetime))
+		fmt.Fprintf(writer, "    <td>%s</td>\n", format.Duration(maxLifetime))
+	} else {
+		fmt.Fprintln(writer, "    <td></td>")
+		fmt.Fprintln(writer, "    <td></td>")
+		fmt.Fprintln(writer, "    <td></td>")
+	}
 	fmt.Fprintf(writer, "  </tr>\n")
+}
+
+func (counter *counterType) increment(event eventrecorder.EventType) {
+	if authInfo := event.AuthInfo; authInfo != nil {
+		switch authInfo.AuthType {
+		case eventrecorder.AuthTypePassword:
+			counter.authPassword++
+		case eventrecorder.AuthTypeSymantecVIP:
+			counter.authSymantecVIP++
+		case eventrecorder.AuthTypeU2F:
+			counter.authU2F++
+		}
+	}
+	if event.Ssh {
+		counter.ssh++
+	}
+	if event.WebLogin {
+		counter.webLogin++
+	}
+	if event.X509 {
+		counter.x509++
+	}
+}
+
+func (counter *counterType) string() string {
+	return fmt.Sprintf("%d/%d/%d %d/%d/%d",
+		counter.ssh, counter.webLogin, counter.x509,
+		counter.authPassword, counter.authSymantecVIP, counter.authU2F)
 }

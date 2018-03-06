@@ -24,8 +24,39 @@ func newEventNotifier(logger log.DebugLogger) *EventNotifier {
 	}
 }
 
+func (n *EventNotifier) publishAuthEvent(authType, username string) {
+	transmitData := eventmon.EventV0{
+		Type:     eventmon.EventTypeAuth,
+		AuthType: authType,
+		Username: username,
+	}
+	n.mutex.Lock()
+	defer n.mutex.Unlock()
+	for ch := range n.transmitChannels {
+		select {
+		case ch <- transmitData:
+		default:
+		}
+	}
+}
+
 func (n *EventNotifier) publishCert(certType string, certData []byte) {
-	transmitData := eventmon.EventV0{certType, certData}
+	transmitData := eventmon.EventV0{Type: certType, CertData: certData}
+	n.mutex.Lock()
+	defer n.mutex.Unlock()
+	for ch := range n.transmitChannels {
+		select {
+		case ch <- transmitData:
+		default:
+		}
+	}
+}
+
+func (n *EventNotifier) publishWebLoginEvent(username string) {
+	transmitData := eventmon.EventV0{
+		Type:     eventmon.EventTypeWebLogin,
+		Username: username,
+	}
 	n.mutex.Lock()
 	defer n.mutex.Unlock()
 	for ch := range n.transmitChannels {

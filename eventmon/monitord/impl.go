@@ -29,8 +29,10 @@ var (
 
 func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 	logger log.Logger) (*Monitor, error) {
+	authChannel := make(chan AuthInfo, bufferLength)
 	sshRawCertChannel := make(chan []byte, bufferLength)
 	sshCertChannel := make(chan *ssh.Certificate, bufferLength)
+	webLoginChannel := make(chan string, bufferLength)
 	x509RawCertChannel := make(chan []byte, bufferLength)
 	x509CertChannel := make(chan *x509.Certificate, bufferLength)
 	monitor := &Monitor{
@@ -38,13 +40,17 @@ func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 		keymasterServerPortNum:  keymasterServerPortNum,
 		closers:                 make(map[string]chan<- struct{}),
 		// Transmit side channels (private).
+		authChannel:        authChannel,
 		sshRawCertChannel:  sshRawCertChannel,
 		sshCertChannel:     sshCertChannel,
+		webLoginChannel:    webLoginChannel,
 		x509RawCertChannel: x509RawCertChannel,
 		x509CertChannel:    x509CertChannel,
 		// Receive side channels (public).
+		AuthChannel:        authChannel,
 		SshRawCertChannel:  sshRawCertChannel,
 		SshCertChannel:     sshCertChannel,
+		WebLoginChannel:    webLoginChannel,
 		X509RawCertChannel: x509RawCertChannel,
 		X509CertChannel:    x509CertChannel,
 	}
@@ -52,8 +58,17 @@ func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 	return monitor, nil
 }
 
+func checkForEvent(channel <-chan struct{}) bool {
+	select {
+	case <-channel:
+		return true
+	default:
+		return false
+	}
+}
+
 func (m *Monitor) monitorForever(logger log.Logger) {
-	for ; ; time.Sleep(time.Minute * 5) {
+	for ; ; time.Sleep(time.Minute * 2) {
 		m.updateNotifierList(logger)
 	}
 }
@@ -90,6 +105,9 @@ func (m *Monitor) startMonitoring(ip string, closeChannel <-chan struct{},
 	addr := fmt.Sprintf("%s:%d", ip, m.keymasterServerPortNum)
 	reportedNotReady := false
 	for ; ; time.Sleep(time.Second) {
+		if checkForEvent(closeChannel) {
+			return
+		}
 		conn, err := m.dialAndConnect(addr)
 		if err != nil {
 			if strings.Contains(err.Error(), "connection refused") {
@@ -106,7 +124,11 @@ func (m *Monitor) startMonitoring(ip string, closeChannel <-chan struct{},
 			continue
 		}
 		logger.Println("connected, starting monitoring")
-		if err := m.monitor(conn, closeChannel, logger); err != nil {
+		forget, err := m.monitor(conn, closeChannel, logger)
+		if forget {
+			return
+		}
+		if err != nil {
 			logger.Println(err)
 			conn.Close()
 		}
@@ -157,36 +179,33 @@ func (m *Monitor) connect(rawConn net.Conn) (net.Conn, error) {
 }
 
 func (m *Monitor) monitor(conn net.Conn, closeChannel <-chan struct{},
-	logger log.Logger) error {
-	closed := false
+	logger log.Logger) (bool, error) {
+	closedChannel := make(chan struct{}, 1)
 	exitChannel := make(chan struct{})
 	go func() {
-		for {
-			select {
-			case <-closeChannel:
-				closed = true
-				conn.Close()
-			case <-exitChannel:
-				return
-			}
+		select {
+		case <-closeChannel:
+			closedChannel <- struct{}{}
+			conn.Close()
+		case <-exitChannel:
 		}
 	}()
 	reader := bufio.NewReader(conn)
 	for {
-		if receiveData, err := receiveV0(reader); err != nil {
-			if closed {
-				return nil
-			}
+		receiveData, err := receiveV0(reader)
+		if checkForEvent(closedChannel) {
+			return true, nil
+		}
+		if err != nil {
 			exitChannel <- struct{}{}
 			if err == io.EOF {
-				return errors.New("keymaster disconnected")
+				return false, errors.New("keymaster disconnected")
 			}
-			return err
+			return false, err
 		} else {
 			m.notify(receiveData, logger)
 		}
 	}
-	return nil
 }
 
 func receiveV0(reader io.Reader) (eventmon.EventV0, error) {
@@ -203,6 +222,16 @@ func (m *Monitor) writeHtml(writer io.Writer) {
 
 func (m *Monitor) notify(event eventmon.EventV0, logger log.Logger) {
 	switch event.Type {
+	case eventmon.EventTypeAuth:
+		logger.Printf("User %s authentication: %s\n",
+			event.AuthType, event.Username)
+		select { // Non-blocking notification.
+		case m.authChannel <- AuthInfo{
+			AuthType: event.AuthType,
+			Username: event.Username,
+		}:
+		default:
+		}
 	case eventmon.EventTypeSSHCert:
 		select { // Non-blocking notification.
 		case m.sshRawCertChannel <- event.CertData:
@@ -228,6 +257,12 @@ func (m *Monitor) notify(event eventmon.EventV0, logger log.Logger) {
 			case m.sshCertChannel <- sshCert:
 			default:
 			}
+		}
+	case eventmon.EventTypeWebLogin:
+		logger.Printf("Web login for: %s\n", event.Username)
+		select { // Non-blocking notification.
+		case m.webLoginChannel <- event.Username:
+		default:
 		}
 	case eventmon.EventTypeX509Cert:
 		select { // Non-blocking notification.

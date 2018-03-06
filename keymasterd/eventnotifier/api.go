@@ -19,12 +19,20 @@ func New(logger log.DebugLogger) *EventNotifier {
 	return newEventNotifier(logger)
 }
 
+func (n *EventNotifier) PublishAuthEvent(authType, username string) {
+	n.publishAuthEvent(authType, username)
+}
+
 func (n *EventNotifier) PublishSSH(cert []byte) {
-	n.publishCert("SSHCert", cert)
+	n.publishCert(eventmon.EventTypeSSHCert, cert)
+}
+
+func (n *EventNotifier) PublishWebLoginEvent(username string) {
+	n.publishWebLoginEvent(username)
 }
 
 func (n *EventNotifier) PublishX509(cert []byte) {
-	n.publishCert("X509Cert", cert)
+	n.publishCert(eventmon.EventTypeX509Cert, cert)
 }
 
 func (n *EventNotifier) ServeHTTP(w http.ResponseWriter, req *http.Request) {

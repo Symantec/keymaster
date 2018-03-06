@@ -1205,6 +1205,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		logger.Println(err)
 		return
 	}
+	eventNotifier.PublishAuthEvent(eventmon.AuthTypePassword, username)
 
 	returnAcceptType := "application/json"
 	acceptHeader, ok := r.Header["Accept"]
@@ -1247,6 +1248,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 
 		requiredAuth := state.getRequiredWebUIAuthLevel()
 		if (requiredAuth & AuthTypePassword) != 0 {
+			eventNotifier.PublishWebLoginEvent(username)
 			http.Redirect(w, r, loginDestination, 302)
 		} else {
 			//Go 2FA
@@ -1363,9 +1365,10 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	// OTP check was  successful
+	eventNotifier.PublishAuthEvent(eventmon.AuthTypeSymantecVIP, authUser)
 	_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeSymantecVIP)
 	if err != nil {
-		logger.Printf("Autch Cookie NOT found ? %s", err)
+		logger.Printf("Auth Cookie NOT found ? %s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
 		return
 	}
@@ -1390,6 +1393,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		if r.Form.Get("login_destination") != "" {
 			loginDestination = r.Form.Get("login_destination")
 		}
+		eventNotifier.PublishWebLoginEvent(authUser)
 		http.Redirect(w, r, loginDestination, 302)
 	default:
 		w.WriteHeader(200)
@@ -1704,9 +1708,14 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 			//profile.U2fAuthChallenge = nil
 			delete(state.localAuthData, authUser)
 
+			eventNotifier.PublishAuthEvent(eventmon.AuthTypeU2F, authUser)
+			_, isXHR := r.Header["X-Requested-With"]
+			if isXHR {
+				eventNotifier.PublishWebLoginEvent(authUser)
+			}
 			_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeU2F)
 			if err != nil {
-				logger.Printf("Autch Cookie NOT found ? %s", err)
+				logger.Printf("Auth Cookie NOT found ? %s", err)
 				state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure updating vip token")
 				return
 			}

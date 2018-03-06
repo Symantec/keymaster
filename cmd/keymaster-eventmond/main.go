@@ -10,6 +10,7 @@ import (
 	"github.com/Symantec/keymaster/eventmon/httpd"
 	"github.com/Symantec/keymaster/eventmon/monitord"
 	"github.com/Symantec/keymaster/lib/constants"
+	"github.com/Symantec/keymaster/proto/eventmon"
 	"github.com/Symantec/tricorder/go/tricorder"
 )
 
@@ -62,11 +63,26 @@ func main() {
 	}
 	for {
 		select {
+		case auth := <-monitor.AuthChannel:
+			data := &eventrecorder.AuthInfo{Username: auth.Username}
+			switch auth.AuthType {
+			case eventmon.AuthTypePassword:
+				data.AuthType = eventrecorder.AuthTypePassword
+			case eventmon.AuthTypeSymantecVIP:
+				data.AuthType = eventrecorder.AuthTypeSymantecVIP
+			case eventmon.AuthTypeU2F:
+				data.AuthType = eventrecorder.AuthTypeU2F
+			default:
+				continue
+			}
+			recorder.AuthChannel <- data
 		case cert := <-monitor.SshCertChannel:
 			recorder.SshCertChannel <- cert
 			configuration.SshCertParametersCommand.processSshCert(cert)
 		case cert := <-monitor.SshRawCertChannel:
 			processRawCert(configuration.SshCertRawCommand, cert)
+		case username := <-monitor.WebLoginChannel:
+			recorder.WebLoginChannel <- username
 		case cert := <-monitor.X509CertChannel:
 			recorder.X509CertChannel <- cert
 			configuration.X509CertParametersCommand.processX509Cert(cert)
