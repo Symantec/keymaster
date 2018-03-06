@@ -28,6 +28,7 @@ func newEventRecorder(filename string, logger log.Logger) (
 	}
 	requestEventsChannel := make(chan chan<- Events, bufferLength)
 	sshCertChannel := make(chan *ssh.Certificate, bufferLength)
+	webLoginChannel := make(chan *WebLogin, bufferLength)
 	x509CertChannel := make(chan *x509.Certificate, bufferLength)
 	sr := &EventRecorder{
 		filename:             filename,
@@ -35,9 +36,11 @@ func newEventRecorder(filename string, logger log.Logger) (
 		eventsMap:            eventsMap,
 		RequestEventsChannel: requestEventsChannel,
 		SshCertChannel:       sshCertChannel,
+		WebLoginChannel:      webLoginChannel,
 		X509CertChannel:      x509CertChannel,
 	}
-	go sr.eventLoop(requestEventsChannel, sshCertChannel, x509CertChannel)
+	go sr.eventLoop(requestEventsChannel, sshCertChannel, webLoginChannel,
+		x509CertChannel)
 	return sr, nil
 }
 
@@ -79,7 +82,7 @@ func loadEvents(filename string) (map[string]*eventsListType, error) {
 }
 
 func (sr *EventRecorder) eventLoop(requestEventsChannel <-chan chan<- Events,
-	sshCertChannel <-chan *ssh.Certificate,
+	sshCertChannel <-chan *ssh.Certificate, webLoginChannel <-chan *WebLogin,
 	x509CertChannel <-chan *x509.Certificate) {
 	var lastEvents *Events
 	sr.getEventsList(&lastEvents)
@@ -91,14 +94,18 @@ func (sr *EventRecorder) eventLoop(requestEventsChannel <-chan chan<- Events,
 		case cert := <-sshCertChannel:
 			saveTimer.Reset(time.Second * 5)
 			lastEvents = nil
-			sr.recordEvent(cert.ValidPrincipals[0],
+			sr.recordCertEvent(cert.ValidPrincipals[0],
 				time.Until(time.Unix(int64(cert.ValidBefore), 0)),
 				true, false)
+		case login := <-webLoginChannel:
+			saveTimer.Reset(time.Second * 5)
+			lastEvents = nil
+			sr.recordWebLoginEvent(login.Username, login.AuthType)
 		case cert := <-x509CertChannel:
 			saveTimer.Reset(time.Second * 5)
 			lastEvents = nil
-			sr.recordEvent(cert.Subject.CommonName, time.Until(cert.NotAfter),
-				false, true)
+			sr.recordCertEvent(cert.Subject.CommonName,
+				time.Until(cert.NotAfter), false, true)
 		case <-hourlyTimer.C:
 			hourlyTimer.Reset(time.Hour)
 			if sr.expireOldEvents() {
@@ -119,8 +126,8 @@ func (sr *EventRecorder) eventLoop(requestEventsChannel <-chan chan<- Events,
 	}
 }
 
-func (sr *EventRecorder) recordEvent(username string, lifetime time.Duration,
-	ssh, x509 bool) {
+func (sr *EventRecorder) recordCertEvent(username string,
+	lifetime time.Duration, ssh, x509 bool) {
 	lifetimeSeconds := uint32(lifetime.Seconds() + 0.5)
 	if lifetimeSeconds >= 3600 {
 		hours := lifetimeSeconds / 3600
@@ -146,6 +153,28 @@ func (sr *EventRecorder) recordEvent(username string, lifetime time.Duration,
 			LifetimeSeconds: lifetimeSeconds,
 			Ssh:             ssh,
 			X509:            x509,
+		},
+		older: eventsList.newest,
+	}
+	if eventsList.newest != nil {
+		eventsList.newest.newer = event
+	}
+	eventsList.newest = event
+	if eventsList.oldest == nil {
+		eventsList.oldest = event
+	}
+}
+
+func (sr *EventRecorder) recordWebLoginEvent(username string, authType uint) {
+	eventsList := sr.eventsMap[username]
+	if eventsList == nil {
+		eventsList = &eventsListType{}
+		sr.eventsMap[username] = eventsList
+	}
+	event := &eventType{
+		EventType: EventType{
+			CreateTime: uint64(time.Now().Unix()),
+			WebLogin:   &WebLogin{authType, username},
 		},
 		older: eventsList.newest,
 	}
