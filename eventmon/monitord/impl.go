@@ -31,6 +31,7 @@ func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 	logger log.Logger) (*Monitor, error) {
 	sshRawCertChannel := make(chan []byte, bufferLength)
 	sshCertChannel := make(chan *ssh.Certificate, bufferLength)
+	webLoginChannel := make(chan WebLoginInfo, bufferLength)
 	x509RawCertChannel := make(chan []byte, bufferLength)
 	x509CertChannel := make(chan *x509.Certificate, bufferLength)
 	monitor := &Monitor{
@@ -40,11 +41,13 @@ func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 		// Transmit side channels (private).
 		sshRawCertChannel:  sshRawCertChannel,
 		sshCertChannel:     sshCertChannel,
+		webLoginChannel:    webLoginChannel,
 		x509RawCertChannel: x509RawCertChannel,
 		x509CertChannel:    x509CertChannel,
 		// Receive side channels (public).
 		SshRawCertChannel:  sshRawCertChannel,
 		SshCertChannel:     sshCertChannel,
+		WebLoginChannel:    webLoginChannel,
 		X509RawCertChannel: x509RawCertChannel,
 		X509CertChannel:    x509CertChannel,
 	}
@@ -241,6 +244,16 @@ func (m *Monitor) notify(event eventmon.EventV0, logger log.Logger) {
 			case m.sshCertChannel <- sshCert:
 			default:
 			}
+		}
+	case eventmon.EventTypeWebLogin:
+		logger.Printf("Web login type: %s for: %s\n",
+			event.AuthType, event.Username)
+		select { // Non-blocking notification.
+		case m.webLoginChannel <- WebLoginInfo{
+			AuthType: event.AuthType,
+			Username: event.Username,
+		}:
+		default:
 		}
 	case eventmon.EventTypeX509Cert:
 		select { // Non-blocking notification.

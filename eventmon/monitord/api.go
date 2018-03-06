@@ -8,6 +8,11 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+type WebLoginInfo struct {
+	AuthType string
+	Username string
+}
+
 type Monitor struct {
 	keymasterServerHostname string
 	keymasterServerPortNum  uint
@@ -15,11 +20,13 @@ type Monitor struct {
 	// Transmit side channels (private).
 	sshRawCertChannel  chan<- []byte
 	sshCertChannel     chan<- *ssh.Certificate
+	webLoginChannel    chan<- WebLoginInfo
 	x509RawCertChannel chan<- []byte
 	x509CertChannel    chan<- *x509.Certificate
 	// Receive side channels (public).
 	SshRawCertChannel  <-chan []byte
 	SshCertChannel     <-chan *ssh.Certificate
+	WebLoginChannel    <-chan WebLoginInfo
 	X509RawCertChannel <-chan []byte
 	X509CertChannel    <-chan *x509.Certificate
 }
