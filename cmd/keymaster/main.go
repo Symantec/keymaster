@@ -111,14 +111,14 @@ func setupCerts(
 	configContents config.AppConfigFile,
 	logger log.DebugLogger) {
 	// create dirs
-	privateSSHKeyPath := filepath.Join(homeDir, DefaultSSHKeysLocation, FilePrefix)
-	sshConfigPath, _ := filepath.Split(privateSSHKeyPath)
+	sshKeyPath := filepath.Join(homeDir, DefaultSSHKeysLocation, FilePrefix)
+	sshConfigPath, _ := filepath.Split(sshKeyPath)
 	err := os.MkdirAll(sshConfigPath, 0700)
 	if err != nil {
 		logger.Fatal(err)
 	}
-	privateTLSKeyPath := filepath.Join(homeDir, DefaultTLSKeysLocation, FilePrefix)
-	tlsConfigPath, _ := filepath.Split(privateTLSKeyPath)
+	tlsKeyPath := filepath.Join(homeDir, DefaultTLSKeysLocation, FilePrefix)
+	tlsConfigPath, _ := filepath.Split(tlsKeyPath)
 	err = os.MkdirAll(tlsConfigPath, 0700)
 	if err != nil {
 		logger.Fatal(err)
@@ -159,29 +159,29 @@ func setupCerts(
 	//..
 	if _, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
 		// TODO(rgooch): Parse certificate to get actual lifetime.
-		cmd := exec.Command("ssh-add", "-d", privateSSHKeyPath)
+		cmd := exec.Command("ssh-add", "-d", sshKeyPath)
 		cmd.Run()
 	}
 
 	//rename files to expected paths
-	err = os.Rename(tempPrivateKeyPath, privateSSHKeyPath)
+	err = os.Rename(tempPrivateKeyPath, sshKeyPath)
 	if err != nil {
 		err := errors.New("Could not rename private Key")
 		logger.Fatal(err)
 	}
 
-	err = os.Rename(tempPublicKeyPath, privateSSHKeyPath+".pub")
+	err = os.Rename(tempPublicKeyPath, sshKeyPath+".pub")
 	if err != nil {
 		err := errors.New("Could not rename public Key")
 		logger.Fatal(err)
 	}
 	// Now handle the key in the tls directory
-	tlsPrivateKeyName := filepath.Join(homeDir, DefaultTLSKeysLocation, "keymaster.key")
+	tlsPrivateKeyName := filepath.Join(homeDir, DefaultTLSKeysLocation, FilePrefix+".key")
 	os.Remove(tlsPrivateKeyName)
-	err = os.Symlink(privateSSHKeyPath, tlsPrivateKeyName)
+	err = os.Symlink(sshKeyPath, tlsPrivateKeyName)
 	if err != nil {
 		// Try to copy instead (windows symlink does not work)
-		from, err := os.Open(privateSSHKeyPath)
+		from, err := os.Open(sshKeyPath)
 		if err != nil {
 			logger.Fatal(err)
 		}
@@ -199,20 +199,20 @@ func setupCerts(
 	}
 
 	// now we write the cert file...
-	sshCertPath := privateSSHKeyPath + "-cert.pub"
+	sshCertPath := sshKeyPath + "-cert.pub"
 	err = ioutil.WriteFile(sshCertPath, sshCert, 0644)
 	if err != nil {
 		err := errors.New("Could not write ssh cert")
 		logger.Fatal(err)
 	}
-	x509CertPath := privateTLSKeyPath + ".cert"
+	x509CertPath := tlsKeyPath + ".cert"
 	err = ioutil.WriteFile(x509CertPath, x509Cert, 0644)
 	if err != nil {
 		err := errors.New("Could not write ssh cert")
 		logger.Fatal(err)
 	}
 	if kubernetesCert != nil {
-		kubernetesCertPath := privateTLSKeyPath + "-kubernetes.cert"
+		kubernetesCertPath := tlsKeyPath + "-kubernetes.cert"
 		err = ioutil.WriteFile(kubernetesCertPath, kubernetesCert, 0644)
 		if err != nil {
 			err := errors.New("Could not write ssh cert")
@@ -224,7 +224,7 @@ func setupCerts(
 	if _, ok := os.LookupEnv("SSH_AUTH_SOCK"); ok {
 		// TODO(rgooch): Parse certificate to get actual lifetime.
 		lifetime := fmt.Sprintf("%ds", uint64((*twofa.Duration).Seconds()))
-		cmd := exec.Command("ssh-add", "-t", lifetime, privateSSHKeyPath)
+		cmd := exec.Command("ssh-add", "-t", lifetime, sshKeyPath)
 		cmd.Run()
 	}
 }
