@@ -1708,13 +1708,17 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 			//profile.U2fAuthChallenge = nil
 			delete(state.localAuthData, authUser)
 
+			eventNotifier.PublishAuthEvent(eventmon.AuthTypeU2F, authUser)
+			_, isXHR := r.Header["X-Requested-With"]
+			if isXHR {
+				eventNotifier.PublishWebLoginEvent(authUser)
+			}
 			_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeU2F)
 			if err != nil {
 				logger.Printf("Auth Cookie NOT found ? %s", err)
 				state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure updating vip token")
 				return
 			}
-			eventNotifier.PublishAuthEvent(eventmon.AuthTypeU2F, authUser)
 
 			// TODO: update local cookie state
 			w.Write([]byte("success"))
@@ -1978,7 +1982,6 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	returnAcceptType := getPreferredAcceptType(r)
 	switch returnAcceptType {
 	case "text/html":
-		eventNotifier.PublishWebLoginEvent(authUser)
 		http.Redirect(w, r, profileURI(authUser, assumedUser), 302)
 	default:
 		w.WriteHeader(200)
