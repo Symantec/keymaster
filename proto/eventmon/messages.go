@@ -8,6 +8,7 @@ const (
 	AuthTypeSymantecVIP = "SymantecVIP"
 	AuthTypeU2F         = "U2F"
 
+	EventTypeAuth     = "Auth"
 	EventTypeSSHCert  = "SSHCert"
 	EventTypeWebLogin = "WebLogin"
 	EventTypeX509Cert = "X509Cert"
@@ -21,7 +22,6 @@ type EventV0 struct {
 	// Present for SSH and X509 certificate events.
 	CertData []byte `json:",omitempty"`
 
-	// Present for Web login events.
-	AuthType string `json:",omitempty"`
-	Username string `json:",omitempty"`
+	AuthType string `json:",omitempty"` // Present for Auth events.
+	Username string `json:",omitempty"` // Present for Auth and WebLogin events.
 }

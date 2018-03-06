@@ -27,6 +27,10 @@ func (n *EventNotifier) PublishSSH(cert []byte) {
 	n.publishCert(eventmon.EventTypeSSHCert, cert)
 }
 
+func (n *EventNotifier) PublishWebLoginEvent(username string) {
+	n.publishWebLoginEvent(username)
+}
+
 func (n *EventNotifier) PublishX509(cert []byte) {
 	n.publishCert(eventmon.EventTypeX509Cert, cert)
 }

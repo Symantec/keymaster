@@ -9,12 +9,12 @@ import (
 )
 
 const (
-	WebLoginAuthTypePassword = iota
-	WebLoginAuthTypeSymantecVIP
-	WebLoginAuthTypeU2F
+	AuthTypePassword = iota
+	AuthTypeSymantecVIP
+	AuthTypeU2F
 )
 
-type WebLogin struct {
+type AuthInfo struct {
 	AuthType uint
 	Username string
 }
@@ -32,10 +32,11 @@ type eventsListType struct {
 }
 
 type EventType struct {
+	AuthInfo        *AuthInfo
 	CreateTime      uint64 // Seconds since Epoch.
 	LifetimeSeconds uint32
 	Ssh             bool
-	WebLogin        *WebLogin
+	WebLogin        bool
 	X509            bool
 }
 
@@ -46,9 +47,10 @@ type eventType struct {
 }
 
 type EventRecorder struct {
+	AuthChannel          chan<- *AuthInfo
 	RequestEventsChannel chan<- chan<- Events
 	SshCertChannel       chan<- *ssh.Certificate
-	WebLoginChannel      chan<- *WebLogin
+	WebLoginChannel      chan<- string
 	X509CertChannel      chan<- *x509.Certificate
 	filename             string
 	logger               log.Logger

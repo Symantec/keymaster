@@ -63,24 +63,26 @@ func main() {
 	}
 	for {
 		select {
+		case auth := <-monitor.AuthChannel:
+			data := &eventrecorder.AuthInfo{Username: auth.Username}
+			switch auth.AuthType {
+			case eventmon.AuthTypePassword:
+				data.AuthType = eventrecorder.AuthTypePassword
+			case eventmon.AuthTypeSymantecVIP:
+				data.AuthType = eventrecorder.AuthTypeSymantecVIP
+			case eventmon.AuthTypeU2F:
+				data.AuthType = eventrecorder.AuthTypeU2F
+			default:
+				continue
+			}
+			recorder.AuthChannel <- data
 		case cert := <-monitor.SshCertChannel:
 			recorder.SshCertChannel <- cert
 			configuration.SshCertParametersCommand.processSshCert(cert)
 		case cert := <-monitor.SshRawCertChannel:
 			processRawCert(configuration.SshCertRawCommand, cert)
-		case webLogin := <-monitor.WebLoginChannel:
-			data := &eventrecorder.WebLogin{Username: webLogin.Username}
-			switch webLogin.AuthType {
-			case eventmon.AuthTypePassword:
-				data.AuthType = eventrecorder.WebLoginAuthTypePassword
-			case eventmon.AuthTypeSymantecVIP:
-				data.AuthType = eventrecorder.WebLoginAuthTypeSymantecVIP
-			case eventmon.AuthTypeU2F:
-				data.AuthType = eventrecorder.WebLoginAuthTypeU2F
-			default:
-				continue
-			}
-			recorder.WebLoginChannel <- data
+		case username := <-monitor.WebLoginChannel:
+			recorder.WebLoginChannel <- username
 		case cert := <-monitor.X509CertChannel:
 			recorder.X509CertChannel <- cert
 			configuration.X509CertParametersCommand.processX509Cert(cert)

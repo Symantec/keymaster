@@ -26,21 +26,23 @@ func newEventRecorder(filename string, logger log.Logger) (
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
+	authChannel := make(chan *AuthInfo, bufferLength)
 	requestEventsChannel := make(chan chan<- Events, bufferLength)
 	sshCertChannel := make(chan *ssh.Certificate, bufferLength)
-	webLoginChannel := make(chan *WebLogin, bufferLength)
+	webLoginChannel := make(chan string, bufferLength)
 	x509CertChannel := make(chan *x509.Certificate, bufferLength)
 	sr := &EventRecorder{
 		filename:             filename,
 		logger:               logger,
 		eventsMap:            eventsMap,
+		AuthChannel:          authChannel,
 		RequestEventsChannel: requestEventsChannel,
 		SshCertChannel:       sshCertChannel,
 		WebLoginChannel:      webLoginChannel,
 		X509CertChannel:      x509CertChannel,
 	}
-	go sr.eventLoop(requestEventsChannel, sshCertChannel, webLoginChannel,
-		x509CertChannel)
+	go sr.eventLoop(authChannel, requestEventsChannel, sshCertChannel,
+		webLoginChannel, x509CertChannel)
 	return sr, nil
 }
 
@@ -81,8 +83,9 @@ func loadEvents(filename string) (map[string]*eventsListType, error) {
 	return eventsMap, nil
 }
 
-func (sr *EventRecorder) eventLoop(requestEventsChannel <-chan chan<- Events,
-	sshCertChannel <-chan *ssh.Certificate, webLoginChannel <-chan *WebLogin,
+func (sr *EventRecorder) eventLoop(authChannel <-chan *AuthInfo,
+	requestEventsChannel <-chan chan<- Events,
+	sshCertChannel <-chan *ssh.Certificate, webLoginChannel <-chan string,
 	x509CertChannel <-chan *x509.Certificate) {
 	var lastEvents *Events
 	sr.getEventsList(&lastEvents)
@@ -91,16 +94,20 @@ func (sr *EventRecorder) eventLoop(requestEventsChannel <-chan chan<- Events,
 	saveTimer.Stop()
 	for {
 		select {
+		case auth := <-authChannel:
+			saveTimer.Reset(time.Second * 5)
+			lastEvents = nil
+			sr.recordAuthEvent(auth.Username, auth.AuthType)
 		case cert := <-sshCertChannel:
 			saveTimer.Reset(time.Second * 5)
 			lastEvents = nil
 			sr.recordCertEvent(cert.ValidPrincipals[0],
 				time.Until(time.Unix(int64(cert.ValidBefore), 0)),
 				true, false)
-		case login := <-webLoginChannel:
+		case username := <-webLoginChannel:
 			saveTimer.Reset(time.Second * 5)
 			lastEvents = nil
-			sr.recordWebLoginEvent(login.Username, login.AuthType)
+			sr.recordWebLoginEvent(username)
 		case cert := <-x509CertChannel:
 			saveTimer.Reset(time.Second * 5)
 			lastEvents = nil
@@ -123,6 +130,28 @@ func (sr *EventRecorder) eventLoop(requestEventsChannel <-chan chan<- Events,
 				sr.logger.Println(err)
 			}
 		}
+	}
+}
+
+func (sr *EventRecorder) recordAuthEvent(username string, authType uint) {
+	eventsList := sr.eventsMap[username]
+	if eventsList == nil {
+		eventsList = &eventsListType{}
+		sr.eventsMap[username] = eventsList
+	}
+	event := &eventType{
+		EventType: EventType{
+			CreateTime: uint64(time.Now().Unix()),
+			AuthInfo:   &AuthInfo{authType, username},
+		},
+		older: eventsList.newest,
+	}
+	if eventsList.newest != nil {
+		eventsList.newest.newer = event
+	}
+	eventsList.newest = event
+	if eventsList.oldest == nil {
+		eventsList.oldest = event
 	}
 }
 
@@ -165,7 +194,7 @@ func (sr *EventRecorder) recordCertEvent(username string,
 	}
 }
 
-func (sr *EventRecorder) recordWebLoginEvent(username string, authType uint) {
+func (sr *EventRecorder) recordWebLoginEvent(username string) {
 	eventsList := sr.eventsMap[username]
 	if eventsList == nil {
 		eventsList = &eventsListType{}
@@ -174,7 +203,7 @@ func (sr *EventRecorder) recordWebLoginEvent(username string, authType uint) {
 	event := &eventType{
 		EventType: EventType{
 			CreateTime: uint64(time.Now().Unix()),
-			WebLogin:   &WebLogin{authType, username},
+			WebLogin:   true,
 		},
 		older: eventsList.newest,
 	}

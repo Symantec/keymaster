@@ -20,11 +20,12 @@ const (
 )
 
 type counterType struct {
-	ssh            uint64
-	webPassword    uint64
-	webSymantecVIP uint64
-	webU2F         uint64
-	x509           uint64
+	authPassword    uint64
+	authSymantecVIP uint64
+	authU2F         uint64
+	ssh             uint64
+	webLogin        uint64
+	x509            uint64
 }
 
 func (s state) showActivityHandler(w http.ResponseWriter, req *http.Request) {
@@ -47,7 +48,7 @@ func (s state) showActivityHandler(w http.ResponseWriter, req *http.Request) {
 }
 
 func (s state) writeActivity(writer io.Writer) {
-	fmt.Fprintln(writer, "SSH/X509/WebPassword/WebVIP/WebU2F")
+	fmt.Fprintln(writer, "SSH/Web/X509 Password/SymantecVIP/U2F")
 	fmt.Fprintln(writer, `<table border="1" style="width:100%">`)
 	fmt.Fprintln(writer, "  <tr>")
 	fmt.Fprintln(writer, "    <th>Username</th>")
@@ -128,18 +129,21 @@ func writeUser(writer io.Writer, username string,
 }
 
 func (counter *counterType) increment(event eventrecorder.EventType) {
-	if webLogin := event.WebLogin; webLogin != nil {
-		switch webLogin.AuthType {
-		case eventrecorder.WebLoginAuthTypePassword:
-			counter.webPassword++
-		case eventrecorder.WebLoginAuthTypeSymantecVIP:
-			counter.webSymantecVIP++
-		case eventrecorder.WebLoginAuthTypeU2F:
-			counter.webU2F++
+	if authInfo := event.AuthInfo; authInfo != nil {
+		switch authInfo.AuthType {
+		case eventrecorder.AuthTypePassword:
+			counter.authPassword++
+		case eventrecorder.AuthTypeSymantecVIP:
+			counter.authSymantecVIP++
+		case eventrecorder.AuthTypeU2F:
+			counter.authU2F++
 		}
 	}
 	if event.Ssh {
 		counter.ssh++
+	}
+	if event.WebLogin {
+		counter.webLogin++
 	}
 	if event.X509 {
 		counter.x509++
@@ -147,6 +151,7 @@ func (counter *counterType) increment(event eventrecorder.EventType) {
 }
 
 func (counter *counterType) string() string {
-	return fmt.Sprintf("%d/%d/%d/%d/%d", counter.ssh, counter.x509,
-		counter.webPassword, counter.webSymantecVIP, counter.webU2F)
+	return fmt.Sprintf("%d/%d/%d %d/%d/%d",
+		counter.ssh, counter.webLogin, counter.x509,
+		counter.authPassword, counter.authSymantecVIP, counter.authU2F)
 }

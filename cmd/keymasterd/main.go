@@ -1248,6 +1248,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 
 		requiredAuth := state.getRequiredWebUIAuthLevel()
 		if (requiredAuth & AuthTypePassword) != 0 {
+			eventNotifier.PublishWebLoginEvent(username)
 			http.Redirect(w, r, loginDestination, 302)
 		} else {
 			//Go 2FA
@@ -1392,6 +1393,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 		if r.Form.Get("login_destination") != "" {
 			loginDestination = r.Form.Get("login_destination")
 		}
+		eventNotifier.PublishWebLoginEvent(authUser)
 		http.Redirect(w, r, loginDestination, 302)
 	default:
 		w.WriteHeader(200)
@@ -1976,6 +1978,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	returnAcceptType := getPreferredAcceptType(r)
 	switch returnAcceptType {
 	case "text/html":
+		eventNotifier.PublishWebLoginEvent(authUser)
 		http.Redirect(w, r, profileURI(authUser, assumedUser), 302)
 	default:
 		w.WriteHeader(200)

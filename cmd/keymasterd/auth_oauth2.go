@@ -187,7 +187,7 @@ func (state *RuntimeState) oauth2RedirectPathHandler(w http.ResponseWriter, r *h
 	delete(state.pendingOauth2, index)
 	state.Mutex.Unlock()
 
+	eventNotifier.PublishWebLoginEvent(username)
 	//and redirect to profile page
 	http.Redirect(w, r, profilePath, 302)
-
 }

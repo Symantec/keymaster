@@ -29,9 +29,10 @@ var (
 
 func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 	logger log.Logger) (*Monitor, error) {
+	authChannel := make(chan AuthInfo, bufferLength)
 	sshRawCertChannel := make(chan []byte, bufferLength)
 	sshCertChannel := make(chan *ssh.Certificate, bufferLength)
-	webLoginChannel := make(chan WebLoginInfo, bufferLength)
+	webLoginChannel := make(chan string, bufferLength)
 	x509RawCertChannel := make(chan []byte, bufferLength)
 	x509CertChannel := make(chan *x509.Certificate, bufferLength)
 	monitor := &Monitor{
@@ -39,12 +40,14 @@ func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 		keymasterServerPortNum:  keymasterServerPortNum,
 		closers:                 make(map[string]chan<- struct{}),
 		// Transmit side channels (private).
+		authChannel:        authChannel,
 		sshRawCertChannel:  sshRawCertChannel,
 		sshCertChannel:     sshCertChannel,
 		webLoginChannel:    webLoginChannel,
 		x509RawCertChannel: x509RawCertChannel,
 		x509CertChannel:    x509CertChannel,
 		// Receive side channels (public).
+		AuthChannel:        authChannel,
 		SshRawCertChannel:  sshRawCertChannel,
 		SshCertChannel:     sshCertChannel,
 		WebLoginChannel:    webLoginChannel,
@@ -219,6 +222,16 @@ func (m *Monitor) writeHtml(writer io.Writer) {
 
 func (m *Monitor) notify(event eventmon.EventV0, logger log.Logger) {
 	switch event.Type {
+	case eventmon.EventTypeAuth:
+		logger.Printf("User %s authentication: %s\n",
+			event.AuthType, event.Username)
+		select { // Non-blocking notification.
+		case m.authChannel <- AuthInfo{
+			AuthType: event.AuthType,
+			Username: event.Username,
+		}:
+		default:
+		}
 	case eventmon.EventTypeSSHCert:
 		select { // Non-blocking notification.
 		case m.sshRawCertChannel <- event.CertData:
@@ -246,13 +259,9 @@ func (m *Monitor) notify(event eventmon.EventV0, logger log.Logger) {
 			}
 		}
 	case eventmon.EventTypeWebLogin:
-		logger.Printf("Web login type: %s for: %s\n",
-			event.AuthType, event.Username)
+		logger.Printf("Web login for: %s\n", event.Username)
 		select { // Non-blocking notification.
-		case m.webLoginChannel <- WebLoginInfo{
-			AuthType: event.AuthType,
-			Username: event.Username,
-		}:
+		case m.webLoginChannel <- event.Username:
 		default:
 		}
 	case eventmon.EventTypeX509Cert:
