@@ -10,6 +10,7 @@ import (
 	"github.com/Symantec/keymaster/eventmon/httpd"
 	"github.com/Symantec/keymaster/eventmon/monitord"
 	"github.com/Symantec/keymaster/lib/constants"
+	"github.com/Symantec/keymaster/proto/eventmon"
 	"github.com/Symantec/tricorder/go/tricorder"
 )
 
@@ -67,6 +68,19 @@ func main() {
 			configuration.SshCertParametersCommand.processSshCert(cert)
 		case cert := <-monitor.SshRawCertChannel:
 			processRawCert(configuration.SshCertRawCommand, cert)
+		case webLogin := <-monitor.WebLoginChannel:
+			data := &eventrecorder.WebLogin{Username: webLogin.Username}
+			switch webLogin.AuthType {
+			case eventmon.AuthTypePassword:
+				data.AuthType = eventrecorder.WebLoginAuthTypePassword
+			case eventmon.AuthTypeSymantecVIP:
+				data.AuthType = eventrecorder.WebLoginAuthTypeSymantecVIP
+			case eventmon.AuthTypeU2F:
+				data.AuthType = eventrecorder.WebLoginAuthTypeU2F
+			default:
+				continue
+			}
+			recorder.WebLoginChannel <- data
 		case cert := <-monitor.X509CertChannel:
 			recorder.X509CertChannel <- cert
 			configuration.X509CertParametersCommand.processX509Cert(cert)
