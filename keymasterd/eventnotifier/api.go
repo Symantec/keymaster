@@ -23,7 +23,7 @@ func (n *EventNotifier) PublishAuthEvent(authType, username string) {
 	n.publishAuthEvent(authType, username)
 }
 
-func (n *EventNotifier) PublishServiceProviderLoginEvent(url string) {
+func (n *EventNotifier) PublishServiceProviderLoginEvent(url, username string) {
 }
 
 func (n *EventNotifier) PublishSSH(cert []byte) {
