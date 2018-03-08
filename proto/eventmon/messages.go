@@ -8,10 +8,11 @@ const (
 	AuthTypeSymantecVIP = "SymantecVIP"
 	AuthTypeU2F         = "U2F"
 
-	EventTypeAuth     = "Auth"
-	EventTypeSSHCert  = "SSHCert"
-	EventTypeWebLogin = "WebLogin"
-	EventTypeX509Cert = "X509Cert"
+	EventTypeAuth                 = "Auth"
+	EventTypeServiceProviderLogin = "ServiceProviderLogin"
+	EventTypeSSHCert              = "SSHCert"
+	EventTypeWebLogin             = "WebLogin"
+	EventTypeX509Cert             = "X509Cert"
 )
 
 // Client sends no data. Server sends a sequence of events.
@@ -22,6 +23,7 @@ type EventV0 struct {
 	// Present for SSH and X509 certificate events.
 	CertData []byte `json:",omitempty"`
 
-	AuthType string `json:",omitempty"` // Present for Auth events.
-	Username string `json:",omitempty"` // Present for Auth and WebLogin events.
+	AuthType           string `json:",omitempty"` // Present for Auth events.
+	ServiceProviderUrl string `json:",omitempty"` // Present for SPLogin events.
+	Username           string `json:",omitempty"` // Auth, SPLogin and WebLogin
 }

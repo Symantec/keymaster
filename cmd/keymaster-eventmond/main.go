@@ -76,6 +76,12 @@ func main() {
 				continue
 			}
 			recorder.AuthChannel <- data
+		case spLogin := <-monitor.ServiceProviderLoginChannel:
+			data := &eventrecorder.SPLoginInfo{
+				URL:      spLogin.URL,
+				Username: spLogin.Username,
+			}
+			recorder.ServiceProviderLoginChannel <- data
 		case cert := <-monitor.SshCertChannel:
 			recorder.SshCertChannel <- cert
 			configuration.SshCertParametersCommand.processSshCert(cert)

@@ -13,24 +13,31 @@ type AuthInfo struct {
 	Username string
 }
 
+type SPLoginInfo struct {
+	URL      string
+	Username string
+}
+
 type Monitor struct {
 	keymasterServerHostname string
 	keymasterServerPortNum  uint
 	closers                 map[string]chan<- struct{} // [addr]close notifier.
 	// Transmit side channels (private).
-	authChannel        chan<- AuthInfo
-	sshRawCertChannel  chan<- []byte
-	sshCertChannel     chan<- *ssh.Certificate
-	webLoginChannel    chan<- string
-	x509RawCertChannel chan<- []byte
-	x509CertChannel    chan<- *x509.Certificate
+	authChannel                 chan<- AuthInfo
+	serviceProviderLoginChannel chan<- SPLoginInfo
+	sshRawCertChannel           chan<- []byte
+	sshCertChannel              chan<- *ssh.Certificate
+	webLoginChannel             chan<- string
+	x509RawCertChannel          chan<- []byte
+	x509CertChannel             chan<- *x509.Certificate
 	// Receive side channels (public).
-	AuthChannel        <-chan AuthInfo
-	SshRawCertChannel  <-chan []byte
-	SshCertChannel     <-chan *ssh.Certificate
-	WebLoginChannel    <-chan string
-	X509RawCertChannel <-chan []byte
-	X509CertChannel    <-chan *x509.Certificate
+	AuthChannel                 <-chan AuthInfo
+	ServiceProviderLoginChannel <-chan SPLoginInfo
+	SshRawCertChannel           <-chan []byte
+	SshCertChannel              <-chan *ssh.Certificate
+	WebLoginChannel             <-chan string
+	X509RawCertChannel          <-chan []byte
+	X509CertChannel             <-chan *x509.Certificate
 }
 
 func New(keymasterServerHostname string, keymasterServerPortNum uint,
