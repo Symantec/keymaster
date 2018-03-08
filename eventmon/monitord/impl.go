@@ -30,6 +30,7 @@ var (
 func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 	logger log.Logger) (*Monitor, error) {
 	authChannel := make(chan AuthInfo, bufferLength)
+	serviceProviderLoginChannel := make(chan SPLoginInfo, bufferLength)
 	sshRawCertChannel := make(chan []byte, bufferLength)
 	sshCertChannel := make(chan *ssh.Certificate, bufferLength)
 	webLoginChannel := make(chan string, bufferLength)
@@ -40,19 +41,21 @@ func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 		keymasterServerPortNum:  keymasterServerPortNum,
 		closers:                 make(map[string]chan<- struct{}),
 		// Transmit side channels (private).
-		authChannel:        authChannel,
-		sshRawCertChannel:  sshRawCertChannel,
-		sshCertChannel:     sshCertChannel,
-		webLoginChannel:    webLoginChannel,
-		x509RawCertChannel: x509RawCertChannel,
-		x509CertChannel:    x509CertChannel,
+		authChannel:                 authChannel,
+		serviceProviderLoginChannel: serviceProviderLoginChannel,
+		sshRawCertChannel:           sshRawCertChannel,
+		sshCertChannel:              sshCertChannel,
+		webLoginChannel:             webLoginChannel,
+		x509RawCertChannel:          x509RawCertChannel,
+		x509CertChannel:             x509CertChannel,
 		// Receive side channels (public).
-		AuthChannel:        authChannel,
-		SshRawCertChannel:  sshRawCertChannel,
-		SshCertChannel:     sshCertChannel,
-		WebLoginChannel:    webLoginChannel,
-		X509RawCertChannel: x509RawCertChannel,
-		X509CertChannel:    x509CertChannel,
+		AuthChannel:                 authChannel,
+		ServiceProviderLoginChannel: serviceProviderLoginChannel,
+		SshRawCertChannel:           sshRawCertChannel,
+		SshCertChannel:              sshCertChannel,
+		WebLoginChannel:             webLoginChannel,
+		X509RawCertChannel:          x509RawCertChannel,
+		X509CertChannel:             x509CertChannel,
 	}
 	go monitor.monitorForever(logger)
 	return monitor, nil
@@ -228,6 +231,16 @@ func (m *Monitor) notify(event eventmon.EventV0, logger log.Logger) {
 		select { // Non-blocking notification.
 		case m.authChannel <- AuthInfo{
 			AuthType: event.AuthType,
+			Username: event.Username,
+		}:
+		default:
+		}
+	case eventmon.EventTypeServiceProviderLogin:
+		logger.Printf("User %s logged into service: %s\n",
+			event.Username, event.ServiceProviderUrl)
+		select { // Non-blocking notification.
+		case m.serviceProviderLoginChannel <- SPLoginInfo{
+			URL:      event.ServiceProviderUrl,
 			Username: event.Username,
 		}:
 		default:

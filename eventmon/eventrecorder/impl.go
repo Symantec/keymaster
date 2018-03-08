@@ -28,21 +28,24 @@ func newEventRecorder(filename string, logger log.Logger) (
 	}
 	authChannel := make(chan *AuthInfo, bufferLength)
 	requestEventsChannel := make(chan chan<- Events, bufferLength)
+	serviceProviderLoginChannel := make(chan *SPLoginInfo, bufferLength)
 	sshCertChannel := make(chan *ssh.Certificate, bufferLength)
 	webLoginChannel := make(chan string, bufferLength)
 	x509CertChannel := make(chan *x509.Certificate, bufferLength)
 	sr := &EventRecorder{
-		filename:             filename,
-		logger:               logger,
-		eventsMap:            eventsMap,
-		AuthChannel:          authChannel,
-		RequestEventsChannel: requestEventsChannel,
-		SshCertChannel:       sshCertChannel,
-		WebLoginChannel:      webLoginChannel,
-		X509CertChannel:      x509CertChannel,
+		filename:                    filename,
+		logger:                      logger,
+		eventsMap:                   eventsMap,
+		AuthChannel:                 authChannel,
+		RequestEventsChannel:        requestEventsChannel,
+		ServiceProviderLoginChannel: serviceProviderLoginChannel,
+		SshCertChannel:              sshCertChannel,
+		WebLoginChannel:             webLoginChannel,
+		X509CertChannel:             x509CertChannel,
 	}
-	go sr.eventLoop(authChannel, requestEventsChannel, sshCertChannel,
-		webLoginChannel, x509CertChannel)
+	go sr.eventLoop(authChannel, requestEventsChannel,
+		serviceProviderLoginChannel, sshCertChannel, webLoginChannel,
+		x509CertChannel)
 	return sr, nil
 }
 
@@ -85,6 +88,7 @@ func loadEvents(filename string) (map[string]*eventsListType, error) {
 
 func (sr *EventRecorder) eventLoop(authChannel <-chan *AuthInfo,
 	requestEventsChannel <-chan chan<- Events,
+	serviceProviderLoginChannel <-chan *SPLoginInfo,
 	sshCertChannel <-chan *ssh.Certificate, webLoginChannel <-chan string,
 	x509CertChannel <-chan *x509.Certificate) {
 	var lastEvents *Events
@@ -98,6 +102,10 @@ func (sr *EventRecorder) eventLoop(authChannel <-chan *AuthInfo,
 			saveTimer.Reset(time.Second * 5)
 			lastEvents = nil
 			sr.recordAuthEvent(auth.Username, auth.AuthType)
+		case spLogin := <-serviceProviderLoginChannel:
+			saveTimer.Reset(time.Second * 5)
+			lastEvents = nil
+			sr.recordSPLoginEvent(spLogin.Username, spLogin.URL)
 		case cert := <-sshCertChannel:
 			saveTimer.Reset(time.Second * 5)
 			lastEvents = nil
@@ -134,25 +142,8 @@ func (sr *EventRecorder) eventLoop(authChannel <-chan *AuthInfo,
 }
 
 func (sr *EventRecorder) recordAuthEvent(username string, authType uint) {
-	eventsList := sr.eventsMap[username]
-	if eventsList == nil {
-		eventsList = &eventsListType{}
-		sr.eventsMap[username] = eventsList
-	}
-	event := &eventType{
-		EventType: EventType{
-			CreateTime: uint64(time.Now().Unix()),
-			AuthInfo:   &AuthInfo{authType, username},
-		},
-		older: eventsList.newest,
-	}
-	if eventsList.newest != nil {
-		eventsList.newest.newer = event
-	}
-	eventsList.newest = event
-	if eventsList.oldest == nil {
-		eventsList.oldest = event
-	}
+	event := &eventType{EventType: EventType{AuthType: authType}}
+	sr.recordEvent(username, event)
 }
 
 func (sr *EventRecorder) recordCertEvent(username string,
@@ -171,20 +162,24 @@ func (sr *EventRecorder) recordCertEvent(username string,
 			lifetimeSeconds = minutesPlus * 60
 		}
 	}
+	event := &eventType{
+		EventType: EventType{
+			LifetimeSeconds: lifetimeSeconds,
+			Ssh:             ssh,
+			X509:            x509,
+		},
+	}
+	sr.recordEvent(username, event)
+}
+
+func (sr *EventRecorder) recordEvent(username string, event *eventType) {
 	eventsList := sr.eventsMap[username]
 	if eventsList == nil {
 		eventsList = &eventsListType{}
 		sr.eventsMap[username] = eventsList
 	}
-	event := &eventType{
-		EventType: EventType{
-			CreateTime:      uint64(time.Now().Unix()),
-			LifetimeSeconds: lifetimeSeconds,
-			Ssh:             ssh,
-			X509:            x509,
-		},
-		older: eventsList.newest,
-	}
+	event.CreateTime = uint64(time.Now().Unix())
+	event.older = eventsList.newest
 	if eventsList.newest != nil {
 		eventsList.newest.newer = event
 	}
@@ -194,26 +189,14 @@ func (sr *EventRecorder) recordCertEvent(username string,
 	}
 }
 
+func (sr *EventRecorder) recordSPLoginEvent(username, url string) {
+	event := &eventType{EventType: EventType{ServiceProviderUrl: url}}
+	sr.recordEvent(username, event)
+}
+
 func (sr *EventRecorder) recordWebLoginEvent(username string) {
-	eventsList := sr.eventsMap[username]
-	if eventsList == nil {
-		eventsList = &eventsListType{}
-		sr.eventsMap[username] = eventsList
-	}
-	event := &eventType{
-		EventType: EventType{
-			CreateTime: uint64(time.Now().Unix()),
-			WebLogin:   true,
-		},
-		older: eventsList.newest,
-	}
-	if eventsList.newest != nil {
-		eventsList.newest.newer = event
-	}
-	eventsList.newest = event
-	if eventsList.oldest == nil {
-		eventsList.oldest = event
-	}
+	event := &eventType{EventType: EventType{WebLogin: true}}
+	sr.recordEvent(username, event)
 }
 
 func (sr *EventRecorder) getEventsList(lastEvents **Events) *Events {
