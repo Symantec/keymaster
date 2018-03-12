@@ -97,6 +97,7 @@ func doVIPPushCheck(client *http.Client,
 			return err
 		}
 		if ok {
+			logger.Printf("") //To do a CR
 			return nil
 		}
 		time.Sleep(3 * time.Second)

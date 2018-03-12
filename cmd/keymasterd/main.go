@@ -1581,14 +1581,13 @@ func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if !valid {
-		err := errors.New("Not yet")
-		//logger.Println(err)
+		err := errors.New("Not yet") // usually it is not valid, no need to spam the log
 		logger.Debugf(1, "%s", err)
-		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "Error parsing form")
+		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "VIP Push Poller unsuccessful")
 		return
 	}
 
-	// OTP check was  successful
+	// VIP Push check was  successful
 	_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeSymantecVIP)
 	if err != nil {
 		logger.Printf("Autch Cookie NOT found ? %s", err)
