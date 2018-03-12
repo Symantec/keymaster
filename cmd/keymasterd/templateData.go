@@ -126,6 +126,8 @@ const secondFactorAuthFormText = `
 	<p>
 	<h4>Or</h4>
 	</p>
+	{{else}}
+	<p> Or wait for a VIP push</p>
 	{{end}}
 	{{end}}
 	{{if .ShowU2F}}
