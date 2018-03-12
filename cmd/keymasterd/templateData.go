@@ -137,7 +137,7 @@ const secondFactorAuthFormText = `
 	<p>
 	<h4>Or</h4>
 	</p>
-	<p> <button id="start_vip_push_button" >Start VIP Push</button></p> 
+	<p> <button id="start_vip_push_button" >Start VIP Push</button>(VIP push will autostart in 6s)</p>
         {{end}}
 
 	{{end}}

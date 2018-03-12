@@ -317,6 +317,7 @@ type Client struct {
 	VipPushMessageText              string //what is shown on the shown on the alarm
 	VipPushDisplayMessageText       string // what is shown after
 	VipPushDisplayMessageProfile    string // The url?
+	Debug                           bool
 }
 
 func NewClient(certPEMBlock, keyPEMBlock []byte) (client Client, err error) {
@@ -531,7 +532,9 @@ func (client *Client) StartUserVIPPush(userID string) (transactionID string, err
 	if err != nil {
 		fmt.Print(err)
 	}
-	log.Printf("%+v", response)
+	if client.Debug {
+		log.Printf("%+v", response)
+	}
 	if response.Body.VipResponseAuthenticateUserWithPush.Status != "6040" {
 		err := errors.New("bad push status")
 		return "", err
@@ -563,7 +566,9 @@ func (client *Client) VipPushHasBeenApproved(transactionID string) (bool, error)
 	if err != nil {
 		fmt.Print(err)
 	}
-	log.Printf("%+v", response)
+	if client.Debug {
+		log.Printf("%+v", response)
+	}
 	if response.Body.VipResponsePollPushStatus.Status != "0000" {
 		// TODO: this should be non nil
 		err := errors.New("bad poll request status")
@@ -574,7 +579,9 @@ func (client *Client) VipPushHasBeenApproved(transactionID string) (bool, error)
 		return false, err
 	}
 	transactionStatus := response.Body.VipResponsePollPushStatus.TransactionStatus[0]
-	log.Printf("%+v", transactionStatus)
+	if client.Debug {
+		log.Printf("%+v", transactionStatus)
+	}
 	// TODO: replace this for a switch statement
 	if transactionStatus.Status != "7000" {
 		return false, nil

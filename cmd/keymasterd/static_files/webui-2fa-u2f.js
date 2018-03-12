@@ -40,7 +40,7 @@ function checkError(resp) {
      document.getElementById('auth_action_text').style.display="block";
     $.getJSON('/u2f/SignRequest').success(function(req) {
       console.log(req);
-      u2f.sign(req.appId, req.challenge, req.registeredKeys, u2fSigned, 30);
+      u2f.sign(req.appId, req.challenge, req.registeredKeys, u2fSigned, 45);
     }).fail(serverError);
   }
 

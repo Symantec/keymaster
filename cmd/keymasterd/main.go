@@ -1297,6 +1297,26 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 			state.writeHTML2FAAuthPage(w, r, loginDestination, userHasU2FTokens)
 		}
 	default:
+		// add vippush cookie if we are using VIP
+		usesVIP := false
+		for _, certPref := range state.Config.Base.AllowedAuthBackendsForCerts {
+			if certPref == proto.AuthTypeSymantecVIP && state.Config.SymantecVIP.Enabled {
+				usesVIP = true
+			}
+		}
+		requiredWebAuth := state.getRequiredWebUIAuthLevel()
+		usesVIP = usesVIP || ((requiredWebAuth & AuthTypeSymantecVIP) == AuthTypeSymantecVIP)
+		if usesVIP {
+			cookieValue, err := genRandomString()
+			if err == nil { //Beware inverted Logic
+				expiration := time.Now().Add(maxAgeSecondsVIPCookie * time.Second)
+				vipPushCookie := http.Cookie{Name: vipTransactionCookieName,
+					Value: cookieValue, Expires: expiration,
+					Path: "/", HttpOnly: true, Secure: true}
+				http.SetCookie(w, &vipPushCookie)
+			}
+		}
+
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(loginResponse)
 		//fmt.Fprintf(w, "Success!")
@@ -1463,7 +1483,7 @@ func (state *RuntimeState) vipPushStartHandler(w http.ResponseWriter, r *http.Re
 
 		return
 	}
-	logger.Printf("authuser=%s", authUser)
+	logger.Printf(" Vip push start authuser=%s", authUser)
 	vipPushCookie, err := r.Cookie(vipTransactionCookieName)
 	if err != nil {
 		logger.Printf("%v", err)
@@ -1537,7 +1557,7 @@ func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Re
 
 		return
 	}
-	logger.Printf("authuser=%s", authUser)
+	logger.Debugf(1, "VIPPollCheckHandler: authuser=%s", authUser)
 	vipPollCookie, err := r.Cookie(vipTransactionCookieName)
 	if err != nil {
 		logger.Printf("%v", err)
@@ -1548,7 +1568,7 @@ func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Re
 	pushTransaction, ok := state.vipPushCookie[vipPollCookie.Value]
 	state.Mutex.Unlock()
 	if !ok {
-		err := errors.New("push transaction not found")
+		err := errors.New("VIPPollCheckHandler: push transaction not found for user")
 		logger.Println(err)
 		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "Error parsing form")
 		return
@@ -1562,7 +1582,8 @@ func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Re
 	}
 	if !valid {
 		err := errors.New("Not yet")
-		logger.Println(err)
+		//logger.Println(err)
+		logger.Debugf(1, "%s", err)
 		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "Error parsing form")
 		return
 	}
@@ -1574,6 +1595,7 @@ func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Re
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
 		return
 	}
+	eventNotifier.PublishAuthEvent(eventmon.AuthTypeSymantecVIP, authUser)
 
 	// TODO make something more fancy: JSON?
 	w.WriteHeader(http.StatusOK)

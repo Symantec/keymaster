@@ -1,51 +1,3 @@
-/*
-function serverError(data) {
-    console.log(data);
-    alert('Server error code ' + data.status + ': ' + data.responseText);
-  }
-
-function checkError(resp) {
-    if (!('errorCode' in resp)) {
-      return false;
-    }
-    //if (resp.errorCode === u2f.ErrorCodes['OK']) {
-    if (resp.errorCode == 0) {
-      return false;
-    }
-    var msg = 'U2F error code ' + resp.errorCode;
-    for (name in u2f.ErrorCodes) {
-      if (u2f.ErrorCodes[name] === resp.errorCode) {
-        msg += ' (' + name + ')';
-      }
-    }
-    if (resp.errorMessage) {
-      msg += ': ' + resp.errorMessage;
-    }
-    console.log(msg);
-    alert(msg);
-    return true;
-  }
-  
-  function u2fSigned(resp) {
-    document.getElementById('auth_action_text').style.display="none";
-    //console.log(resp);
-    if (checkError(resp)) {
-      return;
-    }
-    $.post('/u2f/SignResponse', JSON.stringify(resp)).success(function() {
-      //alert('Success');
-      var destination = document.getElementById("u2f_login_destination").innerHTML;
-      window.location.href = destination;
-    }).fail(serverError);
-  }
-  function signXXXX() {
-     document.getElementById('auth_action_text').style.display="block";
-    $.getJSON('/u2f/SignRequest').success(function(req) {
-      console.log(req);
-      u2f.sign(req.appId, req.challenge, req.registeredKeys, u2fSigned, 30);
-    }).fail(serverError);
-  }
-  */
   function singleVipPoll() {
       var xhr = new XMLHttpRequest();
       xhr.onreadystatechange = function() {
@@ -65,6 +17,7 @@ function checkError(resp) {
       var startPushButton = document.getElementById("start_vip_push_button")
       if (startPushButton) {
           startPushButton.addEventListener('click', startVipPush, false);
+	  setTimeout(startVipPush,6000)
       } else {
 	  startVipPush();
       }
