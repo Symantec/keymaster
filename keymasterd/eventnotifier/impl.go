@@ -24,8 +24,17 @@ func newEventNotifier(logger log.DebugLogger) *EventNotifier {
 	}
 }
 
+func (n *EventNotifier) publishAuthEvent(authType, username string) {
+	transmitData := eventmon.EventV0{
+		Type:     eventmon.EventTypeAuth,
+		AuthType: authType,
+		Username: username,
+	}
+	n.transmitEvent(transmitData)
+}
+
 func (n *EventNotifier) publishCert(certType string, certData []byte) {
-	transmitData := eventmon.EventV0{certType, certData}
+	transmitData := eventmon.EventV0{Type: certType, CertData: certData}
 	n.mutex.Lock()
 	defer n.mutex.Unlock()
 	for ch := range n.transmitChannels {
@@ -34,6 +43,23 @@ func (n *EventNotifier) publishCert(certType string, certData []byte) {
 		default:
 		}
 	}
+}
+
+func (n *EventNotifier) publishServiceProviderLoginEvent(url, username string) {
+	transmitData := eventmon.EventV0{
+		Type:               eventmon.EventTypeServiceProviderLogin,
+		ServiceProviderUrl: url,
+		Username:           username,
+	}
+	n.transmitEvent(transmitData)
+}
+
+func (n *EventNotifier) publishWebLoginEvent(username string) {
+	transmitData := eventmon.EventV0{
+		Type:     eventmon.EventTypeWebLogin,
+		Username: username,
+	}
+	n.transmitEvent(transmitData)
 }
 
 func (n *EventNotifier) serveHTTP(w http.ResponseWriter, req *http.Request) {
@@ -107,6 +133,17 @@ func (n *EventNotifier) handleConnection(rw *bufio.ReadWriter) {
 		if err := rw.Flush(); err != nil {
 			n.logger.Println(err)
 			return
+		}
+	}
+}
+
+func (n *EventNotifier) transmitEvent(event eventmon.EventV0) {
+	n.mutex.Lock()
+	defer n.mutex.Unlock()
+	for ch := range n.transmitChannels {
+		select {
+		case ch <- event:
+		default:
 		}
 	}
 }

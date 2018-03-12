@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sort"
 	"time"
 
@@ -19,6 +20,16 @@ const (
 	durationMonth = durationDay * 31
 )
 
+type counterType struct {
+	authPassword    uint64
+	authSymantecVIP uint64
+	authU2F         uint64
+	spLogin         uint64
+	ssh             uint64
+	webLogin        uint64
+	x509            uint64
+}
+
 func (s state) showActivityHandler(w http.ResponseWriter, req *http.Request) {
 	writer := bufio.NewWriter(w)
 	defer writer.Flush()
@@ -32,23 +43,6 @@ func (s state) showActivityHandler(w http.ResponseWriter, req *http.Request) {
 	fmt.Fprintln(writer, "<center>")
 	fmt.Fprintln(writer, "<h1>keymaster-eventmond activity report</h1>")
 	fmt.Fprintln(writer, "</center>")
-	s.writeActivity(writer)
-	fmt.Fprintln(writer, "<hr>")
-	html.WriteFooter(writer)
-	fmt.Fprintln(writer, "</body>")
-}
-
-func (s state) writeActivity(writer io.Writer) {
-	fmt.Fprintln(writer, `<table border="1" style="width:100%">`)
-	fmt.Fprintln(writer, "  <tr>")
-	fmt.Fprintln(writer, "    <th>Username</th>")
-	fmt.Fprintln(writer, "    <th>Last Day</th>")
-	fmt.Fprintln(writer, "    <th>Last Week</th>")
-	fmt.Fprintln(writer, "    <th>Last Month</th>")
-	fmt.Fprintln(writer, "    <th>Min Lifetime</th>")
-	fmt.Fprintln(writer, "    <th>Med Lifetime</th>")
-	fmt.Fprintln(writer, "    <th>Max Lifetime</th>")
-	fmt.Fprintln(writer, "  </tr>")
 	eventsChannel := make(chan eventrecorder.Events, 1)
 	s.eventRecorder.RequestEventsChannel <- eventsChannel
 	eventsMap := <-eventsChannel
@@ -60,52 +54,199 @@ func (s state) writeActivity(writer io.Writer) {
 		}
 	}
 	sort.Strings(usernames)
-	for _, username := range usernames {
-		writeUser(writer, username, eventsMap.Events[username])
-	}
-	fmt.Fprintln(writer, "</table>")
+	s.writeActivity(writer, usernames, eventsMap.Events)
+	fmt.Fprintln(writer, "<br>")
+	s.writeSPLoginActivity(writer, eventsMap.Events)
 	renderTime := time.Since(startTime)
 	fmt.Fprintf(writer,
 		"<br><font color=\"grey\">Fetch time: %s render time: %s</font>\n",
 		format.Duration(eventsMap.ComputeTime), format.Duration(renderTime))
+	fmt.Fprintln(writer, "<hr>")
+	html.WriteFooter(writer)
+	fmt.Fprintln(writer, "</body>")
+}
+
+func (s state) writeActivity(writer io.Writer, usernames []string,
+	eventsMap eventrecorder.EventsMap) {
+	fmt.Fprintln(writer, "SPlogin/SSH/Web/X509 Password/SymantecVIP/U2F")
+	fmt.Fprintln(writer, `<table border="1" style="width:100%">`)
+	fmt.Fprintln(writer, "  <tr>")
+	fmt.Fprintln(writer, "    <th>Username</th>")
+	fmt.Fprintln(writer, "    <th>Last Day</th>")
+	fmt.Fprintln(writer, "    <th>Last Week</th>")
+	fmt.Fprintln(writer, "    <th>Last Month</th>")
+	fmt.Fprintln(writer, "    <th>Min Lifetime</th>")
+	fmt.Fprintln(writer, "    <th>Med Lifetime</th>")
+	fmt.Fprintln(writer, "    <th>Max Lifetime</th>")
+	fmt.Fprintln(writer, "  </tr>")
+	totals := &statsType{minLifetime: durationMonth * 120, maxLifetime: -1}
+	for _, username := range usernames {
+		writeUser(writer, username, eventsMap[username], time.Now(), totals)
+	}
+	totals.writeHtml(writer, "<b>ALL USERS</b>")
+	fmt.Fprintln(writer, "</table>")
+}
+
+func (s state) writeSPLoginActivity(writer io.Writer,
+	eventsMap eventrecorder.EventsMap) {
+	urlToCountTable := make(map[string]uint64)
+	for _, events := range eventsMap {
+		for _, event := range events {
+			if rawURL := event.ServiceProviderUrl; rawURL != "" {
+				var URL string
+				if u, err := url.Parse(rawURL); err != nil {
+					URL = rawURL
+				} else {
+					if len(u.Port()) > 0 {
+						URL = u.Scheme + "://" + u.Hostname() + ":" + u.Port() +
+							"/"
+					} else {
+						URL = u.Scheme + "://" + u.Hostname() + "/"
+					}
+				}
+				urlToCountTable[URL] = urlToCountTable[URL] + 1
+			}
+		}
+	}
+	var pairs stringCountPairs
+	for url, count := range urlToCountTable {
+		pairs = append(pairs, stringCountPair{url, count})
+	}
+	sort.Sort(sort.Reverse(pairs))
+	fmt.Fprintln(writer, `<table border="1" style="width:100%">`)
+	fmt.Fprintln(writer, "  <tr>")
+	fmt.Fprintln(writer, "    <th>Service Provider URL</th>")
+	fmt.Fprintln(writer, "    <th>Login Count</th>")
+	fmt.Fprintln(writer, "  </tr>")
+	for _, pair := range pairs {
+		fmt.Fprintln(writer, "  <tr>")
+		fmt.Fprintf(writer, "    <td>%s</td>\n", pair.url)
+		fmt.Fprintf(writer, "    <td>%d</td>\n", pair.count)
+		fmt.Fprintln(writer, "  </tr>")
+	}
+	fmt.Fprintln(writer, "</table>")
 }
 
 func writeUser(writer io.Writer, username string,
-	events []eventrecorder.EventType) {
-	var countOverLastDay, countOverLastWeek, countOverLastMonth uint64
-	now := time.Now()
-	minLifetime := durationMonth * 120
-	maxLifetime := time.Duration(-1)
-	lifetimes := make([]int, 0, len(events))
+	events []eventrecorder.EventType, now time.Time, totals *statsType) {
+	stats := &statsType{
+		lifetimes:   make([]int, 0, len(events)),
+		minLifetime: durationMonth * 120,
+		maxLifetime: -1,
+	}
 	for _, event := range events {
+		if event.LifetimeSeconds > 0 {
+			lifetime := time.Duration(event.LifetimeSeconds) * time.Second
+			stats.lifetimes = append(stats.lifetimes,
+				int(event.LifetimeSeconds))
+			totals.lifetimes = append(totals.lifetimes,
+				int(event.LifetimeSeconds))
+			if lifetime < stats.minLifetime {
+				stats.minLifetime = lifetime
+			}
+			if lifetime > stats.maxLifetime {
+				stats.maxLifetime = lifetime
+			}
+			if lifetime < totals.minLifetime {
+				totals.minLifetime = lifetime
+			}
+			if lifetime > totals.maxLifetime {
+				totals.maxLifetime = lifetime
+			}
+		}
 		age := now.Sub(time.Unix(int64(event.CreateTime), 0))
-		lifetime := time.Duration(event.LifetimeSeconds) * time.Second
-		lifetimes = append(lifetimes, int(event.LifetimeSeconds))
 		if age <= durationDay {
-			countOverLastDay++
+			stats.countOverLastDay.increment(event)
+			totals.countOverLastDay.increment(event)
 		}
 		if age <= durationWeek {
-			countOverLastWeek++
+			stats.countOverLastWeek.increment(event)
+			totals.countOverLastWeek.increment(event)
 		}
 		if age <= durationMonth {
-			countOverLastMonth++
-		}
-		if lifetime < minLifetime {
-			minLifetime = lifetime
-		}
-		if lifetime > maxLifetime {
-			maxLifetime = lifetime
+			stats.countOverLastMonth.increment(event)
+			totals.countOverLastMonth.increment(event)
 		}
 	}
-	sort.Ints(lifetimes)
-	medLifetime := time.Duration(lifetimes[len(lifetimes)/2]) * time.Second
+	stats.writeHtml(writer, username)
+}
+
+func (counter *counterType) increment(event eventrecorder.EventType) {
+	switch event.AuthType {
+	case eventrecorder.AuthTypePassword:
+		counter.authPassword++
+	case eventrecorder.AuthTypeSymantecVIP:
+		counter.authSymantecVIP++
+	case eventrecorder.AuthTypeU2F:
+		counter.authU2F++
+	}
+	if event.ServiceProviderUrl != "" {
+		counter.spLogin++
+	}
+	if event.Ssh {
+		counter.ssh++
+	}
+	if event.WebLogin {
+		counter.webLogin++
+	}
+	if event.X509 {
+		counter.x509++
+	}
+}
+
+func (counter *counterType) string() string {
+	return fmt.Sprintf("%d/%d/%d/%d %d/%d/%d",
+		counter.spLogin, counter.ssh, counter.webLogin, counter.x509,
+		counter.authPassword, counter.authSymantecVIP, counter.authU2F)
+}
+
+type stringCountPairs []stringCountPair
+
+type stringCountPair struct {
+	url   string
+	count uint64
+}
+
+func (pairs stringCountPairs) Len() int {
+	return len(pairs)
+}
+
+func (pairs stringCountPairs) Less(left, right int) bool {
+	return pairs[left].count < pairs[right].count
+}
+
+func (pairs stringCountPairs) Swap(left, right int) {
+	pairs[left], pairs[right] = pairs[right], pairs[left]
+}
+
+type statsType struct {
+	countOverLastDay   counterType
+	countOverLastWeek  counterType
+	countOverLastMonth counterType
+	lifetimes          []int
+	minLifetime        time.Duration
+	maxLifetime        time.Duration
+}
+
+func (stats *statsType) writeHtml(writer io.Writer, username string) {
 	fmt.Fprintf(writer, "  <tr>\n")
 	fmt.Fprintf(writer, "    <td>%s</td>\n", username)
-	fmt.Fprintf(writer, "    <td>%d</td>\n", countOverLastDay)
-	fmt.Fprintf(writer, "    <td>%d</td>\n", countOverLastWeek)
-	fmt.Fprintf(writer, "    <td>%d</td>\n", countOverLastMonth)
-	fmt.Fprintf(writer, "    <td>%s</td>\n", format.Duration(minLifetime))
-	fmt.Fprintf(writer, "    <td>%s</td>\n", format.Duration(medLifetime))
-	fmt.Fprintf(writer, "    <td>%s</td>\n", format.Duration(maxLifetime))
+	fmt.Fprintf(writer, "    <td>%s</td>\n", stats.countOverLastDay.string())
+	fmt.Fprintf(writer, "    <td>%s</td>\n", stats.countOverLastWeek.string())
+	fmt.Fprintf(writer, "    <td>%s</td>\n", stats.countOverLastMonth.string())
+	if len(stats.lifetimes) > 0 {
+		sort.Ints(stats.lifetimes)
+		medLifetime := time.Duration(
+			stats.lifetimes[len(stats.lifetimes)/2]) * time.Second
+		fmt.Fprintf(writer, "    <td>%s</td>\n",
+			format.Duration(stats.minLifetime))
+		fmt.Fprintf(writer, "    <td>%s</td>\n", format.Duration(medLifetime))
+		fmt.Fprintf(writer, "    <td>%s</td>\n",
+			format.Duration(stats.maxLifetime))
+	} else {
+		fmt.Fprintln(writer, "    <td></td>")
+		fmt.Fprintln(writer, "    <td></td>")
+		fmt.Fprintln(writer, "    <td></td>")
+	}
 	fmt.Fprintf(writer, "  </tr>\n")
 }

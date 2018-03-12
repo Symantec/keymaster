@@ -1,5 +1,5 @@
 Name:           keymaster
-Version:        0.7.3
+Version:        1.3.1
 Release:        1%{?dist}
 Summary:        Short term access certificate generator and client
 
