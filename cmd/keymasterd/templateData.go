@@ -114,6 +114,7 @@ const secondFactorAuthFormText = `
 	<div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
         <h2> Keymaster second factor Authenticaion </h2>
 	{{if .ShowOTP}}
+	<div id="vip_login_destination" style="display: none;">{{.LoginDestination}}</div>
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/vipAuth" method="post">
             <p>
 	    Enter VIP token value: <INPUT TYPE="text" NAME="OTP" SIZE=18>
@@ -122,9 +123,13 @@ const secondFactorAuthFormText = `
 	    </p>
         </form>
 	{{if .ShowU2F}}
+	<div id="otp_or_u2f_message">
 	<p>
 	<h4>Or</h4>
 	</p>
+	</div>
+	{{else}}
+	<p> Or wait for a VIP push</p>
 	{{end}}
 	{{end}}
 	{{if .ShowU2F}}
@@ -132,6 +137,15 @@ const secondFactorAuthFormText = `
 	       <div id="u2f_login_destination" style="display: none;">{{.LoginDestination}}</div>
                <div id="auth_action_text" > Authenticate by touching a blinking registered U2F device (insert if not inserted yet)</div>
         </p>
+        {{if .ShowOTP}}
+	<div id="manual_start_vip_div">
+	<p>
+	<h4>Or</h4>
+	</p>
+	<p> <button id="start_vip_push_button" >Start VIP Push</button>(VIP push will autostart in a few seconds)</p>
+        </div>
+	{{end}}
+
 	{{end}}
 	</div>
 	{{template "footer" . }}

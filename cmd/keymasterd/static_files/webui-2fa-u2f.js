@@ -24,8 +24,21 @@ function checkError(resp) {
     alert(msg);
     return true;
   }
+  function hideAllU2FElements() {
+      document.getElementById('auth_action_text').style.display="none";
+      var manualStartVipDiv = document.getElementById("manual_start_vip_div")
+      if (manualStartVipDiv) {
+	      manualStartVipDiv.style.display="none";
+      }
+      var otpOrU2fMessageDiv = document.getElementById("otp_or_u2f_message")
+      if (otpOrU2fMessageDiv) {
+              otpOrU2fMessageDiv.style.display="none";
+      }
+  }
+
   function u2fSigned(resp) {
-    document.getElementById('auth_action_text').style.display="none";
+    //document.getElementById('auth_action_text').style.display="none";
+    hideAllU2FElements();
     //console.log(resp);
     if (checkError(resp)) {
       return;
@@ -40,7 +53,7 @@ function checkError(resp) {
      document.getElementById('auth_action_text').style.display="block";
     $.getJSON('/u2f/SignRequest').success(function(req) {
       console.log(req);
-      u2f.sign(req.appId, req.challenge, req.registeredKeys, u2fSigned, 30);
+      u2f.sign(req.appId, req.challenge, req.registeredKeys, u2fSigned, 45);
     }).fail(serverError);
   }
 

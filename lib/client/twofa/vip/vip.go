@@ -3,6 +3,7 @@ package vip
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -11,12 +12,102 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 )
 
-func doVIPAuthenticate(
+const vipCheckTimeoutSecs = 180
+
+func startVIPPush(client *http.Client,
+	baseURL string,
+	logger log.DebugLogger) error {
+
+	VIPPushStartURL := baseURL + "/api/v0/vipPushStart"
+
+	req, err := http.NewRequest("GET", VIPPushStartURL, nil)
+	req.Header.Add("Accept", "application/json")
+
+	pushStartResp, err := client.Do(req)
+	if err != nil {
+		logger.Printf("got error from pushStart")
+		logger.Println(err)
+		return err
+	}
+	defer pushStartResp.Body.Close()
+	if pushStartResp.StatusCode != 200 {
+		logger.Printf("got error from vipStart call %s", pushStartResp.Status)
+		err := errors.New("bad vip response code")
+		return err
+	}
+	//at this moment we dont actually return json data... so we can just return here
+	return nil
+}
+
+func checkVIPPollStatus(client *http.Client,
+	baseURL string,
+	logger log.DebugLogger) (bool, error) {
+
+	VIPPollCheckURL := baseURL + "/api/v0/vipPollCheck"
+
+	req, err := http.NewRequest("GET", VIPPollCheckURL, nil)
+	req.Header.Add("Accept", "application/json")
+
+	pollCheckResp, err := client.Do(req)
+	if err != nil {
+		logger.Printf("got error from vipPollCheck")
+		logger.Println(err)
+		return false, err
+	}
+	defer pollCheckResp.Body.Close()
+	if pollCheckResp.StatusCode != 200 {
+		if pollCheckResp.StatusCode == 412 {
+			logger.Debugf(1, "got error from vipPollCheck call %s", pollCheckResp.Status)
+			return false, nil
+		}
+		logger.Printf("got error from vipPollCheck call %s", pollCheckResp.Status)
+		//err := errors.New("bad vip response code")
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func doVIPPushCheck(client *http.Client,
+	baseURL string,
+	logger log.DebugLogger,
+	errorReturnDuration time.Duration) error {
+
+	err := startVIPPush(client, baseURL, logger)
+	if err != nil {
+		logger.Printf("got error from pushStart, will sleep to allow code to be entered")
+		logger.Println(err)
+		time.Sleep(errorReturnDuration)
+		return err
+	}
+	endTime := time.Now().Add(errorReturnDuration)
+	//initial sleep
+	for time.Now().Before(endTime) {
+		ok, err := checkVIPPollStatus(client, baseURL, logger)
+		if err != nil {
+			logger.Printf("got error from vipPollCheck, will sleep to allow code to be entered")
+			logger.Println(err)
+			time.Sleep(errorReturnDuration)
+			return err
+		}
+		if ok {
+			logger.Printf("") //To do a CR
+			return nil
+		}
+		time.Sleep(3 * time.Second)
+	}
+
+	err = errors.New("Vip Push Checked timeout out")
+	return err
+}
+
+func VIPAuthenticateWithToken(
 	client *http.Client,
 	baseURL string,
 	logger log.DebugLogger) error {
@@ -25,7 +116,7 @@ func doVIPAuthenticate(
 	// Read VIP token from client
 
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Print("Enter VIP/OTP code: ")
+	fmt.Print("Enter VIP/OTP code (or wait for VIP push): ")
 	otpText, err := reader.ReadString('\n')
 	otpText = strings.TrimSpace(otpText)
 	//fmt.Println(codeText)
@@ -69,5 +160,36 @@ func doVIPAuthenticate(
 
 	logger.Debugf(1, "This the login response=%v\n", loginJSONResponse)
 
+	return nil
+}
+
+func doVIPAuthenticate(
+	client *http.Client,
+	baseURL string,
+	logger log.DebugLogger) error {
+
+	timeout := time.Duration(time.Duration(vipCheckTimeoutSecs) * time.Second)
+	ch := make(chan error, 1)
+	go func() {
+		err := VIPAuthenticateWithToken(client, baseURL, logger)
+		ch <- err
+	}()
+	go func() {
+		err := doVIPPushCheck(client, baseURL,
+			logger, timeout)
+		ch <- err
+
+	}()
+	select {
+	case err := <-ch:
+		if err != nil {
+			logger.Printf("Problem with vip ='%s'", err)
+			return err
+		}
+		return nil
+	case <-time.After(timeout):
+		err := errors.New("vip timeout")
+		return err
+	}
 	return nil
 }

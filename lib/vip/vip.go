@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -117,11 +118,206 @@ type userInfoResponseBody struct {
 	}
 }
 
+type authenticateUserWithPushRequest struct {
+	RequestId             string `xml:"requestId"`
+	UserId                string `xml:"userId"`
+	PushMessageText       string
+	DisplayMessageText    string
+	DisplayMessageProfile string
+}
+
+const authenticateUserWithPushRequestTemplate = `<?xml version="1.0"?>
+<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/" xmlns="https://schemas.symantec.com/vip/2011/04/vipuserservices">
+<S:Header/>
+  <S:Body>
+    <AuthenticateUserWithPushRequest>
+      <requestId>{{.RequestId}}</requestId>
+      <userId>{{.UserId}}</userId>
+      <pushAuthData>
+        <displayParameters>
+          <Key>push.message.text</Key>
+	   <Value>{{.PushMessageText}}</Value>
+        </displayParameters>
+        <displayParameters>
+          <Key>display.message.title</Key>
+          <Value>Sign In request</Value>
+        </displayParameters>
+        <displayParameters>
+          <Key>display.message.text</Key>
+          <Value>{{.DisplayMessageText}}</Value>
+        </displayParameters>
+        <displayParameters>
+          <Key>display.message.profile</Key>
+	  <Value>{{.DisplayMessageProfile}}</Value>
+        </displayParameters>
+        <requestParameters>
+          <Key>request.timeout</Key>
+          <Value>120</Value>
+        </requestParameters>
+        <requestParameters>
+          <Key>nonactionable.notification</Key>
+          <Value>true</Value>
+        </requestParameters>
+        <requestParameters>
+          <Key>enforceLocalAuth</Key>
+          <Value>false</Value>
+        </requestParameters>
+        <requestParameters>
+          <Key>includeDeviceInfo</Key>
+          <Value>true</Value>
+        </requestParameters>
+      </pushAuthData>
+    </AuthenticateUserWithPushRequest>
+  </S:Body>
+</S:Envelope>`
+
+/*
+<?xml version="1.0"?>
+<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/">
+  <S:Body>
+    <AuthenticateUserWithPushResponse xmlns="https://schemas.symantec.com/vip/2011/04/vipuserservices">
+      <requestId>AUTHWPUSH_47348263001</requestId>
+      <status>6040</status>
+      <statusMessage>Mobile push request sent</statusMessage>
+      <transactionId>b20e567dbf7bf7e9</transactionId>
+      <pushDetail>
+        <pushCredentialId>SYMC61713435</pushCredentialId>
+        <pushSent>true</pushSent>
+      </pushDetail>
+    </AuthenticateUserWithPushResponse>
+  </S:Body>
+</S:Envelope>
+*/
+
+type vipResponsePushDetail struct {
+	PushCredentialId string `xml:"pushCredentialId,omitempty"`
+	PushSent         string `xml:"pushSent,omitempty"`
+}
+
+type vipResponseAuthenticateUserWithPush struct {
+	RequestId     string                  `xml:"requestId"`
+	Status        string                  `xml:"status"`
+	StatusMessage string                  `xml:"statusMessage"`
+	TransactionId string                  `xml:"transactionId"`
+	PushDetail    []vipResponsePushDetail `xml:"pushDetail"`
+}
+
+type authenticateUserWithPushResponseBody struct {
+	XMLName xml.Name `xml:"Envelope"`
+	Body    struct {
+		VipResponseAuthenticateUserWithPush vipResponseAuthenticateUserWithPush `xml:"AuthenticateUserWithPushResponse"`
+	}
+}
+
+type pollStatusRequest struct {
+	RequestId     string `xml:"requestId"`
+	TransactionId string `xml:"transactionId"`
+}
+
+const pollStatusRequestTemplate = `<?xml version="1.0"?>
+<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/" xmlns="https://schemas.symantec.com/vip/2011/04/vipuserservices">
+  <S:Header/>
+  <S:Body>
+          <PollPushStatusRequest>
+                  <requestId>{{.RequestId}}</requestId>
+      <transactionId>{{.TransactionId}}</transactionId>
+    </PollPushStatusRequest>
+  </S:Body>
+</S:Envelope>`
+
+/*
+fail poll response
+<?xml version="1.0" encoding="UTF-8"?>
+<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/">
+  <S:Body>
+    <PollPushStatusResponse xmlns="https://schemas.symantec.com/vip/2011/04/vipuserservices">
+      <requestId>AUTHWPUSH_47348263001</requestId>
+      <status>0000</status>
+      <statusMessage>Success</statusMessage>
+      <transactionStatus>
+        <transactionId>c312be521d2a4b7e</transactionId>
+        <status>7005</status>
+        <statusMessage>Mobile push request not found</statusMessage>
+      </transactionStatus>
+    </PollPushStatusResponse>
+  </S:Body>
+</S:Envelope>
+*/
+
+type PollResponseDeviceInfo struct {
+	Key   string `xml:"Key"`
+	Value string `xml:"Value"`
+}
+
+type vipResponsePollPushTransactionStatus struct {
+	TransactionId  string                   `xml:"transactionId"`
+	Status         string                   `xml:"status"`
+	StatusMessage  string                   `xml:"statusMessage"`
+	AuthnTime      string                   `xml:"authnTime,omitempty"`
+	CredentialId   string                   `xml:"credentialId,omitempty"`
+	CredentialType string                   `xml:"credentialType,omitempty"`
+	DeviceInfo     []PollResponseDeviceInfo `xml:"deviceInfo,omitempty"`
+}
+
+type vipResponsePollPushStatus struct {
+	RequestId         string                                 `xml:"requestId"`
+	Status            string                                 `xml:"status"`
+	StatusMessage     string                                 `xml:"statusMessage"`
+	TransactionId     string                                 `xml:"transactionId"`
+	TransactionStatus []vipResponsePollPushTransactionStatus `xml:"transactionStatus"`
+}
+
+type pollPushResponseBody struct {
+	XMLName xml.Name `xml:"Envelope"`
+	Body    struct {
+		VipResponsePollPushStatus vipResponsePollPushStatus `xml:"PollPushStatusResponse"`
+	}
+}
+
+/*
+successful poll responst
+<?xml version="1.0"?>
+<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/">
+  <S:Body>
+    <PollPushStatusResponse xmlns="https://schemas.symantec.com/vip/2011/04/vipuserservices">
+      <requestId>AUTHWPUSH_47348263001</requestId>
+      <status>0000</status>
+      <statusMessage>Success</statusMessage>
+      <transactionStatus>
+        <transactionId>c312be521d2a4b7e</transactionId>
+        <status>7000</status>
+        <statusMessage>Mobile push request approved by user</statusMessage>
+        <authnTime>1970-01-01T00:00:00.000Z</authnTime>
+        <credentialId>SYMC61713435</credentialId>
+        <credentialType>STANDARD_OTP</credentialType>
+        <deviceInfo>
+          <Key>os</Key>
+          <Value>iOS</Value>
+        </deviceInfo>
+        <deviceInfo>
+          <Key>osVersion</Key>
+          <Value>11.2.5</Value>
+        </deviceInfo>
+        <deviceInfo>
+          <Key>vipAccessVersion</Key>
+          <Value>4.2.3</Value>
+        </deviceInfo>
+      </transactionStatus>
+    </PollPushStatusResponse>
+  </S:Body>
+</S:Envelope>
+*/
+
 type Client struct {
-	Cert               tls.Certificate
-	VipServicesURL     string
-	VipUserServicesURL string
-	RootCAs            *x509.CertPool
+	Cert                            tls.Certificate
+	VipServicesURL                  string
+	VipUserServicesURL              string
+	VipUserServiceAuthenticationURL string
+	RootCAs                         *x509.CertPool
+	VipPushMessageText              string //what is shown on the shown on the alarm
+	VipPushDisplayMessageText       string // what is shown after
+	VipPushDisplayMessageProfile    string // The url?
+	Debug                           bool
 }
 
 func NewClient(certPEMBlock, keyPEMBlock []byte) (client Client, err error) {
@@ -132,7 +328,14 @@ func NewClient(certPEMBlock, keyPEMBlock []byte) (client Client, err error) {
 	}
 	//This is the production url for vipservices
 	client.VipServicesURL = "https://vipservices-auth.verisign.com/val/soap"
-	client.VipUserServicesURL = "https://userservices-auth.vip.symantec.com/vipuserservices/QueryService_1_7"
+	client.VipUserServicesURL = "https://userservices-auth.vip.symantec.com/vipuserservices/QueryService_1_8"
+	//https://userservices-auth.vip.symantec.com/vipuserservices/QueryService_1_8
+	client.VipUserServiceAuthenticationURL = "https://userservices-auth.vip.symantec.com/vipuserservices/AuthenticationService_1_8"
+
+	client.VipPushMessageText = "Symantec Push Authentication Request"
+	client.VipPushDisplayMessageText = "Sign In request from Some site"
+	client.VipPushDisplayMessageProfile = "www.example.com"
+
 	return client, nil
 }
 
@@ -174,6 +377,10 @@ func (client *Client) postBytesVipServices(data []byte) ([]byte, error) {
 
 func (client *Client) postBytesUserServices(data []byte) ([]byte, error) {
 	return client.postBytesVip(data, client.VipUserServicesURL, "text/xml")
+}
+
+func (client *Client) postBytesUserServicesAuthentication(data []byte) ([]byte, error) {
+	return client.postBytesVip(data, client.VipUserServiceAuthenticationURL, "text/xml")
 }
 
 func genNewRequestID() string {
@@ -265,7 +472,9 @@ func (client *Client) GetActiveTokens(userID string) ([]string, error) {
 	*/
 	var enabledTokenID []string
 	for _, credentialBinding := range response.Body.VipResponseGetUserInfo.CredentialBindingDetail {
-		//fmt.Printf("\n%+v\n", credentialBinding)
+		if client.Debug {
+			log.Printf("\n%+v\n", credentialBinding)
+		}
 		if credentialBinding.CredentialStatus != "ENABLED" {
 			continue
 		}
@@ -294,4 +503,91 @@ func (client *Client) ValidateUserOTP(userID string, OTPValue int) (bool, error)
 		}
 	}
 	return false, nil
+}
+
+func (client *Client) StartUserVIPPush(userID string) (transactionID string, err error) {
+	requestID := genNewRequestID()
+	vipPushRequest := authenticateUserWithPushRequest{
+		RequestId:             requestID,
+		UserId:                userID,
+		PushMessageText:       client.VipPushMessageText,
+		DisplayMessageText:    client.VipPushDisplayMessageText,
+		DisplayMessageProfile: client.VipPushDisplayMessageProfile}
+	tmpl, err := template.New("pushRequest").Parse(authenticateUserWithPushRequestTemplate)
+	if err != nil {
+		panic(err)
+	}
+	var requestBuffer bytes.Buffer
+
+	err = tmpl.Execute(&requestBuffer, vipPushRequest)
+	if err != nil {
+		panic(err)
+	}
+	//fmt.Printf("\nbuffer='%s'\n", requestBuffer.String())
+	responseBytes, err := client.postBytesUserServicesAuthentication(requestBuffer.Bytes())
+	if err != nil {
+		return "", err
+	}
+
+	var response authenticateUserWithPushResponseBody
+	err = xml.Unmarshal(responseBytes, &response)
+	if err != nil {
+		fmt.Print(err)
+	}
+	if client.Debug {
+		log.Printf("%+v", response)
+	}
+	if response.Body.VipResponseAuthenticateUserWithPush.Status != "6040" {
+		err := errors.New("bad push status")
+		return "", err
+	}
+	return response.Body.VipResponseAuthenticateUserWithPush.TransactionId, nil
+}
+
+func (client *Client) VipPushHasBeenApproved(transactionID string) (bool, error) {
+	requestID := genNewRequestID()
+	vipPollRequest := pollStatusRequest{RequestId: requestID,
+		TransactionId: transactionID}
+	tmpl, err := template.New("pushRequest").Parse(pollStatusRequestTemplate)
+	if err != nil {
+		panic(err)
+	}
+	var requestBuffer bytes.Buffer
+	err = tmpl.Execute(&requestBuffer, vipPollRequest)
+	if err != nil {
+		panic(err)
+	}
+	//fmt.Printf("\nbuffer='%s'\n", requestBuffer.String())
+	responseBytes, err := client.postBytesUserServices(requestBuffer.Bytes())
+	if err != nil {
+		return false, err
+	}
+
+	var response pollPushResponseBody
+	err = xml.Unmarshal(responseBytes, &response)
+	if err != nil {
+		fmt.Print(err)
+	}
+	if client.Debug {
+		log.Printf("%+v", response)
+	}
+	if response.Body.VipResponsePollPushStatus.Status != "0000" {
+		// TODO: this should be non nil
+		err := errors.New("bad poll request status")
+		return false, err
+	}
+	if len(response.Body.VipResponsePollPushStatus.TransactionStatus) < 1 {
+		err := errors.New("invalid response")
+		return false, err
+	}
+	transactionStatus := response.Body.VipResponsePollPushStatus.TransactionStatus[0]
+	if client.Debug {
+		log.Printf("%+v", transactionStatus)
+	}
+	// TODO: replace this for a switch statement
+	if transactionStatus.Status != "7000" {
+		return false, nil
+	}
+
+	return true, nil
 }
