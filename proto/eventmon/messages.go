@@ -13,6 +13,9 @@ const (
 	EventTypeSSHCert              = "SSHCert"
 	EventTypeWebLogin             = "WebLogin"
 	EventTypeX509Cert             = "X509Cert"
+
+	VIPAuthTypeOTP  = "VIPAuthOTP"
+	VIPAuthTypePush = "VIPAuthPush"
 )
 
 // Client sends no data. Server sends a sequence of events.
@@ -26,4 +29,6 @@ type EventV0 struct {
 	AuthType           string `json:",omitempty"` // Present for Auth events.
 	ServiceProviderUrl string `json:",omitempty"` // Present for SPLogin events.
 	Username           string `json:",omitempty"` // Auth, SPLogin and WebLogin
+
+	VIPAuthType string `json:",omitempty"` // Present for VIP Auth events.
 }

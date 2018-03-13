@@ -62,6 +62,15 @@ func (n *EventNotifier) publishWebLoginEvent(username string) {
 	n.transmitEvent(transmitData)
 }
 
+func (n *EventNotifier) publishVIPAuthEvent(vipAuthType, username string) {
+	transmitData := eventmon.EventV0{
+		Type:        eventmon.EventTypeAuth,
+		AuthType:    eventmon.AuthTypeSymantecVIP,
+		VIPAuthType: vipAuthType,
+	}
+	n.transmitEvent(transmitData)
+}
+
 func (n *EventNotifier) serveHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.Method != "CONNECT" {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
