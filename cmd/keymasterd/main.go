@@ -1565,7 +1565,7 @@ func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Re
 	logger.Debugf(1, "VIPPollCheckHandler: authuser=%s", authUser)
 	vipPollCookie, err := r.Cookie(vipTransactionCookieName)
 	if err != nil {
-		logger.Printf("VIPPollCheckHandler: erro getting poll cookie %v", err)
+		logger.Printf("VIPPollCheckHandler: error getting poll cookie %v", err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing Cookie")
 		return
 	}
