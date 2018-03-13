@@ -1494,15 +1494,15 @@ func (state *RuntimeState) vipPushStartHandler(w http.ResponseWriter, r *http.Re
 	pushTransaction, ok := state.vipPushCookie[vipPushCookie.Value]
 	state.Mutex.Unlock()
 	if ok {
-		err := errors.New("push transaction found will not start anotherone")
+		err := errors.New("push transaction found will not start another one")
 		logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Cookie not setup ")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Push already sent")
 		return
 	}
 	if len(pushTransaction.TransactionID) > 0 {
-		err := errors.New("push transaction already started found")
+		err := errors.New("VIP push transaction already initiated")
 		logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "push already sent")
+		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "Push already sent")
 		return
 	}
 	err = state.startVIPPush(vipPushCookie.Value, authUser)
@@ -1560,7 +1560,7 @@ func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Re
 	logger.Debugf(1, "VIPPollCheckHandler: authuser=%s", authUser)
 	vipPollCookie, err := r.Cookie(vipTransactionCookieName)
 	if err != nil {
-		logger.Printf("%v", err)
+		logger.Printf("VIPPollCheckHandler: erro getting poll cookie %v", err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing Cookie")
 		return
 	}
@@ -1590,7 +1590,7 @@ func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Re
 	// VIP Push check was  successful
 	_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeSymantecVIP)
 	if err != nil {
-		logger.Printf("Autch Cookie NOT found ? %s", err)
+		logger.Printf("VIPPollCheckHandler:  Failure to update AuthCookie %s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
 		return
 	}

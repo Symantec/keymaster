@@ -1,5 +1,5 @@
 Name:           keymaster
-Version:        1.3.1
+Version:        1.4.0
 Release:        1%{?dist}
 Summary:        Short term access certificate generator and client
 
@@ -39,6 +39,7 @@ install -d %{buildroot}/%{_datarootdir}/keymasterd/static_files/
 install -p -m 0644 cmd/keymasterd/static_files/u2f-api.js  %{buildroot}/%{_datarootdir}/keymasterd/static_files/u2f-api.js
 install -p -m 0644 cmd/keymasterd/static_files/keymaster-u2f.js  %{buildroot}/%{_datarootdir}/keymasterd/static_files/keymaster-u2f.js
 install -p -m 0644 cmd/keymasterd/static_files/webui-2fa-u2f.js  %{buildroot}/%{_datarootdir}/keymasterd/static_files/webui-2fa-u2f.js
+install -p -m 0644 cmd/keymasterd/static_files/webui-2fa-symc-vip.js  %{buildroot}/%{_datarootdir}/keymasterd/static_files/webui-2fa-symc-vip.js
 install -p -m 0644 cmd/keymasterd/static_files/keymaster.css  %{buildroot}/%{_datarootdir}/keymasterd/static_files/keymaster.css
 install -p -m 0644 cmd/keymasterd/static_files/jquery-1.12.4.patched.min.js %{buildroot}/%{_datarootdir}/keymasterd/static_files/jquery-1.12.4.patched.min.js
 install -d %{buildroot}/%{_datarootdir}/keymasterd/customization_data/templates

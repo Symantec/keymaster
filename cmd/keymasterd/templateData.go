@@ -123,9 +123,11 @@ const secondFactorAuthFormText = `
 	    </p>
         </form>
 	{{if .ShowU2F}}
+	<div id="otp_or_u2f_message">
 	<p>
 	<h4>Or</h4>
 	</p>
+	</div>
 	{{else}}
 	<p> Or wait for a VIP push</p>
 	{{end}}
@@ -136,11 +138,13 @@ const secondFactorAuthFormText = `
                <div id="auth_action_text" > Authenticate by touching a blinking registered U2F device (insert if not inserted yet)</div>
         </p>
         {{if .ShowOTP}}
+	<div id="manual_start_vip_div">
 	<p>
 	<h4>Or</h4>
 	</p>
 	<p> <button id="start_vip_push_button" >Start VIP Push</button>(VIP push will autostart in 6s)</p>
-        {{end}}
+        </div>
+	{{end}}
 
 	{{end}}
 	</div>

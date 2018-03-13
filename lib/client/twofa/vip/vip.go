@@ -173,13 +173,11 @@ func doVIPAuthenticate(
 	go func() {
 		err := VIPAuthenticateWithToken(client, baseURL, logger)
 		ch <- err
-		close(ch)
 	}()
 	go func() {
 		err := doVIPPushCheck(client, baseURL,
 			logger, timeout)
 		ch <- err
-		close(ch)
 
 	}()
 	select {
@@ -194,5 +192,4 @@ func doVIPAuthenticate(
 		return err
 	}
 	return nil
-	//return VIPAuthenticateWithToken(client, baseURL, logger)
 }
