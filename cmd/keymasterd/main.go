@@ -1141,8 +1141,8 @@ func (state *RuntimeState) startVIPPush(cookieVal string, username string) error
 	}
 	newLocalData := pushPollTransaction{Username: username, TransactionID: transactionId, ExpiresAt: time.Now().Add(maxAgeSecondsVIPCookie * time.Second)}
 	state.Mutex.Lock()
+	defer state.Mutex.Unlock()
 	state.vipPushCookie[cookieVal] = newLocalData
-	state.Mutex.Unlock()
 
 	return nil
 }
@@ -1465,6 +1465,13 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	return
 }
 
+func (state *RuntimeState) getPushPollTransaction(cookieValue string) (pushPollTransaction, bool) {
+	state.Mutex.Lock()
+	defer state.Mutex.Unlock()
+	value, ok := state.vipPushCookie[cookieValue]
+	return value, ok
+}
+
 ///////////////////////////
 const vipPushStartPath = "/api/v0/vipPushStart"
 
@@ -1490,9 +1497,7 @@ func (state *RuntimeState) vipPushStartHandler(w http.ResponseWriter, r *http.Re
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing Cookie")
 		return
 	}
-	state.Mutex.Lock()
-	pushTransaction, ok := state.vipPushCookie[vipPushCookie.Value]
-	state.Mutex.Unlock()
+	pushTransaction, ok := state.getPushPollTransaction(vipPushCookie.Value)
 	if ok {
 		err := errors.New("push transaction found will not start another one")
 		logger.Println(err)
@@ -1564,9 +1569,7 @@ func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Re
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing Cookie")
 		return
 	}
-	state.Mutex.Lock()
-	pushTransaction, ok := state.vipPushCookie[vipPollCookie.Value]
-	state.Mutex.Unlock()
+	pushTransaction, ok := state.getPushPollTransaction(vipPollCookie.Value)
 	if !ok {
 		err := errors.New("VIPPollCheckHandler: push transaction not found for user")
 		logger.Println(err)
