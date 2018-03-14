@@ -1427,7 +1427,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	// OTP check was  successful
-	eventNotifier.PublishAuthEvent(eventmon.AuthTypeSymantecVIP, authUser)
+	eventNotifier.PublishVIPAuthEvent(eventmon.VIPAuthTypeOTP, authUser)
 	_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeSymantecVIP)
 	if err != nil {
 		logger.Printf("Auth Cookie NOT found ? %s", err)
@@ -1597,7 +1597,7 @@ func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Re
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
 		return
 	}
-	eventNotifier.PublishAuthEvent(eventmon.AuthTypeSymantecVIP, authUser)
+	eventNotifier.PublishVIPAuthEvent(eventmon.VIPAuthTypePush, authUser)
 
 	// TODO make something more fancy: JSON?
 	w.WriteHeader(http.StatusOK)

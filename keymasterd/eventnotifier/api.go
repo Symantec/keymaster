@@ -35,6 +35,10 @@ func (n *EventNotifier) PublishWebLoginEvent(username string) {
 	n.publishWebLoginEvent(username)
 }
 
+func (n *EventNotifier) PublishVIPAuthEvent(vipAuthType, username string) {
+	n.publishVIPAuthEvent(vipAuthType, username)
+}
+
 func (n *EventNotifier) PublishX509(cert []byte) {
 	n.publishCert(eventmon.EventTypeX509Cert, cert)
 }
