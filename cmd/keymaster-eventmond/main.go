@@ -70,6 +70,11 @@ func main() {
 				data.AuthType = eventrecorder.AuthTypePassword
 			case eventmon.AuthTypeSymantecVIP:
 				data.AuthType = eventrecorder.AuthTypeSymantecVIP
+				if auth.VIPAuthType == eventmon.VIPAuthTypeOTP {
+					data.VIPAuthType = eventrecorder.VIPAuthTypeOTP
+				} else if auth.VIPAuthType == eventmon.VIPAuthTypePush {
+					data.VIPAuthType = eventrecorder.VIPAuthTypePush
+				}
 			case eventmon.AuthTypeU2F:
 				data.AuthType = eventrecorder.AuthTypeU2F
 			default:

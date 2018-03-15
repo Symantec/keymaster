@@ -21,13 +21,14 @@ const (
 )
 
 type counterType struct {
-	authPassword    uint64
-	authSymantecVIP uint64
-	authU2F         uint64
-	spLogin         uint64
-	ssh             uint64
-	webLogin        uint64
-	x509            uint64
+	authPassword        uint64
+	authSymantecVIPotp  uint64
+	authSymantecVIPpush uint64
+	authU2F             uint64
+	spLogin             uint64
+	ssh                 uint64
+	webLogin            uint64
+	x509                uint64
 }
 
 func (s state) showActivityHandler(w http.ResponseWriter, req *http.Request) {
@@ -68,7 +69,8 @@ func (s state) showActivityHandler(w http.ResponseWriter, req *http.Request) {
 
 func (s state) writeActivity(writer io.Writer, usernames []string,
 	eventsMap eventrecorder.EventsMap) {
-	fmt.Fprintln(writer, "SPlogin/SSH/Web/X509 Password/SymantecVIP/U2F")
+	fmt.Fprintln(writer,
+		"SPlogin/SSH/Web/X509 Password/VIPotp/VIPpush/U2F")
 	fmt.Fprintln(writer, `<table border="1" style="width:100%">`)
 	fmt.Fprintln(writer, "  <tr>")
 	fmt.Fprintln(writer, "    <th>Username</th>")
@@ -176,7 +178,12 @@ func (counter *counterType) increment(event eventrecorder.EventType) {
 	case eventrecorder.AuthTypePassword:
 		counter.authPassword++
 	case eventrecorder.AuthTypeSymantecVIP:
-		counter.authSymantecVIP++
+		switch event.VIPAuthType {
+		case eventrecorder.VIPAuthTypeOTP:
+			counter.authSymantecVIPotp++
+		case eventrecorder.VIPAuthTypePush:
+			counter.authSymantecVIPpush++
+		}
 	case eventrecorder.AuthTypeU2F:
 		counter.authU2F++
 	}
@@ -197,7 +204,8 @@ func (counter *counterType) increment(event eventrecorder.EventType) {
 func (counter *counterType) string() string {
 	return fmt.Sprintf("%d/%d/%d/%d %d/%d/%d",
 		counter.spLogin, counter.ssh, counter.webLogin, counter.x509,
-		counter.authPassword, counter.authSymantecVIP, counter.authU2F)
+		counter.authPassword, counter.authSymantecVIPotp,
+		counter.authSymantecVIPpush, counter.authU2F)
 }
 
 type stringCountPairs []stringCountPair

@@ -9,8 +9,9 @@ import (
 )
 
 type AuthInfo struct {
-	AuthType string
-	Username string
+	AuthType    string
+	Username    string
+	VIPAuthType string
 }
 
 type SPLoginInfo struct {

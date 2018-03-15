@@ -15,9 +15,15 @@ const (
 	AuthTypeU2F
 )
 
+const (
+	VIPAuthTypeOTP = iota
+	VIPAuthTypePush
+)
+
 type AuthInfo struct {
-	AuthType uint
-	Username string
+	AuthType    uint
+	Username    string
+	VIPAuthType uint8
 }
 
 type Events struct {
@@ -40,6 +46,7 @@ type EventType struct {
 	Ssh                bool
 	WebLogin           bool
 	X509               bool
+	VIPAuthType        uint8
 }
 
 type eventType struct {

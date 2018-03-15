@@ -226,12 +226,26 @@ func (m *Monitor) writeHtml(writer io.Writer) {
 func (m *Monitor) notify(event eventmon.EventV0, logger log.Logger) {
 	switch event.Type {
 	case eventmon.EventTypeAuth:
-		logger.Printf("User %s authentication: %s\n",
-			event.AuthType, event.Username)
+		authType := event.AuthType
+		var vipAuthType string
+		if event.AuthType == eventmon.AuthTypeSymantecVIP {
+			authType += "/" + event.VIPAuthType
+			vipAuthType = event.VIPAuthType
+			switch event.VIPAuthType {
+			case eventmon.VIPAuthTypeOTP:
+				authType += "/OTP"
+			case eventmon.VIPAuthTypePush:
+				authType += "/Push"
+			default:
+				authType += "/?"
+			}
+		}
+		logger.Printf("User %s authentication: %s\n", authType, event.Username)
 		select { // Non-blocking notification.
 		case m.authChannel <- AuthInfo{
-			AuthType: event.AuthType,
-			Username: event.Username,
+			AuthType:    event.AuthType,
+			Username:    event.Username,
+			VIPAuthType: vipAuthType,
 		}:
 		default:
 		}
