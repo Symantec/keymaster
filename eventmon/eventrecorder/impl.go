@@ -101,7 +101,7 @@ func (sr *EventRecorder) eventLoop(authChannel <-chan *AuthInfo,
 		case auth := <-authChannel:
 			saveTimer.Reset(time.Second * 5)
 			lastEvents = nil
-			sr.recordAuthEvent(auth.Username, auth.AuthType)
+			sr.recordAuthEvent(auth.Username, auth.AuthType, auth.VIPAuthType)
 		case spLogin := <-serviceProviderLoginChannel:
 			saveTimer.Reset(time.Second * 5)
 			lastEvents = nil
@@ -141,8 +141,12 @@ func (sr *EventRecorder) eventLoop(authChannel <-chan *AuthInfo,
 	}
 }
 
-func (sr *EventRecorder) recordAuthEvent(username string, authType uint) {
-	event := &eventType{EventType: EventType{AuthType: authType}}
+func (sr *EventRecorder) recordAuthEvent(username string, authType uint,
+	vipAuthType uint8) {
+	event := &eventType{EventType: EventType{
+		AuthType:    authType,
+		VIPAuthType: vipAuthType},
+	}
 	sr.recordEvent(username, event)
 }
 
