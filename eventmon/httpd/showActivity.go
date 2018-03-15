@@ -202,7 +202,7 @@ func (counter *counterType) increment(event eventrecorder.EventType) {
 }
 
 func (counter *counterType) string() string {
-	return fmt.Sprintf("%d/%d/%d/%d %d/%d/%d",
+	return fmt.Sprintf("%d/%d/%d/%d %d/%d/%d/%d",
 		counter.spLogin, counter.ssh, counter.webLogin, counter.x509,
 		counter.authPassword, counter.authSymantecVIPotp,
 		counter.authSymantecVIPpush, counter.authU2F)
