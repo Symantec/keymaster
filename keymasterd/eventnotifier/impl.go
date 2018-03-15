@@ -67,6 +67,7 @@ func (n *EventNotifier) publishVIPAuthEvent(vipAuthType, username string) {
 		Type:        eventmon.EventTypeAuth,
 		AuthType:    eventmon.AuthTypeSymantecVIP,
 		VIPAuthType: vipAuthType,
+		Username:    username,
 	}
 	n.transmitEvent(transmitData)
 }

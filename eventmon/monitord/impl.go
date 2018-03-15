@@ -229,7 +229,6 @@ func (m *Monitor) notify(event eventmon.EventV0, logger log.Logger) {
 		authType := event.AuthType
 		var vipAuthType string
 		if event.AuthType == eventmon.AuthTypeSymantecVIP {
-			authType += "/" + event.VIPAuthType
 			vipAuthType = event.VIPAuthType
 			switch event.VIPAuthType {
 			case eventmon.VIPAuthTypeOTP:
