@@ -9,6 +9,7 @@ import (
 type BaseConfig struct {
 	Gen_Cert_URLS string `yaml:"gen_cert_urls"`
 	Username      string `yaml:"username"`
+	FilePrefix    string `yaml:"file_prefix"`
 }
 
 // AppConfigFile represents a keymaster client configuration file

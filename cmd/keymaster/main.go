@@ -24,8 +24,6 @@ import (
 const DefaultSSHKeysLocation = "/.ssh/"
 const DefaultTLSKeysLocation = "/.ssl/"
 
-const FilePrefix = "keymaster"
-
 var (
 	// Must be a global variable in the data segment so that the build
 	// process can inject the version number on the fly when building the
@@ -39,6 +37,8 @@ var (
 	configHost     = flag.String("configHost", "", "Get a bootstrap config from this host")
 	cliUsername    = flag.String("username", "", "username for keymaster")
 	checkDevices   = flag.Bool("checkDevices", false, "CheckU2F devices in your system")
+	cliFilePrefix  = flag.String("fileprefix", "", "Prefix for the output files")
+	FilePrefix     = "keymaster"
 )
 
 func maybeGetRootCas(logger log.Logger) *x509.CertPool {
@@ -257,5 +257,13 @@ func main() {
 	if *cliUsername != "" {
 		userName = *cliUsername
 	}
+
+	if len(config.Base.FilePrefix) > 0 {
+		FilePrefix = config.Base.FilePrefix
+	}
+	if *cliFilePrefix != "" {
+		FilePrefix = *cliFilePrefix
+	}
+
 	setupCerts(rootCAs, userName, homeDir, config, logger)
 }
