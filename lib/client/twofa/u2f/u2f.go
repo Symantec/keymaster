@@ -120,8 +120,8 @@ func doU2FAuthenticate(
 	}
 	reqSignChallenge := sha256.Sum256(tokenAuthenticationBuf.Bytes())
 
-	challenge := make([]byte, 32)
-	app := make([]byte, 32)
+	challenge := make([]byte, 32) //lint:ignore SA4006 This is needed to ensure right size
+	app := make([]byte, 32)       //lint:ignore SA4006 This is needed to ensure right size
 
 	challenge = reqSignChallenge[:]
 	reqSingApp := sha256.Sum256([]byte(webSignRequest.AppID))
@@ -186,6 +186,10 @@ func doU2FAuthenticate(
 
 	url = baseURL + "/u2f/SignResponse"
 	webSignRequest2, err := http.NewRequest("POST", url, webSignRequestBuf)
+	if err != nil {
+		logger.Printf("Failure to make http request")
+		return err
+	}
 
 	signRequestResp2, err := client.Do(webSignRequest2) // Client.Get(targetUrl)
 	if err != nil {

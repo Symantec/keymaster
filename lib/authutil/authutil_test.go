@@ -312,7 +312,8 @@ func TestCheckLDAPUserPasswordFailNonLDAPEndpoint(t *testing.T) {
 		t.Logf("Failed to parse url")
 		t.Fatal(err)
 	}
-	ok, err = CheckLDAPUserPassword(*ldapURL, "username", "password", 2, certPool)
+	// TODO: actually check the returned value
+	_, err = CheckLDAPUserPassword(*ldapURL, "username", "password", 2, certPool)
 	if err == nil {
 		//t.Logf("Connect to server")
 		//t.Fatal(err)

@@ -562,6 +562,9 @@ func generateCerts(configDir string, config *baseConfig, rsaKeySize int) error {
 	}
 	clientKeyFilename := configDir + "/adminClient.key"
 	clientKey, err := generateRSAKeyAndSaveInFile(clientKeyFilename, rsaKeySize)
+	if err != nil {
+		logger.Fatalf("Failed to generate file for key: %s", err)
+	}
 	//Fix template!
 	clientTemplate := template
 	//client.KeyUsage |= ExtKeyUsageClientAuth
@@ -618,9 +621,15 @@ func generateNewConfigInternal(reader *bufio.Reader, configFilename string, rsaK
 	// TODO: Add check that directory exists.
 	defaultHttpAddress := ":443"
 	config.Base.HttpAddress, err = getUserString(reader, "HttpAddress", defaultHttpAddress)
+	if err != nil {
+		return err
+	}
 	// Todo check if valid
 	defaultAdminAddress := ":6920"
 	config.Base.AdminAddress, err = getUserString(reader, "AdminAddress", defaultAdminAddress)
+	if err != nil {
+		return err
+	}
 
 	config.Base.SSHCAFilename = filepath.Join(configDir, "masterKey.asc")
 	err = generateArmoredEncryptedCAPritaveKey(passphrase, config.Base.SSHCAFilename)

@@ -46,6 +46,9 @@ func TestIDPOpenIDCMetadataHandler(t *testing.T) {
 
 	url := idpOpenIDCConfigurationDocumentPath
 	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, err = checkRequestHandlerCode(req, state.idpOpenIDCDiscoveryHandler, http.StatusOK)
 	if err != nil {
 		t.Fatal(err)
@@ -62,6 +65,9 @@ func TestIDPOpenIDCJWKSHandler(t *testing.T) {
 
 	url := idpOpenIDCJWKSPath
 	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, err = checkRequestHandlerCode(req, state.idpOpenIDCJWKSHandler, http.StatusOK)
 	if err != nil {
 		t.Fatal(err)
@@ -87,6 +93,9 @@ func TestIDPOpenIDCAuthorizationHandlerSuccess(t *testing.T) {
 
 	//url := idpOpenIDCAuthorizationPath
 	req, err := http.NewRequest("GET", idpOpenIDCAuthorizationPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	//First we do a simple request.. no auth should fail for now.. after build out it
 	// should be a redirect to the login page

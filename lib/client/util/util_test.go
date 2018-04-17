@@ -78,7 +78,8 @@ func TestGetParseURLEnvVariable(t *testing.T) {
 	*/
 
 	//Unexistent
-	val, err = getParseURLEnvVariable("Foobar")
+	// TODO: check for the return error
+	val, _ = getParseURLEnvVariable("Foobar")
 	if val != nil {
 		t.Fatal("SHOULD not have found anything ")
 	}
@@ -90,6 +91,9 @@ func TestGetParseURLEnvVariable(t *testing.T) {
 //  gopass checks
 func TestPipe(t *testing.T) {
 	_, err := pipeToStdin("password\n")
+	if err != nil {
+		t.Fatal(err)
+	}
 	password, err := GetUserCreds("userame")
 	if err != nil {
 		t.Fatal(err)
