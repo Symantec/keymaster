@@ -235,7 +235,7 @@ func extractCNFromDNString(input []string) (output []string, err error) {
 		if len(matches) == 2 {
 			output = append(output, matches[1])
 		} else {
-			log.Printf("dn='%s' matches=%v", matches)
+			log.Printf("dn='%s' matches=%v", dn, matches)
 			output = append(output, dn)
 		}
 	}
