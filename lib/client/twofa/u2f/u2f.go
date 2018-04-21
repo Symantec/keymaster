@@ -120,8 +120,9 @@ func doU2FAuthenticate(
 	}
 	reqSignChallenge := sha256.Sum256(tokenAuthenticationBuf.Bytes())
 
-	challenge := make([]byte, 32) //lint:ignore SA4006 This is needed to ensure right size
-	app := make([]byte, 32)       //lint:ignore SA4006 This is needed to ensure right size
+	// TODO: update creation to silence linter
+	challenge := make([]byte, 32)
+	app := make([]byte, 32)
 
 	challenge = reqSignChallenge[:]
 	reqSingApp := sha256.Sum256([]byte(webSignRequest.AppID))
