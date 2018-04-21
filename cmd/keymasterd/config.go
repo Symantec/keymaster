@@ -485,11 +485,13 @@ func generateRSAKeyAndSaveInFile(filename string, bits int) (*rsa.PrivateKey, er
 func generateCertAndWriteToFile(filename string, template, parent *x509.Certificate, pub, priv interface{}) ([]byte, error) {
 	derBytes, err := x509.CreateCertificate(rand.Reader, template, parent, pub, priv)
 	if err != nil {
-		logger.Fatalf("Failed to create certificate: %s", err)
+		logger.Printf("Failed to create certificate: %s", err)
+		return nil, err
 	}
 	certOut, err := os.Create(filename)
 	if err != nil {
-		logger.Fatalf("failed to open cert.pem for writing: %s", err)
+		logger.Printf("failed to open cert.pem for writing: %s", err)
+		return nil, err
 	}
 	defer certOut.Close()
 	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
@@ -512,7 +514,8 @@ func generateCerts(configDir string, config *baseConfig, rsaKeySize int) error {
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 	if err != nil {
-		logger.Fatalf("failed to generate serial number: %s", err)
+		logger.Printf("failed to generate serial number: %s", err)
+		return err
 	}
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
@@ -529,7 +532,8 @@ func generateCerts(configDir string, config *baseConfig, rsaKeySize int) error {
 	serverCertFilename := configDir + "/server.pem"
 	_, err = generateCertAndWriteToFile(serverCertFilename, &template, &template, &serverKey.PublicKey, serverKey)
 	if err != nil {
-		logger.Fatalf("Failed to create certificate: %s", err)
+		logger.Printf("Failed to create certificate: %s", err)
+		return err
 	}
 
 	//now the admin CA
@@ -542,7 +546,8 @@ func generateCerts(configDir string, config *baseConfig, rsaKeySize int) error {
 	caTemplate := template
 	serialNumber, err = rand.Int(rand.Reader, serialNumberLimit)
 	if err != nil {
-		logger.Fatalf("failed to generate serial number: %s", err)
+		logger.Printf("failed to generate serial number: %s", err)
+		return err
 	}
 	caTemplate.DNSNames = nil
 	caTemplate.SerialNumber = serialNumber
@@ -553,15 +558,21 @@ func generateCerts(configDir string, config *baseConfig, rsaKeySize int) error {
 	adminCACertFilename := configDir + "/adminCA.pem"
 	caDer, err := generateCertAndWriteToFile(adminCACertFilename, &caTemplate, &caTemplate, &adminCAKey.PublicKey, adminCAKey)
 	if err != nil {
-		logger.Fatalf("Failed to create certificate: %s", err)
+		logger.Printf("Failed to create certificate: %s", err)
+		return err
 	}
 	// Now the admin client
 	caCert, err := x509.ParseCertificate(caDer)
 	if err != nil {
-		logger.Fatalf("Failed to parse certificate: %s", err)
+		logger.Printf("Failed to parse certificate: %s", err)
+		return err
 	}
 	clientKeyFilename := configDir + "/adminClient.key"
 	clientKey, err := generateRSAKeyAndSaveInFile(clientKeyFilename, rsaKeySize)
+	if err != nil {
+		logger.Printf("Failed to generate file for key: %s", err)
+		return err
+	}
 	//Fix template!
 	clientTemplate := template
 	//client.KeyUsage |= ExtKeyUsageClientAuth
@@ -569,7 +580,8 @@ func generateCerts(configDir string, config *baseConfig, rsaKeySize int) error {
 	clientCertFilename := configDir + "/adminClient.pem"
 	_, err = generateCertAndWriteToFile(clientCertFilename, &clientTemplate, caCert, &clientKey.PublicKey, adminCAKey)
 	if err != nil {
-		logger.Fatalf("Failed to create certificate: %s", err)
+		logger.Printf("Failed to create certificate: %s", err)
+		return err
 	}
 
 	config.TLSKeyFilename = serverKeyFilename
@@ -618,9 +630,15 @@ func generateNewConfigInternal(reader *bufio.Reader, configFilename string, rsaK
 	// TODO: Add check that directory exists.
 	defaultHttpAddress := ":443"
 	config.Base.HttpAddress, err = getUserString(reader, "HttpAddress", defaultHttpAddress)
+	if err != nil {
+		return err
+	}
 	// Todo check if valid
 	defaultAdminAddress := ":6920"
 	config.Base.AdminAddress, err = getUserString(reader, "AdminAddress", defaultAdminAddress)
+	if err != nil {
+		return err
+	}
 
 	config.Base.SSHCAFilename = filepath.Join(configDir, "masterKey.asc")
 	err = generateArmoredEncryptedCAPritaveKey(passphrase, config.Base.SSHCAFilename)

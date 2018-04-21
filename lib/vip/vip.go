@@ -24,7 +24,7 @@ import (
 type vipValidateRequest struct {
 	RequestId string `xml:"RequestId,attr"`
 	TokenId   string `xml:"TokenId"`
-	OTP       int    `xml:"OTP`
+	OTP       int    `xml:"OTP"`
 }
 
 type validateRequestBody struct {
@@ -68,7 +68,7 @@ type validateResponseBody struct {
 }
 
 type vipUserInfoRequest struct {
-	RequestId string `xml:"requestId`
+	RequestId string `xml:"requestId"`
 	UserId    string `xml:"userId"`
 }
 

@@ -556,6 +556,9 @@ func TestPublicHandleLoginForm(t *testing.T) {
 		}
 	}
 	req, err := http.NewRequest("GET", "/public/foo", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	_, err = checkRequestHandlerCode(req, state.publicPathHandler, http.StatusNotFound)
 	if err != nil {
 		t.Fatal(err)

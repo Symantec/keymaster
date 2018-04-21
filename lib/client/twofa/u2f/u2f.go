@@ -120,6 +120,7 @@ func doU2FAuthenticate(
 	}
 	reqSignChallenge := sha256.Sum256(tokenAuthenticationBuf.Bytes())
 
+	// TODO: update creation to silence linter
 	challenge := make([]byte, 32)
 	app := make([]byte, 32)
 
@@ -186,6 +187,10 @@ func doU2FAuthenticate(
 
 	url = baseURL + "/u2f/SignResponse"
 	webSignRequest2, err := http.NewRequest("POST", url, webSignRequestBuf)
+	if err != nil {
+		logger.Printf("Failure to make http request")
+		return err
+	}
 
 	signRequestResp2, err := client.Do(webSignRequest2) // Client.Get(targetUrl)
 	if err != nil {

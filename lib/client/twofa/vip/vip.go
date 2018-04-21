@@ -27,6 +27,9 @@ func startVIPPush(client *http.Client,
 	VIPPushStartURL := baseURL + "/api/v0/vipPushStart"
 
 	req, err := http.NewRequest("GET", VIPPushStartURL, nil)
+	if err != nil {
+		return err
+	}
 	req.Header.Add("Accept", "application/json")
 
 	pushStartResp, err := client.Do(req)
@@ -52,6 +55,9 @@ func checkVIPPollStatus(client *http.Client,
 	VIPPollCheckURL := baseURL + "/api/v0/vipPollCheck"
 
 	req, err := http.NewRequest("GET", VIPPollCheckURL, nil)
+	if err != nil {
+		return false, err
+	}
 	req.Header.Add("Accept", "application/json")
 
 	pollCheckResp, err := client.Do(req)
@@ -118,6 +124,10 @@ func VIPAuthenticateWithToken(
 	reader := bufio.NewReader(os.Stdin)
 	fmt.Print("Enter VIP/OTP code (or wait for VIP push): ")
 	otpText, err := reader.ReadString('\n')
+	if err != nil {
+		logger.Debugf(0, "codeText:  Failure to get string %s", err)
+		return err
+	}
 	otpText = strings.TrimSpace(otpText)
 	//fmt.Println(codeText)
 	logger.Debugf(1, "codeText:  '%s'", otpText)
@@ -131,6 +141,9 @@ func VIPAuthenticateWithToken(
 	form.Add("OTP", otpText)
 	//form.Add("password", string(password[:]))
 	req, err := http.NewRequest("POST", VIPLoginURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
 
 	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")

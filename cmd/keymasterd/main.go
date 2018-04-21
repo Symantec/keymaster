@@ -2271,7 +2271,7 @@ func main() {
 	adminDashboard := newAdminDashboard(realLogger)
 	// Expose the registered metrics via HTTP.
 	http.Handle("/", adminDashboard)
-	http.Handle("/prometheus_metrics", prometheus.Handler())
+	http.Handle("/prometheus_metrics", prometheus.Handler()) //lint:ignore SA1019 TODO: newer prometheus handler
 	http.HandleFunc(secretInjectorPath, runtimeState.secretInjectorHandler)
 
 	serviceMux := http.NewServeMux()
