@@ -151,12 +151,12 @@ func initFileDBSQLite(dbFilename string, currentDB *sql.DB) (*sql.DB, error) {
 func (state *RuntimeState) BackgroundDBCopy(initialSleep time.Duration) {
 	time.Sleep(initialSleep)
 	for {
-		logger.Printf("starting db copy")
+		logger.Debugf(0, "starting db copy")
 		err := copyDBIntoSQLite(state.db, state.cacheDB, "sqlite")
 		if err != nil {
 			logger.Printf("err='%s'", err)
 		} else {
-			logger.Printf("db copy success")
+			logger.Debugf(0, "db copy success")
 		}
 		cleanupDBData(state.db)
 		cleanupDBData(state.cacheDB)

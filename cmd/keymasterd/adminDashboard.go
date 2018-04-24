@@ -10,6 +10,7 @@ import (
 
 type adminDashboardType struct {
 	htmlWriter html.HtmlWriter
+	ready      bool
 }
 
 func newAdminDashboard(htmlWriter html.HtmlWriter) *adminDashboardType {
@@ -33,9 +34,19 @@ func (dashboard *adminDashboardType) ServeHTTP(w http.ResponseWriter,
 	fmt.Fprintln(writer, "</center>")
 	html.WriteHeaderWithRequest(writer, req)
 	fmt.Fprintln(writer, "<h3>")
+	if dashboard.ready {
+		fmt.Fprintln(writer,
+			`Keymaster is <font color="green">ready</font><br>`)
+	} else {
+		fmt.Fprintln(writer, `Keymaster is <font color="red">sealed</font><br>`)
+	}
 	dashboard.htmlWriter.WriteHtml(writer)
 	fmt.Fprintln(writer, "</h3>")
 	fmt.Fprintln(writer, "<hr>")
 	html.WriteFooter(writer)
 	fmt.Fprintln(writer, "</body>")
+}
+
+func (dashboard *adminDashboardType) setReady() {
+	dashboard.ready = true
 }
