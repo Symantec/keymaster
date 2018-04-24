@@ -147,9 +147,11 @@ const secsBetweenCleanup = 30
 const maxAgeU2FVerifySeconds = 30
 
 var (
-	Version          = "No version provided"
-	configFilename   = flag.String("config", "config.yml", "The filename of the configuration")
-	generateConfig   = flag.Bool("generateConfig", false, "Generate new valid configuration")
+	Version        = "No version provided"
+	configFilename = flag.String("config", "/etc/keymaster/config.yml",
+		"The filename of the configuration")
+	generateConfig = flag.Bool("generateConfig", false,
+		"Generate new valid configuration")
 	u2fAppID         = "https://www.example.com:33443"
 	u2fTrustedFacets = []string{}
 
@@ -2361,6 +2363,7 @@ func main() {
 	go func() {
 		time.Sleep(time.Millisecond * 10)
 		healthserver.SetReady()
+		adminDashboard.setReady()
 	}()
 	err = serviceSrv.ListenAndServeTLS(
 		runtimeState.Config.Base.TLSCertFilename,
