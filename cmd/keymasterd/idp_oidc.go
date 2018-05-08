@@ -490,7 +490,7 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 	var accessToken string
 	authHeader := r.Header.Get("Authorization")
 	if authHeader != "" {
-		logger.Printf("%s", authHeader)
+		logger.Debugf(2, "AuthHeader= %s", authHeader)
 		splitHeader := strings.Split(authHeader, " ")
 		if len(splitHeader) == 2 {
 			if splitHeader[0] == "Bearer" {
