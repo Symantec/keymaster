@@ -219,7 +219,7 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	codeToken.Type = "token_endpoint"
 	codeToken.Nonce = r.Form.Get("nonce")
 	// Do nonce complexity check
-	if len(codeToken.Nonce) < 8 && len(codeToken.Nonce) != 0 {
+	if len(codeToken.Nonce) < 6 && len(codeToken.Nonce) != 0 {
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad Nonce value...not enough entropy")
 		return
 	}
@@ -406,7 +406,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	if err != nil {
 		panic(err)
 	}
-	logger.Printf("raw=%s", signedIdToken)
+	logger.Debugf(2, "raw=%s", signedIdToken)
 
 	userinfoToken := userInfoToken{Username: keymasterToken.Username, Scope: keymasterToken.Scope}
 	userinfoToken.Expiration = idToken.Expiration
@@ -485,11 +485,12 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Method for Userinfo Handler")
 		return
 	}
-	logger.Printf("%+v", r)
+	logger.Debugf(2, "userinfo request=%+v", r)
+
 	var accessToken string
 	authHeader := r.Header.Get("Authorization")
 	if authHeader != "" {
-		logger.Printf("%s", authHeader)
+		logger.Debugf(2, "AuthHeader= %s", authHeader)
 		splitHeader := strings.Split(authHeader, " ")
 		if len(splitHeader) == 2 {
 			if splitHeader[0] == "Bearer" {
@@ -579,5 +580,6 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 	w.Header().Set("Content-Type", "application/json")
 	out.WriteTo(w)
 
-	logger.Printf("200 Successful userinfo request %s", b)
+	logger.Printf("200 Successful userinfo request")
+	logger.Debugf(0, " Userinfo response =  %s", b)
 }
