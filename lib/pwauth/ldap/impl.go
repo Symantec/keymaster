@@ -100,6 +100,9 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 		}
 	}
 	if pa.storage != nil {
+		if pa.logger != nil {
+			pa.logger.Printf("Failed to check password against LDAP servers, using local hash db")
+		}
 		ok, hash, err := pa.storage.GetSigned(username, passwordDataType)
 		if err != nil {
 			return false, nil

@@ -1494,7 +1494,7 @@ func (state *RuntimeState) vipPushStartHandler(w http.ResponseWriter, r *http.Re
 
 		return
 	}
-	logger.Printf(" Vip push start authuser=%s", authUser)
+	logger.Debugf(0, "Vip push start authuser=%s", authUser)
 	vipPushCookie, err := r.Cookie(vipTransactionCookieName)
 	if err != nil {
 		logger.Printf("%v", err)
@@ -1864,7 +1864,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	logger.Printf("signResponse: %+v", signResp)
+	logger.Debugf(1, "signResponse: %+v", signResp)
 
 	profile, ok, _, err := state.LoadUserProfile(authUser)
 	if err != nil {
@@ -1904,7 +1904,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 		if authErr == nil {
 			metricLogAuthOperation(getClientType(r), proto.AuthTypeU2F, true)
 
-			logger.Printf("newCounter: %d", newCounter)
+			logger.Debugf(0, "newCounter: %d", newCounter)
 			//counter = newCounter
 			u2fReg.Counter = newCounter
 			//profile.U2fAuthData[i].Counter = newCounter
