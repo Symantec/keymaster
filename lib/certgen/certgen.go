@@ -53,6 +53,12 @@ func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer,
 	currentEpoch := uint64(time.Now().Unix())
 	expireEpoch := currentEpoch + uint64(duration.Seconds())
 
+	nBig, err := rand.Int(rand.Reader, big.NewInt(0xFFFFFFFF))
+	if err != nil {
+		return "", nil, err
+	}
+	serial := (currentEpoch << 32) | nBig.Uint64()
+
 	// The values of the permissions are taken from the default values used
 	// by ssh-keygen
 	cert := ssh.Certificate{
@@ -63,6 +69,7 @@ func GenSSHCertFileString(username string, userPubKey string, signer ssh.Signer,
 		KeyId:           keyIdentity,
 		ValidAfter:      currentEpoch,
 		ValidBefore:     expireEpoch,
+		Serial:          serial,
 		Permissions: ssh.Permissions{Extensions: map[string]string{
 			"permit-X11-forwarding":   "",
 			"permit-agent-forwarding": "",
