@@ -49,6 +49,22 @@ const validateRequestTemplate = `<?xml version="1.0" encoding="UTF-8" ?> <SOAP-E
         </SOAP-ENV:Body>
 </SOAP-ENV:Envelope>`
 
+const validateResponseTemplate2 = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:vip="https://schemas.symantec.com/vip/2011/04/vipuserservices">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <vip:AuthenticateCredentialsRequest>
+         <vip:requestId>{{.RequestId}}</vip:requestId>
+         <vip:credentials>
+            <vip:credentialId>{{.TokenId}}</vip:credentialId>
+            <vip:credentialType>STANDARD_OTP</vip:credentialType>
+         </vip:credentials>
+         <vip:otpAuthData>
+         <vip:otp>{{printf "%06d" .OTP}}</vip:otp>
+         </vip:otpAuthData>
+      </vip:AuthenticateCredentialsRequest>
+   </soapenv:Body>
+</soapenv:Envelope>`
+
 type vipResponseStatus struct {
 	ReasonCode    string `xml:"ReasonCode,omitempty" json:"ReasonCode,omitempty"`
 	StatusMessage string `xml:"StatusMessage,omitempty" json:"StatusMessage,omitempty"`
@@ -64,6 +80,23 @@ type validateResponseBody struct {
 	XMLName xml.Name `xml:"Envelope"`
 	Body    struct {
 		VipValidateResponse vipValidateResponse `xml:"ValidateResponse"`
+	}
+}
+
+type authenticateCredentialsResponse struct {
+	RequestId      string `xml:"requestId"`
+	Status         string `xml:"status"`
+	StatusMessage  string `xml:"statusMessage,omitempty"`
+	CredentialId   string `xml:"credentialId,omitempty"`
+	CredentialType string `xml:"credentialType,omitempty"`
+	Detail         string `xml:"detail,omitempty"`
+	DetailMessage  string `xml:"detailMessage,omitempty"`
+}
+
+type authenticateCredentialsResponseBody struct {
+	XMLName xml.Name `xml:"Envelope"`
+	Body    struct {
+		AuthenticateCredentialsResponse authenticateCredentialsResponse `xml:"AuthenticateCredentialsResponse"`
 	}
 }
 
@@ -391,8 +424,42 @@ func genNewRequestID() string {
 	return nBig.String()
 }
 
-// The response string is only to have some sort of testing
 func (client *Client) VerifySingleToken(tokenID string, tokenValue int) (bool, error) {
+	requestID := genNewRequestID()
+	validateRequest := vipValidateRequest{RequestId: requestID,
+		TokenId: tokenID, OTP: tokenValue}
+	tmpl, err := template.New("validate").Parse(validateResponseTemplate2)
+	if err != nil {
+		panic(err)
+	}
+	var requestBuffer bytes.Buffer
+
+	//err = tmpl.Execute(os.Stdout, validateRequest)
+	err = tmpl.Execute(&requestBuffer, validateRequest)
+	if err != nil {
+		panic(err)
+	}
+	responseBytes, err := client.postBytesUserServicesAuthentication(requestBuffer.Bytes())
+	if err != nil {
+		return false, err
+	}
+	var response authenticateCredentialsResponseBody
+	err = xml.Unmarshal(responseBytes, &response)
+	if err != nil {
+		fmt.Print(err)
+	}
+	fmt.Printf("%+v", response)
+	switch response.Body.AuthenticateCredentialsResponse.Status {
+	case "0000":
+		return true, nil
+	default:
+		return false, nil
+	}
+	panic("should never have reached this point")
+}
+
+// The response string is only to have some sort of testing
+func (client *Client) VerifySingleTokenOld(tokenID string, tokenValue int) (bool, error) {
 	requestID := genNewRequestID()
 	validateRequest := vipValidateRequest{RequestId: requestID,
 		TokenId: tokenID, OTP: tokenValue}

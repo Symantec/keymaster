@@ -172,7 +172,7 @@ func TestVerifySingleTokenFail(t *testing.T) {
 	}
 	client.RootCAs = certPool
 
-	ok, err = client.VerifySingleToken("tokenID", 123456)
+	ok, err = client.VerifySingleTokenOld("tokenID", 123456)
 	if err != nil {
 		t.Fatal(err)
 	}
