@@ -93,17 +93,17 @@ dcxWzhBDbzeIV9SvcTwLx/ghQg==
 
 // These two are actual working values for the validate api
 const exampleResponseValueTextFail = `<?xml version="1.0" encoding="UTF-8"?>
-<Envelope xmlns="http://schemas.xmlsoap.org/soap/envelope/">
-    <Body>
-        <ValidateResponse RequestId="CDCE1500" Version="2.0" xmlns="http://www.verisign.com/2006/08/vipservice">
-            <Status>
-                <ReasonCode>49B5</ReasonCode>
-                <StatusMessage>Failed with an invalid OTP</StatusMessage>
-            </Status>
-        </ValidateResponse>
-    </Body>
-</Envelope>`
-
+<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/">
+  <S:Body>
+    <AuthenticateCredentialsResponse xmlns="https://schemas.symantec.com/vip/2011/04/vipuserservices">
+      <requestId>1234567</requestId>
+      <status>6009</status>
+      <statusMessage>Authentication failed.</statusMessage>
+      <detail>49B5</detail>
+      <detailMessage>Failed with an invalid OTP</detailMessage>
+    </AuthenticateCredentialsResponse>
+  </S:Body>
+</S:Envelope>`
 const exampleRequestValueText = `<?xml version="1.0" encoding="UTF-8" ?> <SOAP-ENV:Envelope
         xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"
         xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
@@ -164,7 +164,7 @@ func TestVerifySingleTokenFail(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client.VipServicesURL = localHttpsTarget + "validate/fail"
+	client.VipUserServiceAuthenticationURL = localHttpsTarget + "validate/fail"
 	certPool := x509.NewCertPool()
 	ok := certPool.AppendCertsFromPEM([]byte(rootCAPem))
 	if !ok {
@@ -172,7 +172,7 @@ func TestVerifySingleTokenFail(t *testing.T) {
 	}
 	client.RootCAs = certPool
 
-	ok, err = client.VerifySingleTokenOld("tokenID", 123456)
+	ok, err = client.VerifySingleToken("tokenID", 123456)
 	if err != nil {
 		t.Fatal(err)
 	}
