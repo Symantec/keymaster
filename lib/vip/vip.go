@@ -34,36 +34,36 @@ type validateRequestBody struct {
 	}
 }
 
-const validateRequestTemplate = `<?xml version="1.0" encoding="UTF-8" ?> <SOAP-ENV:Envelope
-        xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/"
-        xmlns:SOAP-ENC="http://schemas.xmlsoap.org/soap/encoding/"
-        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xmlns:xsd="http://www.w3.org/2001/XMLSchema"
-        xmlns:ns3="http://www.w3.org/2000/09/xmldsig#"
-        xmlns:ns1="http://www.verisign.com/2006/08/vipservice">
-        <SOAP-ENV:Body>
-                <ns1:Validate Version="2.0" Id="{{.RequestId}}"> 
-                     <ns1:TokenId>{{.TokenId}}</ns1:TokenId> 
-                     <ns1:OTP>{{printf "%06d" .OTP}}</ns1:OTP>
-                </ns1:Validate>
-        </SOAP-ENV:Body>
-</SOAP-ENV:Envelope>`
+const validateRequestTemplate = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:vip="https://schemas.symantec.com/vip/2011/04/vipuserservices">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <vip:AuthenticateCredentialsRequest>
+         <vip:requestId>{{.RequestId}}</vip:requestId>
+         <vip:credentials>
+            <vip:credentialId>{{.TokenId}}</vip:credentialId>
+            <vip:credentialType>STANDARD_OTP</vip:credentialType>
+         </vip:credentials>
+         <vip:otpAuthData>
+         <vip:otp>{{printf "%06d" .OTP}}</vip:otp>
+         </vip:otpAuthData>
+      </vip:AuthenticateCredentialsRequest>
+   </soapenv:Body>
+</soapenv:Envelope>`
 
-type vipResponseStatus struct {
-	ReasonCode    string `xml:"ReasonCode,omitempty" json:"ReasonCode,omitempty"`
-	StatusMessage string `xml:"StatusMessage,omitempty" json:"StatusMessage,omitempty"`
+type authenticateCredentialsResponse struct {
+	RequestId      string `xml:"requestId"`
+	Status         string `xml:"status"`
+	StatusMessage  string `xml:"statusMessage,omitempty"`
+	CredentialId   string `xml:"credentialId,omitempty"`
+	CredentialType string `xml:"credentialType,omitempty"`
+	Detail         string `xml:"detail,omitempty"`
+	DetailMessage  string `xml:"detailMessage,omitempty"`
 }
 
-type vipValidateResponse struct {
-	RequestId string            `xml:"RequestId,attr"`
-	Version   string            `xml:"Version,attr"`
-	Status    vipResponseStatus `xml:"Status"`
-}
-
-type validateResponseBody struct {
+type authenticateCredentialsResponseBody struct {
 	XMLName xml.Name `xml:"Envelope"`
 	Body    struct {
-		VipValidateResponse vipValidateResponse `xml:"ValidateResponse"`
+		AuthenticateCredentialsResponse authenticateCredentialsResponse `xml:"AuthenticateCredentialsResponse"`
 	}
 }
 
@@ -310,7 +310,6 @@ successful poll responst
 
 type Client struct {
 	Cert                            tls.Certificate
-	VipServicesURL                  string
 	VipUserServicesURL              string
 	VipUserServiceAuthenticationURL string
 	RootCAs                         *x509.CertPool
@@ -327,7 +326,6 @@ func NewClient(certPEMBlock, keyPEMBlock []byte) (client Client, err error) {
 		return client, err
 	}
 	//This is the production url for vipservices
-	client.VipServicesURL = "https://vipservices-auth.verisign.com/val/soap"
 	client.VipUserServicesURL = "https://userservices-auth.vip.symantec.com/vipuserservices/QueryService_1_8"
 	//https://userservices-auth.vip.symantec.com/vipuserservices/QueryService_1_8
 	client.VipUserServiceAuthenticationURL = "https://userservices-auth.vip.symantec.com/vipuserservices/AuthenticationService_1_8"
@@ -371,10 +369,6 @@ func (client *Client) postBytesVip(data []byte, targetURL string, contentType st
 	return ioutil.ReadAll(postResponse.Body)
 }
 
-func (client *Client) postBytesVipServices(data []byte) ([]byte, error) {
-	return client.postBytesVip(data, client.VipServicesURL, "application/xml")
-}
-
 func (client *Client) postBytesUserServices(data []byte) ([]byte, error) {
 	return client.postBytesVip(data, client.VipUserServicesURL, "text/xml")
 }
@@ -391,7 +385,6 @@ func genNewRequestID() string {
 	return nBig.String()
 }
 
-// The response string is only to have some sort of testing
 func (client *Client) VerifySingleToken(tokenID string, tokenValue int) (bool, error) {
 	requestID := genNewRequestID()
 	validateRequest := vipValidateRequest{RequestId: requestID,
@@ -407,26 +400,17 @@ func (client *Client) VerifySingleToken(tokenID string, tokenValue int) (bool, e
 	if err != nil {
 		panic(err)
 	}
-	//fmt.Printf("\nbuffer='%s'\n", requestBuffer.String())
-	responseBytes, err := client.postBytesVipServices(requestBuffer.Bytes())
+	responseBytes, err := client.postBytesUserServicesAuthentication(requestBuffer.Bytes())
 	if err != nil {
 		return false, err
 	}
-	var response validateResponseBody
+	var response authenticateCredentialsResponseBody
 	err = xml.Unmarshal(responseBytes, &response)
 	if err != nil {
 		fmt.Print(err)
 	}
 	//fmt.Printf("%+v", response)
-	/*
-		output, err := xml.MarshalIndent(&response, " ", "    ")
-		if err != nil {
-			fmt.Printf("error: %v\n", err)
-		}
-
-		fmt.Println(output)
-	*/
-	switch response.Body.VipValidateResponse.Status.ReasonCode {
+	switch response.Body.AuthenticateCredentialsResponse.Status {
 	case "0000":
 		return true, nil
 	default:
