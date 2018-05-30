@@ -34,7 +34,7 @@ type validateRequestBody struct {
 	}
 }
 
-const validateResponseTemplate2 = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:vip="https://schemas.symantec.com/vip/2011/04/vipuserservices">
+const validateResponseTemplate = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:vip="https://schemas.symantec.com/vip/2011/04/vipuserservices">
    <soapenv:Header/>
    <soapenv:Body>
       <vip:AuthenticateCredentialsRequest>
@@ -389,7 +389,7 @@ func (client *Client) VerifySingleToken(tokenID string, tokenValue int) (bool, e
 	requestID := genNewRequestID()
 	validateRequest := vipValidateRequest{RequestId: requestID,
 		TokenId: tokenID, OTP: tokenValue}
-	tmpl, err := template.New("validate").Parse(validateResponseTemplate2)
+	tmpl, err := template.New("validate").Parse(validateResponseTemplate)
 	if err != nil {
 		panic(err)
 	}
