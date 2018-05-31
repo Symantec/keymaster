@@ -3,6 +3,7 @@ package monitord
 import (
 	"crypto/x509"
 	"io"
+	"sync"
 
 	"github.com/Symantec/Dominator/lib/log"
 	"golang.org/x/crypto/ssh"
@@ -39,6 +40,8 @@ type Monitor struct {
 	WebLoginChannel             <-chan string
 	X509RawCertChannel          <-chan []byte
 	X509CertChannel             <-chan *x509.Certificate
+	mutex                       sync.RWMutex     // Lock all below.
+	keymasterStatus             map[string]error // Key: IP address.
 }
 
 func New(keymasterServerHostname string, keymasterServerPortNum uint,
