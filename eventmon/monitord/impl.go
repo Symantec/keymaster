@@ -102,7 +102,9 @@ func (m *Monitor) updateNotifierList(logger log.Logger) {
 		logger.Printf("Deleting old keymaster server: %s\n", addr)
 		m.closers[addr] <- struct{}{}
 		delete(m.closers, addr)
+		m.mutex.Lock()
 		delete(m.keymasterStatus, addr)
+		m.mutex.Unlock()
 	}
 }
 
@@ -239,6 +241,7 @@ func (m *Monitor) writeHtml(writer io.Writer) {
 	fmt.Fprintln(writer, "    <th>Status</th>")
 	fmt.Fprintln(writer, "  </tr>")
 	m.mutex.RLock()
+	defer m.mutex.RUnlock()
 	addrs := make([]string, 0, len(m.keymasterStatus))
 	for addr := range m.keymasterStatus {
 		addrs = append(addrs, addr)
@@ -259,7 +262,6 @@ func (m *Monitor) writeHtml(writer io.Writer) {
 		fmt.Fprintf(writer, "    <td>%s</td>\n", status)
 		fmt.Fprintln(writer, "  </tr>")
 	}
-	defer m.mutex.RUnlock()
 	fmt.Fprintln(writer, "</table>")
 }
 
