@@ -15,6 +15,7 @@ import (
 
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/prefixlogger"
+	"github.com/Symantec/Dominator/lib/verstr"
 	"github.com/Symantec/keymaster/proto/eventmon"
 	"golang.org/x/crypto/ssh"
 )
@@ -56,6 +57,7 @@ func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 		WebLoginChannel:             webLoginChannel,
 		X509RawCertChannel:          x509RawCertChannel,
 		X509CertChannel:             x509CertChannel,
+		keymasterStatus:             make(map[string]error),
 	}
 	go monitor.monitorForever(logger)
 	return monitor, nil
@@ -100,11 +102,19 @@ func (m *Monitor) updateNotifierList(logger log.Logger) {
 		logger.Printf("Deleting old keymaster server: %s\n", addr)
 		m.closers[addr] <- struct{}{}
 		delete(m.closers, addr)
+		delete(m.keymasterStatus, addr)
 	}
+}
+
+func (m *Monitor) setKeymasterStatus(addr string, err error) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	m.keymasterStatus[addr] = err
 }
 
 func (m *Monitor) startMonitoring(ip string, closeChannel <-chan struct{},
 	logger log.Logger) {
+	m.setKeymasterStatus(ip, errors.New("not yet probed"))
 	addr := fmt.Sprintf("%s:%d", ip, m.keymasterServerPortNum)
 	reportedNotReady := false
 	for ; ; time.Sleep(time.Second) {
@@ -112,6 +122,7 @@ func (m *Monitor) startMonitoring(ip string, closeChannel <-chan struct{},
 			return
 		}
 		conn, err := m.dialAndConnect(addr)
+		m.setKeymasterStatus(ip, err)
 		if err != nil {
 			if strings.Contains(err.Error(), "connection refused") {
 				reportedNotReady = false
@@ -221,6 +232,35 @@ func receiveV0(reader io.Reader) (eventmon.EventV0, error) {
 }
 
 func (m *Monitor) writeHtml(writer io.Writer) {
+	fmt.Fprintln(writer, "Keymasters:<br>")
+	fmt.Fprintln(writer, `<table border="1">`)
+	fmt.Fprintln(writer, "  <tr>")
+	fmt.Fprintln(writer, "    <th>IP Addr</th>")
+	fmt.Fprintln(writer, "    <th>Status</th>")
+	fmt.Fprintln(writer, "  </tr>")
+	m.mutex.RLock()
+	addrs := make([]string, 0, len(m.keymasterStatus))
+	for addr := range m.keymasterStatus {
+		addrs = append(addrs, addr)
+	}
+	verstr.Sort(addrs)
+	for _, addr := range addrs {
+		err := m.keymasterStatus[addr]
+		var status string
+		if err == nil {
+			status = `<font color="green">ready</font>`
+		} else if err == ErrorKeymasterDaemonNotReady {
+			status = `<font color="red">sealed</font>`
+		} else {
+			status = err.Error()
+		}
+		fmt.Fprintln(writer, "  <tr>")
+		fmt.Fprintf(writer, "    <td>%s</td>\n", addr)
+		fmt.Fprintf(writer, "    <td>%s</td>\n", status)
+		fmt.Fprintln(writer, "  </tr>")
+	}
+	defer m.mutex.RUnlock()
+	fmt.Fprintln(writer, "</table>")
 }
 
 func (m *Monitor) notify(event eventmon.EventV0, logger log.Logger) {
