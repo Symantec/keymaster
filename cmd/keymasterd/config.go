@@ -377,6 +377,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		if err != nil {
 			return runtimeState, err
 		}
+		logger.Debugf(1, "passwordChecker= %+v", runtimeState.passwordChecker)
 	}
 
 	logger.Debugf(1, "End of config initialization: %+v", runtimeState)
