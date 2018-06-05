@@ -1,5 +1,9 @@
 package pwauth
 
+import (
+	"github.com/Symantec/keymaster/lib/simplestorage"
+)
+
 // PasswordAuthenticator is an interface type that defines how to authenticate a
 // user with a username and password.
 type PasswordAuthenticator interface {
@@ -7,4 +11,5 @@ type PasswordAuthenticator interface {
 	// and password. It returns whether the authentication succeeded and an
 	// error.
 	PasswordAuthenticate(username string, password []byte) (bool, error)
+	UpdateStorage(storage simplestorage.SimpleStore) error
 }
