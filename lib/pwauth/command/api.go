@@ -2,6 +2,7 @@ package command
 
 import (
 	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/keymaster/lib/simplestorage"
 )
 
 type PasswordAuthenticator struct {
@@ -30,4 +31,8 @@ func New(command string, args []string, logger log.Logger) (
 func (pa *PasswordAuthenticator) PasswordAuthenticate(username string,
 	password []byte) (bool, error) {
 	return pa.passwordAuthenticate(username, password)
+}
+
+func (pa *PasswordAuthenticator) UpdateStorage(storage simplestorage.SimpleStore) error {
+	return nil
 }

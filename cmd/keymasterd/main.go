@@ -2388,6 +2388,14 @@ func main() {
 	if isReady != true {
 		panic("got bad signer ready data")
 	}
+
+	if !runtimeState.Config.Ldap.DisablePasswordCache {
+		err = runtimeState.passwordChecker.UpdateStorage(&runtimeState)
+		if err != nil {
+			logger.Fatalf("Cannot update password checker")
+		}
+	}
+
 	serviceTLSConfig := cfg
 	serviceTLSConfig.ClientAuth = tls.RequestClientCert
 

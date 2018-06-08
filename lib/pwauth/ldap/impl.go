@@ -2,7 +2,7 @@ package ldap
 
 import (
 	"crypto/x509"
-	//"errors"
+	"errors"
 	"fmt"
 	"time"
 
@@ -45,6 +45,10 @@ func convertToBindDN(username string, bind_pattern string) string {
 }
 
 func (pa *PasswordAuthenticator) updateOrDeletePasswordHash(valid bool, username string, password []byte) error {
+	if pa.storage == nil {
+		return errors.New("No db for updating password")
+	}
+
 	if valid {
 		hash, err := authutil.Argon2MakeNewHash(password)
 		if err != nil {
@@ -54,24 +58,21 @@ func (pa *PasswordAuthenticator) updateOrDeletePasswordHash(valid bool, username
 			return nil
 		}
 		Expiration := time.Now().Add(pa.expirationDuration)
-		if pa.storage != nil {
-			err := pa.storage.UpsertSigned(username, passwordDataType, Expiration.Unix(), hash)
-			if err != nil && pa.logger != nil {
-				pa.logger.Debugf(0, "Failure inserting password into db for user %s", username)
-			}
+		err = pa.storage.UpsertSigned(username, passwordDataType, Expiration.Unix(), hash)
+		if err != nil && pa.logger != nil {
+			pa.logger.Debugf(0, "Failure inserting password into db for user %s", username)
 		}
+		return err
 
 	} else {
-		if pa.storage != nil {
-			ok, hash, err := pa.storage.GetSigned(username, passwordDataType)
-			if err != nil {
-				return nil
-			}
-			if ok {
-				err := authutil.Argon2CompareHashAndPassword(hash, password)
-				if err == nil {
-					pa.storage.DeleteSigned(username, passwordDataType)
-				}
+		ok, hash, err := pa.storage.GetSigned(username, passwordDataType)
+		if err != nil {
+			return nil
+		}
+		if ok {
+			err := authutil.Argon2CompareHashAndPassword(hash, password)
+			if err == nil {
+				pa.storage.DeleteSigned(username, passwordDataType)
 			}
 		}
 	}

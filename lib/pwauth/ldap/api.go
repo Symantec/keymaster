@@ -30,6 +30,11 @@ func New(url []string, bindPattern []string, timeoutSecs uint, rootCAs *x509.Cer
 	return newAuthenticator(url, bindPattern, timeoutSecs, rootCAs, storage, logger)
 }
 
+func (pa *PasswordAuthenticator) UpdateStorage(storage simplestorage.SimpleStore) error {
+	pa.storage = storage
+	return nil
+}
+
 // PasswordAuthenticate will authenticate a user using the provided username and
 // password. The password is provided on the standard input of the
 // authentication command.
