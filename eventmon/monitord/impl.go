@@ -39,10 +39,10 @@ func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 	x509RawCertChannel := make(chan []byte, bufferLength)
 	x509CertChannel := make(chan *x509.Certificate, bufferLength)
 	sysLog, err := syslog.New(syslog.LOG_NOTICE|syslog.LOG_AUTHPRIV, "keymaster")
-        if err != nil {
-                logger.Fatalf("System log failed")
-        }
-        defer sysLog.Close()
+	if err != nil {
+		logger.Fatalf("System log failed")
+	}
+	defer sysLog.Close()
 	monitor := &Monitor{
 		keymasterServerHostname: keymasterServerHostname,
 		keymasterServerPortNum:  keymasterServerPortNum,
@@ -64,7 +64,7 @@ func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 		X509RawCertChannel:          x509RawCertChannel,
 		X509CertChannel:             x509CertChannel,
 		keymasterStatus:             make(map[string]error),
-		sysLog:			     sysLog,
+		sysLog:                      sysLog,
 	}
 	go monitor.monitorForever(logger)
 	return monitor, nil
@@ -182,7 +182,7 @@ func (m *Monitor) connect(rawConn net.Conn) (net.Conn, error) {
 	}
 	conn := tls.Client(rawConn,
 		&tls.Config{ServerName: m.keymasterServerHostname})
-	
+
 	if err := conn.Handshake(); err != nil {
 		return nil, err
 	}
@@ -317,11 +317,11 @@ func (m *Monitor) notify(event eventmon.EventV0, ip string, logger log.Logger) {
 		}
 		if pubKey, err := ssh.ParsePublicKey(event.CertData); err != nil {
 			logger.Println(err)
-			m.sysLog.Write([]byte(fmt.Sprintf("%s: " + err.Error(), ip)))
+			m.sysLog.Write([]byte(fmt.Sprintf("%s: "+err.Error(), ip)))
 		} else if sshCert, ok := pubKey.(*ssh.Certificate); !ok {
 			logger.Println("SSH public key is not a certificate")
 			m.sysLog.Write([]byte(fmt.Sprintf("%s: SSH public key is not a certificate")))
-			
+
 		} else {
 			switch len(sshCert.ValidPrincipals) {
 			case 0:
@@ -331,7 +331,7 @@ func (m *Monitor) notify(event eventmon.EventV0, ip string, logger log.Logger) {
 			case 1:
 				logger.Printf("Received SSH certificate for: %s",
 					sshCert.ValidPrincipals[0])
-				m.sysLog.Write([]byte(fmt.Sprintf("%s: Received SSH certificate for: %s", ip, sshCert.ValidPrincipals[0])))		
+				m.sysLog.Write([]byte(fmt.Sprintf("%s: Received SSH certificate for: %s", ip, sshCert.ValidPrincipals[0])))
 			default:
 				logger.Printf("Received SSH certificate for: %s",
 					sshCert.ValidPrincipals)
