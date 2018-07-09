@@ -18,11 +18,14 @@ import (
 	"github.com/Symantec/Dominator/lib/log/prefixlogger"
 	"github.com/Symantec/Dominator/lib/verstr"
 	"github.com/Symantec/keymaster/proto/eventmon"
+	//"github.com/Symantec/keymaster/eventmon/tee_logger"
 	"golang.org/x/crypto/ssh"
 )
 
 const (
 	bufferLength = 16
+	priority = syslog.LOG_AUTHPRIV
+	log_name = "keymaster"
 )
 
 var (
@@ -38,7 +41,7 @@ func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 	webLoginChannel := make(chan string, bufferLength)
 	x509RawCertChannel := make(chan []byte, bufferLength)
 	x509CertChannel := make(chan *x509.Certificate, bufferLength)
-	sysLog, err := syslog.New(syslog.LOG_NOTICE|syslog.LOG_AUTHPRIV, "keymaster")
+	sysLog, err := syslog.New(priority, log_name)
 	if err != nil {
 		logger.Fatalf("System log failed")
 	}
@@ -64,7 +67,10 @@ func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 		X509RawCertChannel:          x509RawCertChannel,
 		X509CertChannel:             x509CertChannel,
 		keymasterStatus:             make(map[string]error),
-		sysLog:                      sysLog,
+		TeeLogger:	 	     TeeLogger{
+					         one: sysLog,
+					 	 two: logger,
+					     },
 	}
 	go monitor.monitorForever(logger)
 	return monitor, nil
@@ -182,7 +188,7 @@ func (m *Monitor) connect(rawConn net.Conn) (net.Conn, error) {
 	}
 	conn := tls.Client(rawConn,
 		&tls.Config{ServerName: m.keymasterServerHostname})
-
+	
 	if err := conn.Handshake(); err != nil {
 		return nil, err
 	}
@@ -290,7 +296,7 @@ func (m *Monitor) notify(event eventmon.EventV0, ip string, logger log.Logger) {
 			}
 		}
 		logger.Printf("User %s authentication: %s\n", authType, event.Username)
-		m.sysLog.Write([]byte(fmt.Sprintf("%s: User %s authentication: %s", ip, authType, event.Username)))
+		m.TeeLogger.one.Notice(fmt.Sprintf("%s: User %s authentication: %s", ip, authType, event.Username))
 		select { // Non-blocking notification.
 		case m.authChannel <- AuthInfo{
 			AuthType:    event.AuthType,
@@ -302,7 +308,7 @@ func (m *Monitor) notify(event eventmon.EventV0, ip string, logger log.Logger) {
 	case eventmon.EventTypeServiceProviderLogin:
 		logger.Printf("User %s logged into service: %s\n",
 			event.Username, event.ServiceProviderUrl)
-		m.sysLog.Write([]byte(fmt.Sprintf("%s: User %s logged into service: %s", ip, event.Username, event.ServiceProviderUrl)))
+		m.TeeLogger.one.Notice(fmt.Sprintf("%s: User %s logged into service: %s", ip, event.Username, event.ServiceProviderUrl))
 		select { // Non-blocking notification.
 		case m.serviceProviderLoginChannel <- SPLoginInfo{
 			URL:      event.ServiceProviderUrl,
@@ -317,25 +323,25 @@ func (m *Monitor) notify(event eventmon.EventV0, ip string, logger log.Logger) {
 		}
 		if pubKey, err := ssh.ParsePublicKey(event.CertData); err != nil {
 			logger.Println(err)
-			m.sysLog.Write([]byte(fmt.Sprintf("%s: "+err.Error(), ip)))
+			m.TeeLogger.one.Notice(fmt.Sprintf("%s: " + err.Error(), ip))
 		} else if sshCert, ok := pubKey.(*ssh.Certificate); !ok {
 			logger.Println("SSH public key is not a certificate")
-			m.sysLog.Write([]byte(fmt.Sprintf("%s: SSH public key is not a certificate")))
-
+			m.TeeLogger.one.Notice(fmt.Sprintf("%s: SSH public key is not a certificate"))
+			
 		} else {
 			switch len(sshCert.ValidPrincipals) {
 			case 0:
 				logger.Println(
 					"Received SSH certificate with no valid principals")
-				m.sysLog.Write([]byte(fmt.Sprintf("%s: Received SSH certificate with no valid principals", ip)))
+				m.TeeLogger.one.Notice(fmt.Sprintf("%s: Received SSH certificate with no valid principals", ip))
 			case 1:
 				logger.Printf("Received SSH certificate for: %s",
 					sshCert.ValidPrincipals[0])
-				m.sysLog.Write([]byte(fmt.Sprintf("%s: Received SSH certificate for: %s", ip, sshCert.ValidPrincipals[0])))
+				m.TeeLogger.one.Notice(fmt.Sprintf("%s: Received SSH certificate for: %s", ip, sshCert.ValidPrincipals[0]))		
 			default:
 				logger.Printf("Received SSH certificate for: %s",
 					sshCert.ValidPrincipals)
-				m.sysLog.Write([]byte(fmt.Sprintf("%s: Received SSH certificate for: %s", ip, sshCert.ValidPrincipals)))
+				m.TeeLogger.one.Notice(fmt.Sprintf("%s: Received SSH certificate for: %s", ip, sshCert.ValidPrincipals))
 			}
 			select { // Non-blocking notification.
 			case m.sshCertChannel <- sshCert:
@@ -344,7 +350,7 @@ func (m *Monitor) notify(event eventmon.EventV0, ip string, logger log.Logger) {
 		}
 	case eventmon.EventTypeWebLogin:
 		logger.Printf("Web login for: %s\n", event.Username)
-		m.sysLog.Write([]byte(fmt.Sprintf("%s: Web login for: %s", ip, event.Username)))
+		m.TeeLogger.one.Notice(fmt.Sprintf("%s: Web login for: %s", ip, event.Username))
 		select { // Non-blocking notification.
 		case m.webLoginChannel <- event.Username:
 		default:
@@ -359,7 +365,7 @@ func (m *Monitor) notify(event eventmon.EventV0, ip string, logger log.Logger) {
 		} else {
 			logger.Printf("Received X509 certificate for: %s\n",
 				x509Cert.Subject.CommonName)
-			m.sysLog.Write([]byte(fmt.Sprintf("%s: Received X509 certificate for: %s", ip, x509Cert.Subject.CommonName)))
+			m.TeeLogger.one.Notice(fmt.Sprintf("%s: Received X509 certificate for: %s", ip, x509Cert.Subject.CommonName))
 			select { // Non-blocking notification.
 			case m.x509CertChannel <- x509Cert:
 			default:
@@ -367,6 +373,6 @@ func (m *Monitor) notify(event eventmon.EventV0, ip string, logger log.Logger) {
 		}
 	default:
 		logger.Printf("Invalid event type: %s\n", event.Type)
-		m.sysLog.Write([]byte(fmt.Sprintf("%s: Invalid event type: %s", ip, event.Type)))
+		m.TeeLogger.one.Notice(fmt.Sprintf("%s: Invalid event type: %s", ip, event.Type))
 	}
 }
