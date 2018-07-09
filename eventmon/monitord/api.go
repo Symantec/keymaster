@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/Symantec/Dominator/lib/log"
-//	"github.com/Symantec/keymaster/eventmon/tee_logger"
 	"golang.org/x/crypto/ssh"
 	"log/syslog"
 )

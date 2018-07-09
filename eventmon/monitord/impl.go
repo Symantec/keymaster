@@ -18,7 +18,6 @@ import (
 	"github.com/Symantec/Dominator/lib/log/prefixlogger"
 	"github.com/Symantec/Dominator/lib/verstr"
 	"github.com/Symantec/keymaster/proto/eventmon"
-	//"github.com/Symantec/keymaster/eventmon/tee_logger"
 	"golang.org/x/crypto/ssh"
 )
 
