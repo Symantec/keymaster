@@ -7,7 +7,6 @@ import (
 
 	"github.com/Symantec/Dominator/lib/log"
 	"golang.org/x/crypto/ssh"
-	"log/syslog"
 )
 
 type AuthInfo struct {
@@ -19,11 +18,6 @@ type AuthInfo struct {
 type SPLoginInfo struct {
 	URL      string
 	Username string
-}
-
-type TeeLogger struct {
-	one	 *syslog.Writer
-	two	 log.Logger
 }
 
 type Monitor struct {
@@ -48,7 +42,6 @@ type Monitor struct {
 	X509CertChannel             <-chan *x509.Certificate
 	mutex                       sync.RWMutex     // Lock all below.
 	keymasterStatus             map[string]error // Key: IP address.
-	TeeLogger
 }
 
 func New(keymasterServerHostname string, keymasterServerPortNum uint,
