@@ -1,0 +1,10 @@
+[DEFAULT]
+client_id = something
+client_secret = something2
+authorization_endpoint = https://example.com/authorize
+token_endpoint = https://example.com/token
+userinfo_endpoint = https://example.com/userinfo
+redirect_uri = https://<yourwebsite>/callback
+jwt_secrets = secret,secret2
+
+
