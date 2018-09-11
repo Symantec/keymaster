@@ -5,6 +5,7 @@ authorization_endpoint = https://example.com/authorize
 token_endpoint = https://example.com/token
 userinfo_endpoint = https://example.com/userinfo
 redirect_uri = https://<yourwebsite>/callback
+base_uri = https://<yourwebsite>
 jwt_secrets = secret,secret2
 
 
