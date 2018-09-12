@@ -27,18 +27,29 @@ token_endpoint = config['DEFAULT']['token_endpoint']
 userinfo_endpoint = config['DEFAULT']['userinfo_endpoint']
 redirect_uri = config['DEFAULT']['redirect_uri']
 base_uri = config['DEFAULT']['base_uri']
+scope = config['DEFAULT']['scope']
 jwt_secrets = config['DEFAULT']['jwt_secrets'].split(',')
 
 algorithm = 'HS256'
-jwt_cookie_key = 'jwt_token'
 
 oauth_token = "oauth_token"
 oauth_state = "oauth_state"
 oauth_token_key = base_uri+'/'+oauth_token
 oauth_state_key = base_uri+'/'+oauth_state
 
+jwt_keys = [
+    "jti",
+    "iss",
+    "aud",
+    "exp",
+    "iat",
+    "nbf",
+    oauth_token_key,
+    oauth_state_key
+]
 
-def JWT(
+
+def jwt_params(
         oauth_token=None,
         oauth_state=None,
         sub=None,
@@ -135,32 +146,44 @@ def get_jwt_token(cookies, key):
     return {}
 
 
-@app.route("/")
-def index():
+# This is written as a callback to accomodate non-flask usecases
+# Flask users may consider adapting this to an @app.before_request function.
+def with_user(callback):
     """
-    If the user has no valid auth token:
-        redirect the user/resource owner to the keymaster.
-    Otherwise:
-        the user is authenticated.
+    Run the given request handler, passing it the user.
+    If the user has no valid auth token, then
+    redirect the user/resource owner to the keymaster
+    without invoking the given request handler.
     """
     jwt = get_jwt_token(request.cookies, oauth_token)
     if oauth_token_key in jwt:
         # User is authenticated, don't do the auth dance.
-        client = OAuth2Session(client_id, token=jwt[oauth_token_key])
-        return jsonify(client.get(userinfo_endpoint).json())
+        user = dict(jwt)
+        for key in jwt_keys:
+            user.pop(key, None)
+        return callback(user)
 
     client = OAuth2Session(
         client_id,
-        scope="openid mail profile",
+        scope=scope,
         redirect_uri=redirect_uri
     )
     authorization_url, state = client.authorization_url(authorization_endpoint)
 
     # State is used to prevent CSRF, keep this for later.
     cookie = Cookie()
-    state_token = JWT(oauth_state=state)
-    cookie.add_jwt(oauth_state, state_token)
+    state_token_params = jwt_params(oauth_state=state)
+    cookie.add_jwt(oauth_state, state_token_params)
     return cookie.populate_resp(make_response(redirect(authorization_url)))
+
+
+@app.route("/")
+def index():
+
+    def make_response(user):
+        return jsonify(user)
+
+    return with_user(make_response)
 
 
 @app.route("/callback", methods=["GET"])
@@ -195,12 +218,12 @@ def callback():
     exp_seconds = 60*60*4
     if "ExpiresIn" in token:
         exp_seconds = token['ExpiresIn']
-    jwttoken = JWT(
+    jwt_token_params = jwt_params(
         exp_seconds=exp_seconds,
         oauth_token=token,
         **userinfo
     )
-    cookie.add_jwt(oauth_token, jwttoken)
+    cookie.add_jwt(oauth_token, jwt_token_params)
     cookie.remove_jwt(oauth_state)
     return cookie.populate_resp(make_response(redirect(url_for('.index'))))
 

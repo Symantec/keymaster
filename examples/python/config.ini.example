@@ -6,6 +6,7 @@ token_endpoint = https://example.com/token
 userinfo_endpoint = https://example.com/userinfo
 redirect_uri = https://<yourwebsite>/callback
 base_uri = https://<yourwebsite>
+scope = openid mail profile
 jwt_secrets = secret,secret2
 
 
