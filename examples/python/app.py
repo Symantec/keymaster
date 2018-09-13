@@ -36,6 +36,7 @@ oauth_token = "oauth_token"
 oauth_state = "oauth_state"
 oauth_token_key = base_uri+'/'+oauth_token
 oauth_state_key = base_uri+'/'+oauth_state
+oauth_initial_path_key = base_uri+'/initial_path'
 
 jwt_keys = [
     "jti",
@@ -52,6 +53,7 @@ jwt_keys = [
 def jwt_params(
         oauth_token=None,
         oauth_state=None,
+        initial_path=None,
         sub=None,
         iss=base_uri,
         aud=base_uri,
@@ -60,6 +62,8 @@ def jwt_params(
     now = datetime.utcnow()
     expires = now + timedelta(seconds=exp_seconds)
     token = rest
+    if initial_path:
+        token[oauth_initial_path_key] = initial_path
     if oauth_token:
         token[oauth_token_key] = oauth_token
     if oauth_state:
@@ -172,13 +176,25 @@ def with_user(callback):
 
     # State is used to prevent CSRF, keep this for later.
     cookie = Cookie()
-    state_token_params = jwt_params(oauth_state=state)
+    state_token_params = jwt_params(
+        oauth_state=state,
+        initial_path=request.full_path
+    )
     cookie.add_jwt(oauth_state, state_token_params)
     return cookie.populate_resp(make_response(redirect(authorization_url)))
 
 
 @app.route("/")
 def index():
+
+    def make_response(user):
+        return jsonify(user)
+
+    return with_user(make_response)
+
+
+@app.route("/foo")
+def foo():
 
     def make_response(user):
         return jsonify(user)
@@ -199,6 +215,9 @@ def callback():
         # something is wrong with the state token,
         # so redirect back to start over.
         return redirect(url_for('.index'))
+    initial_path = url_for('.index')
+    if oauth_initial_path_key in jwt:
+        initial_path = jwt[oauth_initial_path_key]
 
     client = OAuth2Session(
         client_id,
@@ -225,7 +244,7 @@ def callback():
     )
     cookie.add_jwt(oauth_token, jwt_token_params)
     cookie.remove_jwt(oauth_state)
-    return cookie.populate_resp(make_response(redirect(url_for('.index'))))
+    return cookie.populate_resp(make_response(redirect(initial_path)))
 
 
 if __name__ == "__main__":
