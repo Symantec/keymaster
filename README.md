@@ -48,7 +48,7 @@ The `keymasterd` service runs the following services:
 To run `keymasterd` you will need to generate a config file. `keymasterd` facilitates this through the command-line arguments `-generateConfig` and `-alsoLogToStderr`. Running the `keymasterd` binary with these arguments will generate the following:
 * A configuration file. By default `keymasterd` will write this file to `/etc/keymaster/config.yml`.
 * The Keymaster CA key pair. The encrypted private key  (`masterkey.asc`) is an armored PGP file. For development (or if your trust model permits it) you can decrypt the private-key and write it to the filesystem. To decrypt the key run `gpg -ad $Filename`. Once decrypted set the `ssh_ca_filename` field in the `keymasterd` config file to the path of the decrypted master key.
-* Server keys (for Testing Purposes only): the `server.pem` and `server.key` files are generated to ????
+* Server keys (for Testing Purposes only): the `server.pem` and `server.key` (self-signed for localhost)
 * Admin CA certificate and key: The admin CA certificate (`adminCA.pem`) and key (`adminCA.key`) are used to generate certificates that grant access to the control port of the `keymasterd` management interface (default port 443).
 
 Notice: Keymaster has a bug where the directory locations are not written correctly to the config file. Depending on the platform you're running Keymaster on the following workaround will apply:
@@ -61,7 +61,7 @@ Notice: Keymaster has a bug where the directory locations are not written correc
 
 ##### Supported backend authentication methods
 Several authentication methods are supported by the `keymasterd` service. You can separately specify which authentication methods you accept for the web backend (`allowed_auth_backends_for_webui`) and for obtaining certificates (`allowed_auth_backends_for_certs`).
-* **LDAP**: For LDAP the `bind_pattern` is a printf string where `%s` is the place where the username will be substituted. For example for an 389ds/openldap string might be: `"uid=%s,ou=People,dc=example,dc=com`. To leverage LDAP authentication set the appropriate `allowed_auth_*` setting to `["federated"]`.
+* **LDAP**: For LDAP the `bind_pattern` is a printf string where `%s` is the place where the username will be substituted. For example for an 389ds/openldap string might be: `"uid=%s,ou=People,dc=example,dc=com`. To leverage LDAP authentication set the appropriate `allowed_auth_*` setting to `["ldap"]`.
 * **Apache htpass**: The `passfile.htpass` file contains the usernames and their passwords allowed to access the `keymasterd` web interface. New users can be added via the following command: `htpasswd -B /etc/keymaster/passfile.htpass <username>`. `htpasswd` is distributed via the `httpd-tools` package. Keymaster will only accept htpass files that store BCRYPT encrypted credentials. To use Apache password files to authenticate users to the web interface set the following configuration item: `allowed_auth_*` to `["password"]`
 * **U2F tokens**: To enable U2F tokens set set the appropriate `allowed_auth_*` setting to `["U2F"]``
 * **VIP Manager**: To enable VIP Manager set set the appropriate `allowed_auth_*` setting to `["SymantecVIP"]`
