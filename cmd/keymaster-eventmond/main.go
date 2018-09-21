@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"log"
 	"path"
 	"text/template"
 
@@ -41,7 +42,7 @@ type certCommand struct {
 func main() {
 	flag.Parse()
 	tricorder.RegisterFlags()
-	logger := serverlogger.New("")
+	logger := serverlogger.NewWithFlags("", log.LstdFlags|log.Lmicroseconds)
 	configuration, err := loadConfig(*configFile)
 	if err != nil {
 		logger.Fatalf("Cannot load configuration: %s\n", err)
