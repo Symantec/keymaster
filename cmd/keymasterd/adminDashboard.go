@@ -27,6 +27,7 @@ func (dashboard *adminDashboardType) ServeHTTP(w http.ResponseWriter,
 	}
 	writer := bufio.NewWriter(w)
 	defer writer.Flush()
+	setSecurityHeaders(w)
 	fmt.Fprintln(writer, "<title>keymaster status page</title>")
 	fmt.Fprintln(writer, "<body>")
 	fmt.Fprintln(writer, "<center>")

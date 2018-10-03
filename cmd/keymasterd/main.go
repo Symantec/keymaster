@@ -437,6 +437,7 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter, r *http.R
 	}
 	w.WriteHeader(code)
 	publicErrorText := fmt.Sprintf("%d %s %s\n", code, http.StatusText(code), message)
+	setSecurityHeaders(w)
 	switch code {
 
 	case http.StatusUnauthorized:
@@ -489,6 +490,14 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter, r *http.R
 	}
 }
 
+func setSecurityHeaders(w http.ResponseWriter) {
+	//all common security headers go here
+	w.Header().Set("Strict-Transport-Security", "max-age=31536")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("X-XSS-Protection", "1")
+	w.Header().Set("Content-Security-Policy", "default-src 'self' ;style-src 'self' fonts.googleapis.com 'unsafe-inline'; font-src fonts.gstatic.com fonts.googleapis.com")
+}
+
 // returns true if the system is locked and sends message to the requester
 func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r *http.Request) bool {
 	var signerIsNull bool
@@ -497,12 +506,7 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 	signerIsNull = (state.Signer == nil)
 	state.Mutex.Unlock()
 
-	//all common security headers go here
-	w.Header().Set("Strict-Transport-Security", "max-age=31536")
-	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("X-XSS-Protection", "1")
-	//w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self' code.jquery.com; connect-src 'self'; img-src 'self'; style-src 'self';")
-	w.Header().Set("Content-Security-Policy", "default-src 'self' ;style-src 'self' fonts.googleapis.com 'unsafe-inline'; font-src fonts.gstatic.com fonts.googleapis.com")
+	setSecurityHeaders(w)
 
 	if signerIsNull {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -1089,6 +1093,7 @@ func (state *RuntimeState) publicPathHandler(w http.ResponseWriter, r *http.Requ
 	case "loginForm":
 		w.WriteHeader(200)
 		//fmt.Fprintf(w, "%s", loginFormText)
+		setSecurityHeaders(w)
 		state.writeHTMLLoginPage(w, r, profilePath, "")
 		return
 	case "x509ca":
@@ -1277,7 +1282,11 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	case "text/html":
 		loginDestination := profilePath
 		if r.Form.Get("login_destination") != "" {
-			loginDestination = r.Form.Get("login_destination")
+			inboundLoginDestination := r.Form.Get("login_destination")
+			if strings.HasPrefix(inboundLoginDestination, "/") &&
+				!strings.HasPrefix(inboundLoginDestination, "//") {
+				loginDestination = inboundLoginDestination
+			}
 		}
 
 		requiredAuth := state.getRequiredWebUIAuthLevel()
@@ -1457,7 +1466,11 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	case "text/html":
 		loginDestination := profilePath
 		if r.Form.Get("login_destination") != "" {
-			loginDestination = r.Form.Get("login_destination")
+			inboundLoginDestination := r.Form.Get("login_destination")
+			if strings.HasPrefix(inboundLoginDestination, "/") &&
+				!strings.HasPrefix(inboundLoginDestination, "//") {
+				loginDestination = inboundLoginDestination
+			}
 		}
 		eventNotifier.PublishWebLoginEvent(authUser)
 		http.Redirect(w, r, loginDestination, 302)
@@ -2247,6 +2260,7 @@ func (state *RuntimeState) serveClientConfHandler(w http.ResponseWriter, r *http
 }
 
 func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Request) {
+	setSecurityHeaders(w)
 	//redirect to profile
 	if r.URL.Path[:] == "/" {
 		//landing page
