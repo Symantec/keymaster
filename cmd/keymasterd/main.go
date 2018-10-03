@@ -457,7 +457,7 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter, r *http.R
 			if r.Method == "POST" {
 				/// assume it has been parsed... otherwise why are we here?
 				if r.Form.Get("login_destination") != "" {
-					loginDestnation = r.Form.Get("login_destination")
+					loginDestnation = getLoginDestination(r)
 				}
 			}
 			if authCookie == nil {
@@ -1156,6 +1156,18 @@ func (state *RuntimeState) startVIPPush(cookieVal string, username string) error
 	return nil
 }
 
+func getLoginDestination(r *http.Request) string {
+	loginDestination := profilePath
+	if r.Form.Get("login_destination") != "" {
+		inboundLoginDestination := r.Form.Get("login_destination")
+		if strings.HasPrefix(inboundLoginDestination, "/") &&
+			!strings.HasPrefix(inboundLoginDestination, "//") {
+			loginDestination = inboundLoginDestination
+		}
+	}
+	return loginDestination
+}
+
 //const loginPath = "/api/v0/login"
 
 func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) {
@@ -1280,15 +1292,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		CertAuthBackend: certBackends}
 	switch returnAcceptType {
 	case "text/html":
-		loginDestination := profilePath
-		if r.Form.Get("login_destination") != "" {
-			inboundLoginDestination := r.Form.Get("login_destination")
-			if strings.HasPrefix(inboundLoginDestination, "/") &&
-				!strings.HasPrefix(inboundLoginDestination, "//") {
-				loginDestination = inboundLoginDestination
-			}
-		}
-
+		loginDestination := getLoginDestination(r)
 		requiredAuth := state.getRequiredWebUIAuthLevel()
 		if (requiredAuth & AuthTypePassword) != 0 {
 			eventNotifier.PublishWebLoginEvent(username)
@@ -1464,14 +1468,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	loginResponse := proto.LoginResponse{Message: "success"} //CertAuthBackend: certBackends
 	switch returnAcceptType {
 	case "text/html":
-		loginDestination := profilePath
-		if r.Form.Get("login_destination") != "" {
-			inboundLoginDestination := r.Form.Get("login_destination")
-			if strings.HasPrefix(inboundLoginDestination, "/") &&
-				!strings.HasPrefix(inboundLoginDestination, "//") {
-				loginDestination = inboundLoginDestination
-			}
-		}
+		loginDestination := getLoginDestination(r)
 		eventNotifier.PublishWebLoginEvent(authUser)
 		http.Redirect(w, r, loginDestination, 302)
 	default:
