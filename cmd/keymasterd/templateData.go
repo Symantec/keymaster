@@ -69,7 +69,7 @@ const loginFormText = `
 	{{template "login_pre_password" .}}
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/login" method="post">
             <p>Username: <INPUT TYPE="text" NAME="username" SIZE=18></p>
-            <p>Password: <INPUT TYPE="password" NAME="password" SIZE=18></p>
+            <p>Password: <INPUT TYPE="password" NAME="password" SIZE=18  autocomplete="off"></p>
 	    <INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
             <p><input type="submit" value="Submit" /></p>
         </form>
@@ -117,7 +117,7 @@ const secondFactorAuthFormText = `
 	<div id="vip_login_destination" style="display: none;">{{.LoginDestination}}</div>
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/vipAuth" method="post">
             <p>
-	    Enter VIP token value: <INPUT TYPE="text" NAME="OTP" SIZE=18>
+	    Enter VIP token value: <INPUT TYPE="text" NAME="OTP" SIZE=18  autocomplete="off">
 	    <INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
             <input type="submit" value="Submit" />
 	    </p>
