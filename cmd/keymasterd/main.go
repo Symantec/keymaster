@@ -492,7 +492,7 @@ func (state *RuntimeState) writeFailureResponse(w http.ResponseWriter, r *http.R
 
 func setSecurityHeaders(w http.ResponseWriter) {
 	//all common security headers go here
-	w.Header().Set("Strict-Transport-Security", "max-age=31536")
+	w.Header().Set("Strict-Transport-Security", "max-age=1209600")
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("X-XSS-Protection", "1")
 	w.Header().Set("Content-Security-Policy", "default-src 'self' ;style-src 'self' fonts.googleapis.com 'unsafe-inline'; font-src fonts.gstatic.com fonts.googleapis.com")
@@ -1156,6 +1156,9 @@ func (state *RuntimeState) startVIPPush(cookieVal string, username string) error
 	return nil
 }
 
+// We need to ensure that all login destinations are relative paths
+// Thus the path MUST start with a / but MUST NOT start with a //, because
+// // is interpreted as: use whatever protocol you think is OK
 func getLoginDestination(r *http.Request) string {
 	loginDestination := profilePath
 	if r.Form.Get("login_destination") != "" {
