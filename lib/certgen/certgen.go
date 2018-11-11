@@ -18,11 +18,8 @@ import (
 	"fmt"
 	"math/big"
 	"os/exec"
-	"strconv"
-	"strings"
 	"time"
 
-	"github.com/Symantec/Dominator/lib/constants"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -263,35 +260,14 @@ func genSANExtension(userName string, kerberosRealm *string) (*pkix.Extension, e
 	return &sanExtension, nil
 }
 
-// stringToIntSlice converts a string with period-separated integers into a
-// slice of integers.
-func stringToIntSlice(input string) ([]int, error) {
-	splitInput := strings.Split(input, ".")
-	if len(splitInput) < 1 {
-		return nil, errors.New("no period separators")
-	}
-	output := make([]int, 0, len(splitInput))
-	for _, strValue := range splitInput {
-		if value, err := strconv.Atoi(strValue); err != nil {
-			return nil, err
-		} else {
-			output = append(output, value)
-		}
-	}
-	return output, nil
-}
-
 func getGroupListExtension(groups []string) (*pkix.Extension, error) {
 	encodedValue, err := asn1.Marshal(groups)
 	if err != nil {
 		return nil, err
 	}
-	oid, err := stringToIntSlice(constants.GroupListOID)
-	if err != nil {
-		return nil, err
-	}
 	groupListExtension := pkix.Extension{
-		Id:    oid,
+		// See github.com/Symantec/Dominator/lib/constants.GroupListOID
+		Id:    []int{1, 3, 6, 1, 4, 1, 9586, 100, 7, 2},
 		Value: encodedValue,
 	}
 	return &groupListExtension, nil

@@ -282,8 +282,8 @@ func derBytesCertToCertAndPem(derBytes []byte) (*x509.Certificate, string, error
 	return cert, pemCert, nil
 }
 
-//GenxUser509Cert(userName string, userPubkey string, caCertString string, caPrivateKeyString string)
-func TestGenx509CertGoodNoRealm(t *testing.T) {
+//GenUserX509Cert(userName string, userPubkey string, caCertString string, caPrivateKeyString string)
+func TestGenUserX509CertGoodNoRealm(t *testing.T) {
 	userPub, caCert, caPriv := setupX509Generator(t)
 
 	groups := []string{"group0", "group1"}
