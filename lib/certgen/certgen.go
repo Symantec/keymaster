@@ -185,7 +185,7 @@ func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.S
 		KeyUsage:  x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageCertSign,
 		//ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		IsCA: true,
+		IsCA:                  true,
 	}
 
 	return x509.CreateCertificate(rand.Reader, &template, &template, publicKey(caPriv), caPriv)
@@ -261,6 +261,9 @@ func genSANExtension(userName string, kerberosRealm *string) (*pkix.Extension, e
 }
 
 func getGroupListExtension(groups []string) (*pkix.Extension, error) {
+	if len(groups) < 1 {
+		return nil, nil
+	}
 	encodedValue, err := asn1.Marshal(groups)
 	if err != nil {
 		return nil, err
@@ -315,8 +318,11 @@ func GenUserX509Cert(userName string, userPub interface{},
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 		UnknownExtKeyUsage:    []asn1.ObjectIdentifier{kerberosClientExtKeyUsage},
 		BasicConstraintsValid: true,
-		IsCA:            false,
-		ExtraExtensions: []pkix.Extension{*groupListExtension},
+		IsCA:                  false,
+	}
+	if groupListExtension != nil {
+		template.ExtraExtensions = append(template.ExtraExtensions,
+			*groupListExtension)
 	}
 	if sanExtension != nil {
 		template.ExtraExtensions = append(template.ExtraExtensions,

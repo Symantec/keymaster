@@ -903,7 +903,10 @@ func (state *RuntimeState) postAuthX509CertHandler(
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 		return
 	}
-	var organisations []string
+	var groups, organisations []string
+	if r.Form.Get("addGroups") == "true" {
+		groups = userGroups
+	}
 	if kubernetesHack {
 		organisations = userGroups
 	} else {
@@ -944,7 +947,7 @@ func (state *RuntimeState) postAuthX509CertHandler(
 			return
 		}
 		derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert,
-			keySigner, state.KerberosRealm, duration, userGroups, organisations)
+			keySigner, state.KerberosRealm, duration, groups, organisations)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			logger.Printf("Cannot Generate x509cert")
