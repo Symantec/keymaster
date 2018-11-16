@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Symantec/Dominator/lib/x509util"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -281,20 +282,35 @@ func derBytesCertToCertAndPem(derBytes []byte) (*x509.Certificate, string, error
 	return cert, pemCert, nil
 }
 
-//Genx509SCert(userName string, userPubkey string, caCertString string, caPrivateKeyString string)
-func TestGenx509CertGoodNoRealm(t *testing.T) {
+//GenUserX509Cert(userName string, userPubkey string, caCertString string, caPrivateKeyString string)
+func TestGenUserX509CertGoodNoRealm(t *testing.T) {
 	userPub, caCert, caPriv := setupX509Generator(t)
 
-	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, nil, testDuration, nil)
+	groups := []string{"group0", "group1"}
+	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, nil, testDuration, groups, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	certString := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derCert}))
-	t.Logf("got '%s'", certString)
-	//t.Logf("got %+v", userCert)
+	cert, pemCert, err := derBytesCertToCertAndPem(derCert)
+	t.Logf("got '%s'", pemCert)
+	if cert.Subject.CommonName != "username" {
+		t.Fatalf("Subject.CommonName: %s != username\n",
+			cert.Subject.CommonName)
+	}
+	groupsMap, err := x509util.GetGroupList(cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groupsMap) != len(groups) {
+		t.Fatalf("number of groups: %d != %d\n", len(groupsMap), len(groups))
+	}
+	for _, group := range groups {
+		if _, ok := groupsMap[group]; !ok {
+			t.Fatalf("group: \"%s\" not present in certificate\n", group)
+		}
+	}
 
 	// TODO: check values
-	// 1.  commonName must match "userame"
 	// 2.  basic constraints true
 	// 3. is ca false
 	// 4. valid key usages
@@ -307,7 +323,7 @@ func TestGenx509CertGoodWithRealm(t *testing.T) {
 	/*
 	 */
 	realm := "EXAMPLE.COM"
-	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, &realm, testDuration, nil)
+	derCert, err := GenUserX509Cert("username", userPub, caCert, caPriv, &realm, testDuration, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,7 +362,7 @@ func TestGenSelfSignedCACertGood(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = GenUserX509Cert("username", userPub, cert, caPriv, nil, testDuration, nil)
+	_, err = GenUserX509Cert("username", userPub, cert, caPriv, nil, testDuration, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

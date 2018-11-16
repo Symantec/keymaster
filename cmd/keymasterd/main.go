@@ -896,21 +896,21 @@ func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
 func (state *RuntimeState) postAuthX509CertHandler(
 	w http.ResponseWriter, r *http.Request, targetUser string,
 	keySigner crypto.Signer, duration time.Duration,
-	withUserGroups bool) {
-
-	var userGroups []string
-	var err error
-	if withUserGroups {
-		userGroups, err = state.getUserGroups(targetUser)
-		if err != nil {
-			//logger.Println("error getting user groups")
-			logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-			return
-		}
-		//logger.Printf("%v", userGroups)
+	kubernetesHack bool) {
+	userGroups, err := state.getUserGroups(targetUser)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
+	var groups, organisations []string
+	if r.Form.Get("addGroups") == "true" {
+		groups = userGroups
+	}
+	if kubernetesHack {
+		organisations = userGroups
 	} else {
-		userGroups = append(userGroups, "keymaster")
+		organisations = []string{"keymaster"}
 	}
 	var cert string
 	switch r.Method {
@@ -918,7 +918,8 @@ func (state *RuntimeState) postAuthX509CertHandler(
 		file, _, err := r.FormFile("pubkeyfile")
 		if err != nil {
 			logger.Println(err)
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing public key file")
+			state.writeFailureResponse(w, r, http.StatusBadRequest,
+				"Missing public key file")
 			return
 		}
 		defer file.Close()
@@ -927,32 +928,34 @@ func (state *RuntimeState) postAuthX509CertHandler(
 
 		block, _ := pem.Decode(buf.Bytes())
 		if block == nil || block.Type != "PUBLIC KEY" {
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid File, Unable to decode pem")
+			state.writeFailureResponse(w, r, http.StatusBadRequest,
+				"Invalid File, Unable to decode pem")
 			logger.Printf("invalid file, unable to decode pem")
 			return
 		}
 		userPub, err := x509.ParsePKIXPublicKey(block.Bytes)
 		if err != nil {
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "Cannot parse public key")
+			state.writeFailureResponse(w, r, http.StatusBadRequest,
+				"Cannot parse public key")
 			logger.Printf("Cannot parse public key")
 			return
 		}
-		//tate.caCertDer
 		caCert, err := x509.ParseCertificate(state.caCertDer)
 		if err != nil {
-			//state.writeFailureResponse(w, http.StatusBadRequest, "Cannot parse public key")
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			logger.Printf("Cannot parse CA Der data")
 			return
 		}
-		derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert, keySigner, state.KerberosRealm, duration, &userGroups)
+		derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert,
+			keySigner, state.KerberosRealm, duration, groups, organisations)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			logger.Printf("Cannot Generate x509cert")
 			return
 		}
 		eventNotifier.PublishX509(derCert)
-		cert = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derCert}))
+		cert = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE",
+			Bytes: derCert}))
 
 	default:
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")

@@ -185,7 +185,7 @@ func GenSelfSignedCACert(commonName string, organization string, caPriv crypto.S
 		KeyUsage:  x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageCertSign,
 		//ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		IsCA: true,
+		IsCA:                  true,
 	}
 
 	return x509.CreateCertificate(rand.Reader, &template, &template, publicKey(caPriv), caPriv)
@@ -260,13 +260,29 @@ func genSANExtension(userName string, kerberosRealm *string) (*pkix.Extension, e
 	return &sanExtension, nil
 }
 
+func getGroupListExtension(groups []string) (*pkix.Extension, error) {
+	if len(groups) < 1 {
+		return nil, nil
+	}
+	encodedValue, err := asn1.Marshal(groups)
+	if err != nil {
+		return nil, err
+	}
+	groupListExtension := pkix.Extension{
+		// See github.com/Symantec/Dominator/lib/constants.GroupListOID
+		Id:    []int{1, 3, 6, 1, 4, 1, 9586, 100, 7, 2},
+		Value: encodedValue,
+	}
+	return &groupListExtension, nil
+}
+
 // returns an x509 cert that has the username in the common name,
 // optionally if a kerberos Realm is present it will also add a kerberos
 // SAN exention for pkinit
 func GenUserX509Cert(userName string, userPub interface{},
 	caCert *x509.Certificate, caPriv crypto.Signer,
 	kerberosRealm *string, duration time.Duration,
-	organizations *[]string) ([]byte, error) {
+	groups []string, organizations []string) ([]byte, error) {
 	//// Now do the actual work...
 	notBefore := time.Now()
 	notAfter := notBefore.Add(duration)
@@ -282,15 +298,16 @@ func GenUserX509Cert(userName string, userPub interface{},
 		return nil, err
 	}
 
-	// need to add the extended key usage... that is special for kerberos
-	//and also the client key usage
+	// Need to add the extended key usage... that is special for kerberos
+	// and also the client key usage.
 	kerberosClientExtKeyUsage := []int{1, 3, 6, 1, 5, 2, 3, 4}
 	subject := pkix.Name{
 		CommonName:   userName,
-		Organization: []string{"Keymaster"},
+		Organization: organizations,
 	}
-	if organizations != nil {
-		subject.Organization = *organizations
+	groupListExtension, err := getGroupListExtension(groups)
+	if err != nil {
+		return nil, err
 	}
 	template := x509.Certificate{
 		SerialNumber:          serialNumber,
@@ -301,10 +318,15 @@ func GenUserX509Cert(userName string, userPub interface{},
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 		UnknownExtKeyUsage:    []asn1.ObjectIdentifier{kerberosClientExtKeyUsage},
 		BasicConstraintsValid: true,
-		IsCA: false,
+		IsCA:                  false,
+	}
+	if groupListExtension != nil {
+		template.ExtraExtensions = append(template.ExtraExtensions,
+			*groupListExtension)
 	}
 	if sanExtension != nil {
-		template.ExtraExtensions = []pkix.Extension{*sanExtension}
+		template.ExtraExtensions = append(template.ExtraExtensions,
+			*sanExtension)
 	}
 
 	return x509.CreateCertificate(rand.Reader, &template, caCert, userPub, caPriv)
