@@ -50,6 +50,7 @@ type baseConfig struct {
 	AllowedAuthBackendsForWebUI []string `yaml:"allowed_auth_backends_for_webui"`
 	AdminUsers                  []string `yaml:"admin_users"`
 	AdminGroups                 []string `yaml:"admin_groups"`
+	PublicLogs                  bool     `yaml:"public_logs"`
 }
 
 type LdapConfig struct {

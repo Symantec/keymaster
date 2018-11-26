@@ -2312,7 +2312,9 @@ func main() {
 	}
 	logger.Debugf(3, "After load verify")
 
-	adminDashboard := newAdminDashboard(realLogger)
+	publicLogs := runtimeState.Config.Base.PublicLogs
+
+	adminDashboard := newAdminDashboard(realLogger, publicLogs)
 	// Expose the registered metrics via HTTP.
 	http.Handle("/", adminDashboard)
 	http.Handle("/prometheus_metrics", prometheus.Handler()) //lint:ignore SA1019 TODO: newer prometheus handler
@@ -2364,9 +2366,11 @@ func main() {
 			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
+	logFilterHandler := NewLogFilerHandler(http.DefaultServeMux, publicLogs)
 	adminSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.AdminAddress,
 		TLSConfig:    cfg,
+		Handler:      logFilterHandler,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
