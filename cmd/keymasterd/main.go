@@ -2416,7 +2416,7 @@ func main() {
 
 	// Safari in MacOS 10.12.x required a certs to be presented by the user even
 	// when optional. Thus for the service port  the clientAuth is setup to NOT
-	// verufy the given cert.
+	// verify the given cert.
 	// We need to collect more stats on osx version used before we can unify the
 	// tls config for the service and the admin ports
 	serviceTLSConfig := &tls.Config{
