@@ -2414,11 +2414,11 @@ func main() {
 		}
 	}
 
-	// Safari in MacOS 10.12.x required a certs to be presented by the user even
-	// when optional. Thus for the service port  the clientAuth is setup to NOT
+	// Safari in MacOS 10.12.x required a cert to be presented by the user even
+	// when optional. Thus for the service port the clientAuth is setup to NOT
 	// verify the given cert.
-	// We need to collect more stats on osx version used before we can unify the
-	// tls config for the service and the admin ports
+	// We need to collect more stats on OS X version used before we can unify the
+	// TLS config for the service and the admin ports
 	serviceTLSConfig := &tls.Config{
 		ClientCAs:                runtimeState.ClientCAPool,
 		ClientAuth:               tls.RequestClientCert,
