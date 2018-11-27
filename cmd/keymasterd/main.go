@@ -2380,7 +2380,7 @@ func main() {
 			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
-	logFilterHandler := NewLogFilerHandler(http.DefaultServeMux, publicLogs)
+	logFilterHandler := NewLogFilterHandler(http.DefaultServeMux, publicLogs)
 	adminSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.AdminAddress,
 		TLSConfig:    cfg,
@@ -2415,7 +2415,6 @@ func main() {
 	}
 
 	serviceTLSConfig := cfg
-	serviceTLSConfig.ClientAuth = tls.RequestClientCert
 
 	serviceSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.HttpAddress,

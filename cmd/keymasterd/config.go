@@ -243,7 +243,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			err = errors.New("Cannot append any certs from Client CA file")
 			return runtimeState, err
 		}
-		logger.Debugf(3, "client ca file loaded")
+		logger.Debugf(3, "client ca file loaded %d ", len(runtimeState.ClientCAPool.Subjects()))
 
 	}
 	if len(runtimeState.Config.Base.KeymasterPublicKeysFilename) > 0 {
