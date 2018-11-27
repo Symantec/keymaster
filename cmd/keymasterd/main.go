@@ -2329,7 +2329,9 @@ func main() {
 	}
 	logger.Debugf(3, "After load verify")
 
-	adminDashboard := newAdminDashboard(realLogger)
+	publicLogs := runtimeState.Config.Base.PublicLogs
+
+	adminDashboard := newAdminDashboard(realLogger, publicLogs)
 	// Expose the registered metrics via HTTP.
 	http.Handle("/", adminDashboard)
 	http.Handle("/prometheus_metrics", prometheus.Handler()) //lint:ignore SA1019 TODO: newer prometheus handler
@@ -2381,9 +2383,11 @@ func main() {
 			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
 		},
 	}
+	logFilterHandler := NewLogFilterHandler(http.DefaultServeMux, publicLogs)
 	adminSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.AdminAddress,
 		TLSConfig:    cfg,
+		Handler:      logFilterHandler,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -2413,8 +2417,23 @@ func main() {
 		}
 	}
 
-	serviceTLSConfig := cfg
-	serviceTLSConfig.ClientAuth = tls.RequestClientCert
+	// Safari in MacOS 10.12.x required a cert to be presented by the user even
+	// when optional. Thus for the service port the clientAuth is setup to NOT
+	// verify the given cert.
+	// We need to collect more stats on OS X version used before we can unify the
+	// TLS config for the service and the admin ports
+	serviceTLSConfig := &tls.Config{
+		ClientCAs:                runtimeState.ClientCAPool,
+		ClientAuth:               tls.RequestClientCert,
+		MinVersion:               tls.VersionTLS12,
+		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		PreferServerCipherSuites: true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+		},
+	}
 
 	serviceSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.HttpAddress,

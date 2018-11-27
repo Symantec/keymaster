@@ -11,11 +11,13 @@ import (
 type adminDashboardType struct {
 	htmlWriter html.HtmlWriter
 	ready      bool
+	publicLogs bool
 }
 
-func newAdminDashboard(htmlWriter html.HtmlWriter) *adminDashboardType {
+func newAdminDashboard(htmlWriter html.HtmlWriter, publicLogs bool) *adminDashboardType {
 	return &adminDashboardType{
 		htmlWriter: htmlWriter,
+		publicLogs: publicLogs,
 	}
 }
 
@@ -41,7 +43,9 @@ func (dashboard *adminDashboardType) ServeHTTP(w http.ResponseWriter,
 	} else {
 		fmt.Fprintln(writer, `Keymaster is <font color="red">sealed</font><br>`)
 	}
-	dashboard.htmlWriter.WriteHtml(writer)
+	if dashboard.publicLogs {
+		dashboard.htmlWriter.WriteHtml(writer)
+	}
 	fmt.Fprintln(writer, "</h3>")
 	fmt.Fprintln(writer, "<hr>")
 	html.WriteFooter(writer)

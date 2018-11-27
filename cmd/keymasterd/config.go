@@ -50,6 +50,7 @@ type baseConfig struct {
 	AllowedAuthBackendsForWebUI []string `yaml:"allowed_auth_backends_for_webui"`
 	AdminUsers                  []string `yaml:"admin_users"`
 	AdminGroups                 []string `yaml:"admin_groups"`
+	PublicLogs                  bool     `yaml:"public_logs"`
 }
 
 type LdapConfig struct {
@@ -242,7 +243,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			err = errors.New("Cannot append any certs from Client CA file")
 			return runtimeState, err
 		}
-		logger.Debugf(3, "client ca file loaded")
+		logger.Debugf(3, "client ca file loaded %d ", len(runtimeState.ClientCAPool.Subjects()))
 
 	}
 	if len(runtimeState.Config.Base.KeymasterPublicKeysFilename) > 0 {
