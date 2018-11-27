@@ -2414,7 +2414,23 @@ func main() {
 		}
 	}
 
-	serviceTLSConfig := cfg
+	// Safari in MacOS 10.12.x required a certs to be presented by the user even
+	// when optional. Thus for the service port  the clientAuth is setup to NOT
+	// verufy the given cert.
+	// We need to collect more stats on osx version used before we can unify the
+	// tls config for the service and the admin ports
+	serviceTLSConfig := &tls.Config{
+		ClientCAs:                runtimeState.ClientCAPool,
+		ClientAuth:               tls.RequestClientCert,
+		MinVersion:               tls.VersionTLS12,
+		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
+		PreferServerCipherSuites: true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+		},
+	}
 
 	serviceSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.HttpAddress,
