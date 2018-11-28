@@ -165,7 +165,7 @@ func (state *RuntimeState) signerPublicKeyToKeymasterKeys() error {
 	if !found {
 		state.KeymasterPublicKeys = append(state.KeymasterPublicKeys, state.Signer.Public())
 	}
-	logger.Printf("number of pk known=%d", len(state.KeymasterPublicKeys))
+	logger.Debugf(3, "number of pk known=%d", len(state.KeymasterPublicKeys))
 	return nil
 }
 
