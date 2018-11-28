@@ -306,6 +306,82 @@ func TestSuccessFullSigningX509(t *testing.T) {
 	}
 }
 
+func TestSuccessFullSigningX509BadLDAPNoGroups(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+	state.Config.UserInfo.Ldap.LDAPTargetURLs = "ldapXX://localhost"
+
+	// Get request
+	req, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username?type=x509", "username", "password", testUserPEMPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// TODO: Check the response body is what we expect.
+
+	//And also test with cookies
+	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509", testUserPEMPublicKey, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypeU2F)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+	cookieReq.AddCookie(&authCookie)
+
+	_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFailFullSigningX509GroupsBadLDAPNoGroups(t *testing.T) {
+	state, passwdFile, err := setupValidRuntimeStateSigner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+	state.Config.UserInfo.Ldap.LDAPTargetURLs = "ldapXX://localhost"
+
+	// Get request
+	req, err := createBasicAuthRequstWithKeyBody("POST", "/certgen/username?type=x509&addGroups=true", "username", "password", testUserPEMPublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusBadRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// TODO: Check the response body is what we expect.
+
+	//And also test with cookies
+	cookieReq, err := createKeyBodyRequest("POST", "/certgen/username?type=x509&addGroups=true", testUserPEMPublicKey, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cookieVal, err := state.setNewAuthCookie(nil, "username", AuthTypeU2F)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+	cookieReq.AddCookie(&authCookie)
+
+	_, err = checkRequestHandlerCode(cookieReq, state.certGenHandler, http.StatusInternalServerError)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestFailCertgenDurationTooLong(t *testing.T) {
 	state, passwdFile, err := setupValidRuntimeStateSigner()
 	if err != nil {

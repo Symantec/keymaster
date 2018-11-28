@@ -897,20 +897,26 @@ func (state *RuntimeState) postAuthX509CertHandler(
 	w http.ResponseWriter, r *http.Request, targetUser string,
 	keySigner crypto.Signer, duration time.Duration,
 	kubernetesHack bool) {
-	userGroups, err := state.getUserGroups(targetUser)
-	if err != nil {
-		logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-		return
+
+	var userGroups, groups []string
+	// Getting user groups can be a failure, in this case we dont want to
+	// abort if we are not explicitly asking for groups in our cert.
+	if kubernetesHack || r.Form.Get("addGroups") == "true" {
+		var err error
+		logger.Printf("Groups needed for cert")
+		userGroups, err = state.getUserGroups(targetUser)
+		if err != nil {
+			logger.Println(err)
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			return
+		}
 	}
-	var groups, organisations []string
 	if r.Form.Get("addGroups") == "true" {
 		groups = userGroups
 	}
+	organizations := []string{"keymaster"}
 	if kubernetesHack {
-		organisations = userGroups
-	} else {
-		organisations = []string{"keymaster"}
+		organizations = userGroups
 	}
 	var cert string
 	switch r.Method {
@@ -947,7 +953,7 @@ func (state *RuntimeState) postAuthX509CertHandler(
 			return
 		}
 		derCert, err := certgen.GenUserX509Cert(targetUser, userPub, caCert,
-			keySigner, state.KerberosRealm, duration, groups, organisations)
+			keySigner, state.KerberosRealm, duration, groups, organizations)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 			logger.Printf("Cannot Generate x509cert")
