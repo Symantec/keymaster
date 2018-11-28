@@ -903,7 +903,7 @@ func (state *RuntimeState) postAuthX509CertHandler(
 	// abort if we are not explicitly asking for groups in our cert.
 	if kubernetesHack || r.Form.Get("addGroups") == "true" {
 		var err error
-		logger.Printf("Groups needed for cert")
+		logger.Debugf(2, "Groups needed for cert")
 		userGroups, err = state.getUserGroups(targetUser)
 		if err != nil {
 			logger.Println(err)
