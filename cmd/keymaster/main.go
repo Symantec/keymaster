@@ -70,7 +70,7 @@ func getUserNameAndHomeDir(logger log.Logger) (userName, homeDir string) {
 	if runtime.GOOS == "windows" {
 		splitName := strings.Split(userName, "\\")
 		if len(splitName) == 2 {
-			userName = splitName[1]
+			userName = strings.ToLower(splitName[1])
 		}
 	}
 
