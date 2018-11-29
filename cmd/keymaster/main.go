@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/Symantec/Dominator/lib/log"
@@ -65,6 +66,13 @@ func getUserNameAndHomeDir(logger log.Logger) (userName, homeDir string) {
 		logger.Fatal(err)
 	}
 	userName = usr.Username
+
+	if runtime.GOOS == "windows" {
+		splitName := strings.Split(userName, "\\")
+		if len(splitName) == 2 {
+			userName = splitName[1]
+		}
+	}
 
 	homeDir, err = util.GetUserHomeDir(usr)
 	if err != nil {
