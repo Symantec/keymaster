@@ -1,4 +1,7 @@
-# Keymaster [![Build Status](https://travis-ci.org/Symantec/keymaster.svg?branch=master)](https://travis-ci.org/Symantec/keymaster)
+# Keymaster
+[![Build Status](https://travis-ci.org/Symantec/keymaster.svg?branch=master)](https://travis-ci.org/Symantec/keymaster)
+[![Coverage Status](https://coveralls.io/repos/github/Symantec/keymaster/badge.svg?branch=master)](https://coveralls.io/github/Symantec/keymaster?branch=master)
+
 Keymaster is usable short-term certificate based identity system. With a primary goal to be a single-sign-on (with optional second factor with [Symantec VIP](https://vip.symantec.com/) or [U2F](https://fidoalliance.org/specifications/overview/) tokens) for CLI operations (both SSHD and TLS).
 
 This system is easy to use, configure and administer.
