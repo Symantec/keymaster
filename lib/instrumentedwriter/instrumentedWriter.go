@@ -1,4 +1,4 @@
-package main
+package instrumentedwriter
 
 /* Original Instpiration comes from https://github.com/mash/go-accesslog/
 

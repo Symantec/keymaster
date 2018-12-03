@@ -35,6 +35,7 @@ import (
 	"github.com/Symantec/keymaster/keymasterd/eventnotifier"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
+	"github.com/Symantec/keymaster/lib/instrumentedwriter"
 	"github.com/Symantec/keymaster/lib/pwauth"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"github.com/Symantec/keymaster/proto/eventmon"
@@ -695,7 +696,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 
 		return
 	}
-	w.(*LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 
 	sufficientAuthLevel := false
 	// We should do an intersection operation here
@@ -1423,7 +1424,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 
 		return
 	}
-	w.(*LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 
 	var OTPString string
 	if val, ok := r.Form["OTP"]; ok {
@@ -1522,7 +1523,7 @@ func (state *RuntimeState) vipPushStartHandler(w http.ResponseWriter, r *http.Re
 
 		return
 	}
-	w.(*LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 	logger.Debugf(0, "Vip push start authuser=%s", authUser)
 	vipPushCookie, err := r.Cookie(vipTransactionCookieName)
 	if err != nil {
@@ -1595,7 +1596,7 @@ func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Re
 
 		return
 	}
-	w.(*LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 	logger.Debugf(1, "VIPPollCheckHandler: authuser=%s", authUser)
 	vipPollCookie, err := r.Cookie(vipTransactionCookieName)
 	if err != nil {
@@ -1679,7 +1680,7 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 
 		return
 	}
-	w.(*LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 
 	// Check that they can change other users
 	if !state.IsAdminUserAndU2F(authUser, loginLevel) && authUser != assumedUser {
@@ -1748,7 +1749,7 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 
 		return
 	}
-	w.(*LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 
 	// Check that they can change other users
 	if !state.IsAdminUserAndU2F(authUser, loginLevel) && authUser != assumedUser {
@@ -1828,7 +1829,7 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 
 		return
 	}
-	w.(*LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 
 	//////////
 	profile, ok, _, err := state.LoadUserProfile(authUser)
@@ -1889,7 +1890,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 		logger.Printf("%v", err)
 		return
 	}
-	w.(*LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 
 	//now the actual work
 	var signResp u2f.SignResponse
@@ -2036,7 +2037,7 @@ func (state *RuntimeState) usersHandler(
 
 		return
 	}
-	w.(*LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 
 	users, _, err := state.GetUsers()
 	if err != nil {
@@ -2092,7 +2093,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 
 		return
 	}
-	w.(*LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 
 	readOnlyMsg := ""
 	if assumedUser == "" {
@@ -2179,7 +2180,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-	w.(*LoggingWriter).SetUsername(authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 	// TODO: ensure is a valid method (POST)
 	err = r.ParseForm()
 	if err != nil {
@@ -2303,7 +2304,7 @@ type httpLogger struct {
 	AccessLogger log.DebugLogger
 }
 
-func (l httpLogger) Log(record LogRecord) {
+func (l httpLogger) Log(record instrumentedwriter.LogRecord) {
 	if l.AccessLogger != nil {
 		l.AccessLogger.Printf("%s -  %s [%s] \"%s %s %s\" %d %d\n",
 			record.Ip, record.Username, record.Time, record.Method,
@@ -2438,7 +2439,7 @@ func main() {
 	adminSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.AdminAddress,
 		TLSConfig:    cfg,
-		Handler:      NewLoggingHandler(logFilterHandler, l2),
+		Handler:      instrumentedwriter.NewLoggingHandler(logFilterHandler, l2),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -2489,7 +2490,7 @@ func main() {
 	//l := httpLogger{AccessLogger: runtimeState.accessLogger}
 	serviceSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.HttpAddress,
-		Handler:      NewLoggingHandler(serviceMux, l),
+		Handler:      instrumentedwriter.NewLoggingHandler(serviceMux, l),
 		TLSConfig:    serviceTLSConfig,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
