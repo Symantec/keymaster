@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"html/template"
 	"io/ioutil"
+	stdlog "log"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,6 +29,7 @@ import (
 
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/serverlogger"
+	"github.com/Symantec/Dominator/lib/logbuf"
 	"github.com/Symantec/Dominator/lib/srpc"
 	"github.com/Symantec/keymaster/keymasterd/admincache"
 	"github.com/Symantec/keymaster/keymasterd/eventnotifier"
@@ -40,6 +42,7 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/tstranex/u2f"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
@@ -142,6 +145,7 @@ type RuntimeState struct {
 	passwordChecker      pwauth.PasswordAuthenticator
 	KeymasterPublicKeys  []crypto.PublicKey
 	isAdminCache         *admincache.Cache
+	accessLogger         log.DebugLogger
 }
 
 const redirectPath = "/auth/oauth2/callback"
@@ -691,6 +695,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 
 		return
 	}
+	w.(*LoggingWriter).SetUsername(authUser)
 
 	sufficientAuthLevel := false
 	// We should do an intersection operation here
@@ -1418,6 +1423,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 
 		return
 	}
+	w.(*LoggingWriter).SetUsername(authUser)
 
 	var OTPString string
 	if val, ok := r.Form["OTP"]; ok {
@@ -1516,6 +1522,7 @@ func (state *RuntimeState) vipPushStartHandler(w http.ResponseWriter, r *http.Re
 
 		return
 	}
+	w.(*LoggingWriter).SetUsername(authUser)
 	logger.Debugf(0, "Vip push start authuser=%s", authUser)
 	vipPushCookie, err := r.Cookie(vipTransactionCookieName)
 	if err != nil {
@@ -1588,6 +1595,7 @@ func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Re
 
 		return
 	}
+	w.(*LoggingWriter).SetUsername(authUser)
 	logger.Debugf(1, "VIPPollCheckHandler: authuser=%s", authUser)
 	vipPollCookie, err := r.Cookie(vipTransactionCookieName)
 	if err != nil {
@@ -1671,6 +1679,7 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 
 		return
 	}
+	w.(*LoggingWriter).SetUsername(authUser)
 
 	// Check that they can change other users
 	if !state.IsAdminUserAndU2F(authUser, loginLevel) && authUser != assumedUser {
@@ -1739,6 +1748,7 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 
 		return
 	}
+	w.(*LoggingWriter).SetUsername(authUser)
 
 	// Check that they can change other users
 	if !state.IsAdminUserAndU2F(authUser, loginLevel) && authUser != assumedUser {
@@ -1818,6 +1828,7 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 
 		return
 	}
+	w.(*LoggingWriter).SetUsername(authUser)
 
 	//////////
 	profile, ok, _, err := state.LoadUserProfile(authUser)
@@ -1878,6 +1889,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 		logger.Printf("%v", err)
 		return
 	}
+	w.(*LoggingWriter).SetUsername(authUser)
 
 	//now the actual work
 	var signResp u2f.SignResponse
@@ -2024,6 +2036,7 @@ func (state *RuntimeState) usersHandler(
 
 		return
 	}
+	w.(*LoggingWriter).SetUsername(authUser)
 
 	users, _, err := state.GetUsers()
 	if err != nil {
@@ -2079,6 +2092,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 
 		return
 	}
+	w.(*LoggingWriter).SetUsername(authUser)
 
 	readOnlyMsg := ""
 	if assumedUser == "" {
@@ -2165,6 +2179,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
+	w.(*LoggingWriter).SetUsername(authUser)
 	// TODO: ensure is a valid method (POST)
 	err = r.ParseForm()
 	if err != nil {
@@ -2284,6 +2299,18 @@ func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Req
 	http.Error(w, "error not found", http.StatusNotFound)
 }
 
+type httpLogger struct {
+	AccessLogger log.DebugLogger
+}
+
+func (l httpLogger) Log(record LogRecord) {
+	if l.AccessLogger != nil {
+		l.AccessLogger.Printf("%s -  %s [%s] \"%s %s %s\" %d %d\n",
+			record.Ip, record.Username, record.Time, record.Method,
+			record.Uri, record.Protocol, record.Status, record.Size)
+	}
+}
+
 func Usage() {
 	fmt.Fprintf(os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
 	flag.PrintDefaults()
@@ -2336,11 +2363,27 @@ func main() {
 	logger.Debugf(3, "After load verify")
 
 	publicLogs := runtimeState.Config.Base.PublicLogs
-
 	adminDashboard := newAdminDashboard(realLogger, publicLogs)
+
+	logBufOptions := logbuf.GetStandardOptions()
+	accessLogDirectory := filepath.Join(logBufOptions.Directory, "access")
+	logger.Debugf(1, "acesslogdir=%d ", accessLogDirectory)
+	runtimeState.accessLogger = serverlogger.NewWithOptions("access",
+		logbuf.Options{MaxFileSize: 10 << 20,
+			Quota: 100 << 20, MaxBufferLines: 100,
+			Directory: accessLogDirectory},
+		stdlog.LstdFlags)
+
+	serviceAccesLogDirectory := filepath.Join(logBufOptions.Directory, "access-service")
+	serviceAccessLogger := serverlogger.NewWithOptions("access-service",
+		logbuf.Options{MaxFileSize: 10 << 20,
+			Quota: 100 << 20, MaxBufferLines: 100,
+			Directory: serviceAccesLogDirectory},
+		stdlog.LstdFlags)
+
 	// Expose the registered metrics via HTTP.
 	http.Handle("/", adminDashboard)
-	http.Handle("/prometheus_metrics", prometheus.Handler()) //lint:ignore SA1019 TODO: newer prometheus handler
+	http.Handle("/prometheus_metrics", promhttp.Handler()) //lint:ignore SA1019 TODO: newer prometheus handler
 	http.HandleFunc(secretInjectorPath, runtimeState.secretInjectorHandler)
 
 	serviceMux := http.NewServeMux()
@@ -2390,10 +2433,12 @@ func main() {
 		},
 	}
 	logFilterHandler := NewLogFilterHandler(http.DefaultServeMux, publicLogs)
+	l := httpLogger{AccessLogger: runtimeState.accessLogger}
+	l2 := httpLogger{AccessLogger: serviceAccessLogger}
 	adminSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.AdminAddress,
 		TLSConfig:    cfg,
-		Handler:      logFilterHandler,
+		Handler:      NewLoggingHandler(logFilterHandler, l2),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -2441,9 +2486,10 @@ func main() {
 		},
 	}
 
+	//l := httpLogger{AccessLogger: runtimeState.accessLogger}
 	serviceSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.HttpAddress,
-		Handler:      serviceMux,
+		Handler:      NewLoggingHandler(serviceMux, l),
 		TLSConfig:    serviceTLSConfig,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
