@@ -160,6 +160,7 @@ func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
 		[]string{localHttpsTarget},
 		certPool,
 		skipu2f,
+		false,
 		testlogger.New(t)) //(cert []byte, err error)
 	if err != nil {
 		t.Fatal(err)
@@ -179,6 +180,7 @@ func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
 		[]string{localHttpsTarget},
 		nil,
 		skipu2f,
+		false,
 		testlogger.New(t))
 	if err == nil {
 		t.Fatal("Should have failed to connect untrusted CA")
