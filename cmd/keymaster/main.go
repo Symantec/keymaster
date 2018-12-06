@@ -33,7 +33,7 @@ var (
 )
 
 var (
-	configFilename = flag.String("config", filepath.Join(os.Getenv("HOME"), ".keymaster", "client_config.yml"), "The filename of the configuration")
+	configFilename = flag.String("config", filepath.Join(getUserHomeDir(), ".keymaster", "client_config.yml"), "The filename of the configuration")
 	rootCAFilename = flag.String("rootCAFilename", "", "(optional) name for using non OS root CA to verify TLS connections")
 	configHost     = flag.String("configHost", "", "Get a bootstrap config from this host")
 	cliUsername    = flag.String("username", "", "username for keymaster")
@@ -41,6 +41,20 @@ var (
 	cliFilePrefix  = flag.String("fileprefix", "", "Prefix for the output files")
 	FilePrefix     = "keymaster"
 )
+
+func getUserHomeDir() (homeDir string) {
+	homeDir = os.Getenv("HOME")
+	if homeDir != "" {
+		return homeDir
+	}
+	usr, err := user.Current()
+	if err != nil {
+		return homeDir
+	}
+	// TODO: verify on Windows... see: http://stackoverflow.com/questions/7922270/obtain-users-home-directory
+	homeDir = usr.HomeDir
+	return
+}
 
 func maybeGetRootCas(logger log.Logger) *x509.CertPool {
 	var rootCAs *x509.CertPool
