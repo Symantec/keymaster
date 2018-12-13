@@ -110,7 +110,7 @@ func init() {
 	//we also make a simple tls listener
 	//
 	config, _ := getTLSconfig()
-	ln, _ := tls.Listen("tcp", ":10637", config)
+	ln, _ := tls.Listen("tcp", ":10638", config)
 	go func(ln net.Listener) {
 		for {
 			conn, err := ln.Accept()
@@ -134,7 +134,7 @@ func TestCheckLDAPURLsSuccess(t *testing.T) {
 	if !ok {
 		t.Fatal("cannot add certs to certpool")
 	}
-	err := checkLDAPURLs("ldaps://localhost:10637", "somename", certPool)
+	err := checkLDAPURLs("ldaps://localhost:10638", "somename", certPool)
 	if err != nil {
 		t.Logf("Failed to check ldap url")
 		t.Fatal(err)
@@ -147,7 +147,7 @@ func TestCheckLDAPURLsFailNoValidTargets(t *testing.T) {
 	if !ok {
 		t.Fatal("cannot add certs to certpool")
 	}
-	err := checkLDAPURLs("ldap://localhost:10637", "somename", certPool)
+	err := checkLDAPURLs("ldap://localhost:10638", "somename", certPool)
 	if err == nil {
 		t.Fatal("Should have failed")
 	}
@@ -160,7 +160,7 @@ func TestCheckLDAPConfigsSuccessBoth(t *testing.T) {
 		t.Fatal("cannot add certs to certpool")
 	}
 	var config AppConfigFile
-	config.Ldap.LDAPTargetURLs = "ldaps://localhost:10637"
-	config.UserInfo.Ldap.LDAPTargetURLs = "ldaps://localhost:10637"
+	config.Ldap.LDAPTargetURLs = "ldaps://localhost:10638"
+	config.UserInfo.Ldap.LDAPTargetURLs = "ldaps://localhost:10638"
 	checkLDAPConfigs(config, certPool)
 }
