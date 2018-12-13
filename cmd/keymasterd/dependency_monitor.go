@@ -2,7 +2,7 @@ package main
 
 import (
 	//"bufio"
-	"crypto/tls"
+	//"crypto/tls"
 	"crypto/x509"
 	"errors"
 	//"fmt"
@@ -44,21 +44,7 @@ func init() {
 	prometheus.MustRegister(dependencyLastSuccessSecondsGauge)
 }
 
-func singleTLSProbe(target, name string, config *tls.Config) error {
-	// TODO: add timeout
-	startTime := time.Now()
-	conn, err := tls.Dial("tcp", target, config)
-	if err != nil {
-		panic("failed to connect: " + err.Error())
-	}
-	conn.Close()
-	finishTime := time.Now()
-	ElapsedTime := finishTime.Sub(startTime)
-	dependencyLatency.WithLabelValues("tls", name, target).Observe(ElapsedTime.Seconds())
-	return nil
-}
-
-func checkCheckLDAPURLs(ldapURLs string, name string, rootCAs *x509.CertPool) error {
+func checkLDAPURLs(ldapURLs string, name string, rootCAs *x509.CertPool) error {
 	if len(ldapURLs) <= 0 {
 		return errors.New("No data to check")
 	}
@@ -82,7 +68,7 @@ func checkCheckLDAPURLs(ldapURLs string, name string, rootCAs *x509.CertPool) er
 
 func checkLDAPConfigs(config AppConfigFile, rootCAs *x509.CertPool) {
 	if len(config.Ldap.LDAPTargetURLs) > 0 {
-		err := checkCheckLDAPURLs(config.Ldap.LDAPTargetURLs, "passwd", rootCAs)
+		err := checkLDAPURLs(config.Ldap.LDAPTargetURLs, "passwd", rootCAs)
 		if err != nil {
 			logger.Debugf(1, "password LDAP check Failed %s", err)
 		} else {
@@ -93,7 +79,7 @@ func checkLDAPConfigs(config AppConfigFile, rootCAs *x509.CertPool) {
 	}
 	ldapConfig := config.UserInfo.Ldap
 	if len(ldapConfig.LDAPTargetURLs) > 0 {
-		err := checkCheckLDAPURLs(ldapConfig.LDAPTargetURLs, "userinfo", rootCAs)
+		err := checkLDAPURLs(ldapConfig.LDAPTargetURLs, "userinfo", rootCAs)
 		if err != nil {
 			logger.Debugf(1, "userinfo LDAP check Failed %s", err)
 		} else {
