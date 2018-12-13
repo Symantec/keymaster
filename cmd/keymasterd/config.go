@@ -393,7 +393,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	go runtimeState.performStateCleanup(secsBetweenCleanup)
 
 	//
-	go runtimeState.doDependencyMonitoring(60)
+	go runtimeState.doDependencyMonitoring(secsBetweenDependencyChecks)
 
 	return runtimeState, nil
 }

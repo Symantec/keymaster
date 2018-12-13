@@ -1,14 +1,8 @@
 package main
 
 import (
-	//"bufio"
-	//"crypto/tls"
 	"crypto/x509"
 	"errors"
-	//"fmt"
-	//"net"
-	//"net/http"
-	//"net/url"
 	"strings"
 	"time"
 
@@ -48,7 +42,6 @@ func checkLDAPURLs(ldapURLs string, name string, rootCAs *x509.CertPool) error {
 	if len(ldapURLs) <= 0 {
 		return errors.New("No data to check")
 	}
-	//var ldapURL []*url.URL
 	urlList := strings.Split(ldapURLs, ",")
 	for _, stringURL := range urlList {
 		url, err := authutil.ParseLDAPURL(stringURL)
