@@ -392,6 +392,9 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	// and we start the cleanup
 	go runtimeState.performStateCleanup(secsBetweenCleanup)
 
+	//
+	go runtimeState.doDependencyMonitoring(60)
+
 	return runtimeState, nil
 }
 
