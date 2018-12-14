@@ -692,8 +692,7 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, authLevel, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
-		logger.Printf("%v", err)
-
+		logger.Debugf(1, "%v", err)
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
@@ -1420,8 +1419,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	//authUser, authType, err := state.checkAuth(w, r, AuthTypeAny)
 	authUser, currentAuthLevel, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
-		logger.Printf("%v", err)
-
+		logger.Debugf(1, "%v", err)
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
@@ -1519,8 +1517,7 @@ func (state *RuntimeState) vipPushStartHandler(w http.ResponseWriter, r *http.Re
 	}
 	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
-		logger.Printf("%v", err)
-
+		logger.Debugf(1, "%v", err)
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
@@ -1592,8 +1589,7 @@ func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Re
 	}
 	authUser, currentAuthLevel, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
-		logger.Printf("%v", err)
-
+		logger.Debugf(1, "%v", err)
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
@@ -1676,8 +1672,7 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
-		logger.Printf("%v", err)
-
+		logger.Debugf(1, "%v", err)
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
@@ -1745,8 +1740,7 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
-		logger.Printf("%v", err)
-
+		logger.Debugf(1, "%v", err)
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
@@ -1825,8 +1819,7 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
-		logger.Printf("%v", err)
-
+		logger.Debugf(1, "%v", err)
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
@@ -1887,7 +1880,7 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, currentAuthLevel, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
-		logger.Printf("%v", err)
+		logger.Debugf(1, "%v", err)
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
@@ -2033,8 +2026,7 @@ func (state *RuntimeState) usersHandler(
 	}
 	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
-		logger.Printf("%v", err)
-
+		logger.Debugf(1, "%v", err)
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
@@ -2089,8 +2081,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
-		logger.Printf("%v", err)
-
+		logger.Debugf(1, "%v", err)
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
@@ -2176,7 +2167,7 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
-		logger.Printf("%v", err)
+		logger.Debugf(1, "%v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
