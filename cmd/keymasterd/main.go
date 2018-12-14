@@ -147,7 +147,6 @@ type RuntimeState struct {
 const redirectPath = "/auth/oauth2/callback"
 const secsBetweenCleanup = 30
 const maxAgeU2FVerifySeconds = 30
-const secsBetweenDependencyChecks = 60
 
 var (
 	Version        = "No version provided"

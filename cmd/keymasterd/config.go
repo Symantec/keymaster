@@ -51,6 +51,7 @@ type baseConfig struct {
 	AdminUsers                  []string `yaml:"admin_users"`
 	AdminGroups                 []string `yaml:"admin_groups"`
 	PublicLogs                  bool     `yaml:"public_logs"`
+	SecsBetweenDependencyChecks int      `yaml:"secs_between_dependency_checks"`
 }
 
 type LdapConfig struct {
@@ -119,6 +120,7 @@ type AppConfigFile struct {
 }
 
 const defaultRSAKeySize = 3072
+const defaultSecsBetweenDependencyChecks = 60
 
 func (state *RuntimeState) loadTemplates() (err error) {
 	//Load extra templates
@@ -380,6 +382,9 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		}
 		logger.Debugf(1, "passwordChecker= %+v", runtimeState.passwordChecker)
 	}
+	if runtimeState.Config.Base.SecsBetweenDependencyChecks < 1 {
+		runtimeState.Config.Base.SecsBetweenDependencyChecks = defaultSecsBetweenDependencyChecks
+	}
 
 	logger.Debugf(1, "End of config initialization: %+v", runtimeState)
 
@@ -393,7 +398,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	go runtimeState.performStateCleanup(secsBetweenCleanup)
 
 	//
-	go runtimeState.doDependencyMonitoring(secsBetweenDependencyChecks)
+	go runtimeState.doDependencyMonitoring(runtimeState.Config.Base.SecsBetweenDependencyChecks)
 
 	return runtimeState, nil
 }

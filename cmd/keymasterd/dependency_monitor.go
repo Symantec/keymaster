@@ -8,6 +8,8 @@ import (
 
 	"github.com/Symantec/keymaster/lib/authutil"
 
+	"github.com/Symantec/tricorder/go/tricorder"
+	"github.com/Symantec/tricorder/go/tricorder/units"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -36,6 +38,20 @@ const timeoutSecs = 5
 func init() {
 	prometheus.MustRegister(dependencyLatency)
 	prometheus.MustRegister(dependencyLastSuccessSecondsGauge)
+	tricorder.RegisterMetric(
+		"keymaster/depentency_status/LDAP/PasswordDurationSinceLastSuccessfulCheck",
+		func() time.Duration {
+			return time.Now().Sub(lastSuccessLDAPPasswordTime)
+		},
+		units.Second,
+		"Time since last successful LDAP check for Password(s)")
+	tricorder.RegisterMetric(
+		"keymaster/depentency_status/LDAP/UserinfoDurationSinceLastSuccessfulCheck",
+		func() time.Duration {
+			return time.Now().Sub(lastSuccessLDAPUserInfoTime)
+		},
+		units.Second,
+		"Time since last successful LDAP check for UserInfo(s)")
 }
 
 func checkLDAPURLs(ldapURLs string, name string, rootCAs *x509.CertPool) error {
