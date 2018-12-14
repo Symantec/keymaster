@@ -39,14 +39,14 @@ func init() {
 	prometheus.MustRegister(dependencyLatency)
 	prometheus.MustRegister(dependencyLastSuccessSecondsGauge)
 	tricorder.RegisterMetric(
-		"keymaster/depentency_status/LDAP/PasswordDurationSinceLastSuccessfulCheck",
+		"keymaster/dependency_status/LDAP/PasswordDurationSinceLastSuccessfulCheck",
 		func() time.Duration {
 			return time.Now().Sub(lastSuccessLDAPPasswordTime)
 		},
 		units.Second,
 		"Time since last successful LDAP check for Password(s)")
 	tricorder.RegisterMetric(
-		"keymaster/depentency_status/LDAP/UserinfoDurationSinceLastSuccessfulCheck",
+		"keymaster/dependency_status/LDAP/UserinfoDurationSinceLastSuccessfulCheck",
 		func() time.Duration {
 			return time.Now().Sub(lastSuccessLDAPUserInfoTime)
 		},
