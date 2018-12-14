@@ -141,24 +141,6 @@ func NewAroundLoggingHandler(handler http.Handler, logger Logger) http.Handler {
 	}
 }
 
-func NewLoggingMiddleware(logger Logger) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		handler := NewLoggingHandler(next, logger)
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			handler.ServeHTTP(w, r)
-		})
-	}
-}
-
-func NewAroundLoggingMiddleware(logger Logger) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		handler := NewAroundLoggingHandler(next, logger)
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			handler.ServeHTTP(w, r)
-		})
-	}
-}
-
 // readIp return the real ip when behide nginx or apache
 func (h *LoggingHandler) realIp(r *http.Request) string {
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
