@@ -1,19 +1,16 @@
-package twofa
+package main
 
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
-	"fmt"
-	"net/http"
+	"net"
 	"testing"
-
-	"github.com/Symantec/Dominator/lib/log/testlogger"
-	"github.com/Symantec/keymaster/lib/client/util"
-	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
+	"time"
 )
 
-const rootCAPem = `-----BEGIN CERTIFICATE-----
+//These are the same certs on authutil_test.go
+
+const testRootCAPem = `-----BEGIN CERTIFICATE-----
 MIIE1jCCAr4CAQowDQYJKoZIhvcNAQELBQAwMTELMAkGA1UEBhMCVVMxEDAOBgNV
 BAoMB1Rlc3RPcmcxEDAOBgNVBAsMB1Rlc3QgQ0EwHhcNMTcwMTA1MTc0NzQ1WhcN
 MzYxMjMxMTc0NzQ1WjAxMQswCQYDVQQGEwJVUzEQMA4GA1UECgwHVGVzdE9yZzEQ
@@ -95,8 +92,6 @@ GuCdIOQpn0IWClccTMjwc0AhJStSckNdSUQcsRl6LRnRHa3oCIs3hxnkiEHYch6e
 dcxWzhBDbzeIV9SvcTwLx/ghQg==
 -----END PRIVATE KEY-----`
 
-const testUserPublicKey = `ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDI09fpMWTeYw7/EO/+FywS/sghNXdTeTWxX7K2N17owsQJX8s76LGVIdVeYrWg4QSmYlpf6EVSCpx/fbCazrsG7FJVTRhExzFbRT9asmvzS+viXSbSvnavhOz/paihyaMsVPKVv24vF6MOs8DgfwehcKCPjKoIPnlYXZaZcy05KOcZmsvYu2kNOP6sSjDFF+ru+T+DLp3DUGw+MPr45IuR7iDnhXhklqyUn0d7ou0rOHXz9GdHIzpr+DAoQGmTDkpbQEo067Rjfu406gYL8pVFD1F7asCjU39llQCcU/HGyPym5fa29Nubw0dzZZXGZUVFalxo02YMM7P9I6ZjeCsv cviecco@example.com`
-
 func getTLSconfig() (*tls.Config, error) {
 	cert, err := tls.X509KeyPair([]byte(localhostCertPem), []byte(localhostKeyPem))
 	if err != nil {
@@ -104,85 +99,68 @@ func getTLSconfig() (*tls.Config, error) {
 	}
 
 	return &tls.Config{
-		MinVersion:   tls.VersionTLS11,
+		MinVersion:   tls.VersionSSL30,
 		MaxVersion:   tls.VersionTLS12,
 		Certificates: []tls.Certificate{cert},
 		ServerName:   "localhost",
 	}, nil
 }
 
-const localHttpsTarget = "https://localhost:22443/"
-
-var testAllowedCertBackends = []string{proto.AuthTypePassword, proto.AuthTypeU2F}
-
-func handler(w http.ResponseWriter, r *http.Request) {
-	authCookie := http.Cookie{Name: "somename", Value: "somevalue"}
-	http.SetCookie(w, &authCookie)
-	switch r.URL.Path {
-	case proto.LoginPath:
-		loginResponse := proto.LoginResponse{Message: "success",
-			CertAuthBackend: testAllowedCertBackends}
-		w.WriteHeader(200)
-		json.NewEncoder(w).Encode(loginResponse)
-
-	default:
-		fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
-	}
-}
-
 func init() {
-	tlsConfig, _ := getTLSconfig()
-	//_, _ = tls.Listen("tcp", ":11443", config)
-	srv := &http.Server{
-		Addr:      ":22443",
-		TLSConfig: tlsConfig,
-	}
-	http.HandleFunc("/", handler)
-	go srv.ListenAndServeTLS("", "")
-	//http.Serve(ln, nil)
+	//we also make a simple tls listener
+	//
+	config, _ := getTLSconfig()
+	ln, _ := tls.Listen("tcp", ":10638", config)
+	go func(ln net.Listener) {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				continue
+			}
+			//log.Printf("Got connection!!!!")
+			conn.Write([]byte("hello\n"))
+			conn.Close()
+		}
+	}(ln)
+	// On single core systems we needed to ensure that the server is started before
+	// we create other testing goroutines. By sleeping we yield the cpu and allow
+	// ListenAndServe to progress
+	time.Sleep(20 * time.Millisecond)
 }
 
-func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
+func TestCheckLDAPURLsSuccess(t *testing.T) {
 	certPool := x509.NewCertPool()
-	ok := certPool.AppendCertsFromPEM([]byte(rootCAPem))
+	ok := certPool.AppendCertsFromPEM([]byte(testRootCAPem))
 	if !ok {
 		t.Fatal("cannot add certs to certpool")
 	}
-	privateKey, err := util.GenerateKey()
+	err := checkLDAPURLs("ldaps://localhost:10638", "somename", certPool)
 	if err != nil {
-		t.Fatal(err)
-	}
-	skipu2f := true
-	_, _, _, err = GetCertFromTargetUrls(
-		privateKey,
-		"username",
-		[]byte("password"),
-		[]string{localHttpsTarget},
-		certPool,
-		skipu2f,
-		false,
-		testlogger.New(t)) //(cert []byte, err error)
-	if err != nil {
+		t.Logf("Failed to check ldap url")
 		t.Fatal(err)
 	}
 }
 
-func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
-	privateKey, err := util.GenerateKey()
-	if err != nil {
-		t.Fatal(err)
+func TestCheckLDAPURLsFailNoValidTargets(t *testing.T) {
+	certPool := x509.NewCertPool()
+	ok := certPool.AppendCertsFromPEM([]byte(testRootCAPem))
+	if !ok {
+		t.Fatal("cannot add certs to certpool")
 	}
-	skipu2f := true
-	_, _, _, err = GetCertFromTargetUrls(
-		privateKey,
-		"username",
-		[]byte("password"),
-		[]string{localHttpsTarget},
-		nil,
-		skipu2f,
-		false,
-		testlogger.New(t))
+	err := checkLDAPURLs("ldap://localhost:10638", "somename", certPool)
 	if err == nil {
-		t.Fatal("Should have failed to connect untrusted CA")
+		t.Fatal("Should have failed")
 	}
+}
+
+func TestCheckLDAPConfigsSuccessBoth(t *testing.T) {
+	certPool := x509.NewCertPool()
+	ok := certPool.AppendCertsFromPEM([]byte(testRootCAPem))
+	if !ok {
+		t.Fatal("cannot add certs to certpool")
+	}
+	var config AppConfigFile
+	config.Ldap.LDAPTargetURLs = "ldaps://localhost:10638"
+	config.UserInfo.Ldap.LDAPTargetURLs = "ldaps://localhost:10638"
+	checkLDAPConfigs(config, certPool)
 }

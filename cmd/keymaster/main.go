@@ -128,7 +128,7 @@ func loadConfigFile(rootCAs *x509.CertPool, logger log.Logger) (
 
 func setupCerts(
 	rootCAs *x509.CertPool,
-	userName,
+	userName string,
 	homeDir string,
 	configContents config.AppConfigFile,
 	logger log.DebugLogger) {
@@ -169,6 +169,7 @@ func setupCerts(
 		strings.Split(configContents.Base.Gen_Cert_URLS, ","),
 		rootCAs,
 		false,
+		configContents.Base.AddGroups,
 		logger)
 	if err != nil {
 		logger.Fatal(err)

@@ -96,6 +96,7 @@ func getCertsFromServer(
 	baseUrl string,
 	tlsConfig *tls.Config,
 	skip2fa bool,
+	addGroups bool,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
 
 	//First Do Login
@@ -108,7 +109,8 @@ func getCertsFromServer(
 	form := url.Values{}
 	form.Add("username", userName)
 	form.Add("password", string(password[:]))
-	req, err := http.NewRequest("POST", loginUrl, strings.NewReader(form.Encode()))
+	req, err := http.NewRequest("POST", loginUrl,
+		strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -217,11 +219,16 @@ func getCertsFromServer(
 	}
 	pemKey := string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: derKey}))
 
+	var urlPostfix string
+	if addGroups {
+		urlPostfix = "&addGroups=true"
+		logger.Debugln(0, "adding \"addGroups\" to request")
+	}
 	// TODO: urlencode the userName
 	x509Cert, err = doCertRequest(
 		client,
 		loginResp.Cookies(),
-		baseUrl+"/certgen/"+userName+"?type=x509",
+		baseUrl+"/certgen/"+userName+"?type=x509"+urlPostfix,
 		pemKey,
 		logger)
 	if err != nil {
@@ -267,6 +274,7 @@ func getCertFromTargetUrls(
 	targetUrls []string,
 	rootCAs *x509.CertPool,
 	skipu2f bool,
+	addGroups bool,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
 	success := false
 	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
@@ -274,7 +282,8 @@ func getCertFromTargetUrls(
 	for _, baseUrl := range targetUrls {
 		logger.Printf("attempting to target '%s' for '%s'\n", baseUrl, userName)
 		sshCert, x509Cert, kubernetesCert, err = getCertsFromServer(
-			signer, userName, password, baseUrl, tlsConfig, skipu2f, logger)
+			signer, userName, password, baseUrl, tlsConfig, skipu2f, addGroups,
+			logger)
 		if err != nil {
 			logger.Println(err)
 			continue

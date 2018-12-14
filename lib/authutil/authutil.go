@@ -137,6 +137,18 @@ func getLDAPConnection(u url.URL, timeoutSecs uint, rootCAs *x509.CertPool) (*ld
 	return conn, server, nil
 }
 
+func CheckLDAPConnection(u url.URL, timeoutSecs uint, rootCAs *x509.CertPool) error {
+	conn, _, err := getLDAPConnection(u, timeoutSecs, rootCAs)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	timeout := time.Duration(time.Duration(timeoutSecs) * time.Second)
+	conn.SetTimeout(timeout)
+	conn.Start()
+	return nil
+}
+
 func CheckLDAPUserPassword(u url.URL, bindDN string, bindPassword string, timeoutSecs uint, rootCAs *x509.CertPool) (bool, error) {
 	timeout := time.Duration(time.Duration(timeoutSecs) * time.Second)
 	conn, server, err := getLDAPConnection(u, timeoutSecs, rootCAs)
