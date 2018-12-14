@@ -247,6 +247,23 @@ func TestParseLDAPURLFail(t *testing.T) {
 	}
 }
 
+func TestCheckLDAPConnectionSuccess(t *testing.T) {
+	certPool := x509.NewCertPool()
+	ok := certPool.AppendCertsFromPEM([]byte(rootCAPem))
+	if !ok {
+		t.Fatal("cannot add certs to certpool")
+	}
+	ldapURL, err := ParseLDAPURL("ldaps://localhost:10636")
+	if err != nil {
+		t.Logf("Failed to parse url")
+		t.Fatal(err)
+	}
+	err = CheckLDAPConnection(*ldapURL, 2, certPool)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCheckLDAPUserPasswordSuccess(t *testing.T) {
 	certPool := x509.NewCertPool()
 	ok := certPool.AppendCertsFromPEM([]byte(rootCAPem))
