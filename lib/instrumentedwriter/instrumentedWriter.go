@@ -31,19 +31,18 @@ type LoggingWriter struct {
 }
 
 var (
-	rpcDurations = prometheus.NewSummaryVec(
+	httpRequestDurationSummary = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Name:       "service_http_request_processing_duration_seconds",
-			Help:       "RPC latency distributions.",
+			Help:       "Http request processing time seconds",
 			Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 		},
 		[]string{"code", "port"},
 	)
-	rpcDurationsHistogram = prometheus.NewHistogramVec(
+	httpRequestSizeHistogram = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name: "service_http_request_response_size",
-			Help: "RPC latency distributions.",
-			//Buckets: prometheus.LinearBuckets(*normMean-5**normDomain, .5**normDomain, 20),
+			Name:    "service_http_request_response_size_bytes",
+			Help:    "HTTP request response historgram",
 			Buckets: prometheus.ExponentialBuckets(10.0, 1.5, 20),
 		},
 		[]string{"code", "port"},
@@ -52,8 +51,8 @@ var (
 
 func init() {
 	// Register the summary and the histogram with Prometheus's default registry.
-	prometheus.MustRegister(rpcDurations)
-	prometheus.MustRegister(rpcDurationsHistogram)
+	prometheus.MustRegister(httpRequestDurationSummary)
+	prometheus.MustRegister(httpRequestSizeHistogram)
 }
 
 func (r *LoggingWriter) Write(p []byte) (int, error) {
@@ -232,9 +231,9 @@ func (h *LoggingHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		port = portHost[1]
 	}
 
-	rpcDurations.WithLabelValues(fmt.Sprintf("%d", writer.logRecord.Status),
+	httpRequestDurationSummary.WithLabelValues(fmt.Sprintf("%d", writer.logRecord.Status),
 		port).Observe(writer.logRecord.ElapsedTime.Seconds())
-	rpcDurationsHistogram.WithLabelValues(fmt.Sprintf("%d", writer.logRecord.Status),
+	httpRequestSizeHistogram.WithLabelValues(fmt.Sprintf("%d", writer.logRecord.Status),
 		port).Observe(float64(writer.logRecord.Size))
 	h.logger.Log(writer.logRecord)
 }
