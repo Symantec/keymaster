@@ -351,7 +351,7 @@ func getPreferredAcceptType(r *http.Request) string {
 	if ok {
 		for _, acceptValue := range acceptHeader {
 			if strings.Contains(acceptValue, "text/html") {
-				logger.Printf("Got it  %+v", acceptValue)
+				logger.Debugf(1, "Got it  %+v", acceptValue)
 				preferredAcceptType = "text/html"
 			}
 		}
@@ -1280,7 +1280,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	if ok {
 		for _, acceptValue := range acceptHeader {
 			if strings.Contains(acceptValue, "text/html") {
-				logger.Printf("Got it  %+v", acceptValue)
+				logger.Debugf(1, "Got it  %+v", acceptValue)
 				returnAcceptType = "text/html"
 			}
 		}
@@ -1475,7 +1475,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	if ok {
 		for _, acceptValue := range acceptHeader {
 			if strings.Contains(acceptValue, "text/html") {
-				logger.Printf("Got it  %+v", acceptValue)
+				logger.Debugf(1, "Got it  %+v", acceptValue)
 				returnAcceptType = "text/html"
 			}
 		}
@@ -2366,11 +2366,11 @@ func main() {
 			Directory: accessLogDirectory},
 		stdlog.LstdFlags)
 
-	serviceAccesLogDirectory := filepath.Join(logBufOptions.Directory, "access-service")
-	serviceAccessLogger := serverlogger.NewWithOptions("access-service",
+	adminAccesLogDirectory := filepath.Join(logBufOptions.Directory, "access-admin")
+	adminAccessLogger := serverlogger.NewWithOptions("access-service",
 		logbuf.Options{MaxFileSize: 10 << 20,
 			Quota: 100 << 20, MaxBufferLines: 100,
-			Directory: serviceAccesLogDirectory},
+			Directory: adminAccesLogDirectory},
 		stdlog.LstdFlags)
 
 	// Expose the registered metrics via HTTP.
@@ -2425,12 +2425,12 @@ func main() {
 		},
 	}
 	logFilterHandler := NewLogFilterHandler(http.DefaultServeMux, publicLogs)
-	l := httpLogger{AccessLogger: runtimeState.accessLogger}
-	l2 := httpLogger{AccessLogger: serviceAccessLogger}
+	serviceHTTPLogger := httpLogger{AccessLogger: runtimeState.accessLogger}
+	adminHTTPLogger := httpLogger{AccessLogger: adminAccessLogger}
 	adminSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.AdminAddress,
 		TLSConfig:    cfg,
-		Handler:      instrumentedwriter.NewLoggingHandler(logFilterHandler, l2),
+		Handler:      instrumentedwriter.NewLoggingHandler(logFilterHandler, adminHTTPLogger),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -2481,7 +2481,7 @@ func main() {
 	//l := httpLogger{AccessLogger: runtimeState.accessLogger}
 	serviceSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.HttpAddress,
-		Handler:      instrumentedwriter.NewLoggingHandler(serviceMux, l),
+		Handler:      instrumentedwriter.NewLoggingHandler(serviceMux, serviceHTTPLogger),
 		TLSConfig:    serviceTLSConfig,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
