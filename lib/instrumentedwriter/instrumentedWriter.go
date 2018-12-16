@@ -18,6 +18,7 @@ import (
 type LogRecord struct {
 	Time                                      time.Time
 	Ip, Method, Uri, Protocol, Username, Host string
+	UserAgent                                 string
 	Status                                    int
 	Size                                      int64
 	ElapsedTime                               time.Duration
@@ -187,6 +188,7 @@ func (h *LoggingHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 			Username:      username,
 			Protocol:      r.Proto,
 			Host:          r.Host,
+			UserAgent:     r.UserAgent(),
 			Status:        0,
 			Size:          0,
 			ElapsedTime:   time.Duration(0),

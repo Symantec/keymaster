@@ -2297,9 +2297,9 @@ type httpLogger struct {
 
 func (l httpLogger) Log(record instrumentedwriter.LogRecord) {
 	if l.AccessLogger != nil {
-		l.AccessLogger.Printf("%s -  %s [%s] \"%s %s %s\" %d %d\n",
+		l.AccessLogger.Printf("%s -  %s [%s] \"%s %s %s\" %d %d \"%s\"\n",
 			record.Ip, record.Username, record.Time, record.Method,
-			record.Uri, record.Protocol, record.Status, record.Size)
+			record.Uri, record.Protocol, record.Status, record.Size, record.UserAgent)
 	}
 }
 
