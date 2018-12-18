@@ -18,11 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	//"time"
 
 	"github.com/Symantec/Dominator/lib/log/debuglogger"
-	//"github.com/Symantec/Dominator/lib/log/serverlogger"
-	//"github.com/Symantec/Dominator/lib/logbuf"
 	"github.com/Symantec/keymaster/keymasterd/eventnotifier"
 	"github.com/Symantec/keymaster/lib/instrumentedwriter"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
@@ -230,7 +227,6 @@ func setupValidRuntimeStateSigner() (*RuntimeState, *os.File, error) {
 	}
 	state.Config.Base.HtpasswdFilename = passwdFile.Name()
 
-	state.accessLogger = logger
 	return &state, passwdFile, nil
 }
 

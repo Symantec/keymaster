@@ -146,7 +146,6 @@ type RuntimeState struct {
 	passwordChecker      pwauth.PasswordAuthenticator
 	KeymasterPublicKeys  []crypto.PublicKey
 	isAdminCache         *admincache.Cache
-	accessLogger         log.DebugLogger
 }
 
 const redirectPath = "/auth/oauth2/callback"
@@ -2360,14 +2359,14 @@ func main() {
 	logBufOptions := logbuf.GetStandardOptions()
 	accessLogDirectory := filepath.Join(logBufOptions.Directory, "access")
 	logger.Debugf(1, "acesslogdir=%d ", accessLogDirectory)
-	runtimeState.accessLogger = serverlogger.NewWithOptions("access",
+	serviceAccessLogger := serverlogger.NewWithOptions("access",
 		logbuf.Options{MaxFileSize: 10 << 20,
 			Quota: 100 << 20, MaxBufferLines: 100,
 			Directory: accessLogDirectory},
 		stdlog.LstdFlags)
 
 	adminAccesLogDirectory := filepath.Join(logBufOptions.Directory, "access-admin")
-	adminAccessLogger := serverlogger.NewWithOptions("access-service",
+	adminAccessLogger := serverlogger.NewWithOptions("access-admin",
 		logbuf.Options{MaxFileSize: 10 << 20,
 			Quota: 100 << 20, MaxBufferLines: 100,
 			Directory: adminAccesLogDirectory},
@@ -2425,7 +2424,7 @@ func main() {
 		},
 	}
 	logFilterHandler := NewLogFilterHandler(http.DefaultServeMux, publicLogs)
-	serviceHTTPLogger := httpLogger{AccessLogger: runtimeState.accessLogger}
+	serviceHTTPLogger := httpLogger{AccessLogger: serviceAccessLogger}
 	adminHTTPLogger := httpLogger{AccessLogger: adminAccessLogger}
 	adminSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.AdminAddress,
@@ -2478,7 +2477,6 @@ func main() {
 		},
 	}
 
-	//l := httpLogger{AccessLogger: runtimeState.accessLogger}
 	serviceSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.HttpAddress,
 		Handler:      instrumentedwriter.NewLoggingHandler(serviceMux, serviceHTTPLogger),

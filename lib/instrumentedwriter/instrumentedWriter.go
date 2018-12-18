@@ -209,10 +209,9 @@ func (h *LoggingHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	if h.logBefore {
 		writer.SetCustomLogRecord("at", "after")
 	}
-	port := ""
-	portHost := strings.Split(r.Host, ":")
-	if len(portHost) == 2 {
-		port = portHost[1]
+	_, port, err := net.SplitHostPort(r.Host)
+	if err != nil {
+		port = ""
 	}
 
 	httpRequestDurationSummary.WithLabelValues(fmt.Sprintf("%d", writer.logRecord.Status),
