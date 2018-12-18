@@ -51,18 +51,3 @@ func TestOutput(t *testing.T) {
 		t.Errorf("expected %s but got %s", expected, output)
 	}
 }
-
-func TestAroundOutput(t *testing.T) {
-	logger := customLogger{}
-	loggingHandler := NewAroundLoggingHandler(http.HandlerFunc(okHandler), &logger)
-	writer := httptest.NewRecorder()
-	loggingHandler.ServeHTTP(writer, newRequest("GET", "/"))
-
-	expected := "method:GET,uri:,protocol:HTTP/1.1,username:-,host:example.com,status:0,customRecords:map[at:before]\n" +
-		"method:GET,uri:,protocol:HTTP/1.1,username:-,host:example.com,status:200,customRecords:map[at:after x-user-id:1]\n"
-
-	output := logger.buf
-	if output != expected {
-		t.Errorf("expected\n%s\nbut got\n%s", expected, output)
-	}
-}

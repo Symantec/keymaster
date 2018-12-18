@@ -121,24 +121,14 @@ type Logger interface {
 }
 
 type LoggingHandler struct {
-	handler   http.Handler
-	logger    Logger
-	logBefore bool
+	handler http.Handler
+	logger  Logger
 }
 
 func NewLoggingHandler(handler http.Handler, logger Logger) http.Handler {
 	return &LoggingHandler{
-		handler:   handler,
-		logger:    logger,
-		logBefore: false,
-	}
-}
-
-func NewAroundLoggingHandler(handler http.Handler, logger Logger) http.Handler {
-	return &LoggingHandler{
-		handler:   handler,
-		logger:    logger,
-		logBefore: true,
+		handler: handler,
+		logger:  logger,
 	}
 }
 
@@ -196,19 +186,12 @@ func (h *LoggingHandler) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	if h.logBefore {
-		writer.SetCustomLogRecord("at", "before")
-		h.logger.Log(writer.logRecord)
-	}
 	h.handler.ServeHTTP(writer, r)
 	finishTime := time.Now()
 
 	writer.logRecord.Time = finishTime.UTC()
 	writer.logRecord.ElapsedTime = finishTime.Sub(startTime)
 
-	if h.logBefore {
-		writer.SetCustomLogRecord("at", "after")
-	}
 	_, port, err := net.SplitHostPort(r.Host)
 	if err != nil {
 		port = ""
