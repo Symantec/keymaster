@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"html/template"
 	"io/ioutil"
+	stdlog "log"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,11 +29,13 @@ import (
 
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/serverlogger"
+	"github.com/Symantec/Dominator/lib/logbuf"
 	"github.com/Symantec/Dominator/lib/srpc"
 	"github.com/Symantec/keymaster/keymasterd/admincache"
 	"github.com/Symantec/keymaster/keymasterd/eventnotifier"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/certgen"
+	"github.com/Symantec/keymaster/lib/instrumentedwriter"
 	"github.com/Symantec/keymaster/lib/pwauth"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"github.com/Symantec/keymaster/proto/eventmon"
@@ -40,6 +43,7 @@ import (
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/units"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/tstranex/u2f"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
@@ -346,7 +350,7 @@ func getPreferredAcceptType(r *http.Request) string {
 	if ok {
 		for _, acceptValue := range acceptHeader {
 			if strings.Contains(acceptValue, "text/html") {
-				logger.Printf("Got it  %+v", acceptValue)
+				logger.Debugf(1, "Got it  %+v", acceptValue)
 				preferredAcceptType = "text/html"
 			}
 		}
@@ -687,10 +691,10 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, authLevel, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
-		logger.Printf("%v", err)
-
+		logger.Debugf(1, "%v", err)
 		return
 	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 
 	sufficientAuthLevel := false
 	// We should do an intersection operation here
@@ -1275,7 +1279,7 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 	if ok {
 		for _, acceptValue := range acceptHeader {
 			if strings.Contains(acceptValue, "text/html") {
-				logger.Printf("Got it  %+v", acceptValue)
+				logger.Debugf(1, "Got it  %+v", acceptValue)
 				returnAcceptType = "text/html"
 			}
 		}
@@ -1414,10 +1418,10 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	//authUser, authType, err := state.checkAuth(w, r, AuthTypeAny)
 	authUser, currentAuthLevel, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
-		logger.Printf("%v", err)
-
+		logger.Debugf(1, "%v", err)
 		return
 	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 
 	var OTPString string
 	if val, ok := r.Form["OTP"]; ok {
@@ -1470,7 +1474,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	if ok {
 		for _, acceptValue := range acceptHeader {
 			if strings.Contains(acceptValue, "text/html") {
-				logger.Printf("Got it  %+v", acceptValue)
+				logger.Debugf(1, "Got it  %+v", acceptValue)
 				returnAcceptType = "text/html"
 			}
 		}
@@ -1512,10 +1516,10 @@ func (state *RuntimeState) vipPushStartHandler(w http.ResponseWriter, r *http.Re
 	}
 	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
-		logger.Printf("%v", err)
-
+		logger.Debugf(1, "%v", err)
 		return
 	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 	logger.Debugf(0, "Vip push start authuser=%s", authUser)
 	vipPushCookie, err := r.Cookie(vipTransactionCookieName)
 	if err != nil {
@@ -1584,10 +1588,10 @@ func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Re
 	}
 	authUser, currentAuthLevel, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
-		logger.Printf("%v", err)
-
+		logger.Debugf(1, "%v", err)
 		return
 	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 	logger.Debugf(1, "VIPPollCheckHandler: authuser=%s", authUser)
 	vipPollCookie, err := r.Cookie(vipTransactionCookieName)
 	if err != nil {
@@ -1667,10 +1671,10 @@ func (state *RuntimeState) u2fRegisterRequest(w http.ResponseWriter, r *http.Req
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
-		logger.Printf("%v", err)
-
+		logger.Debugf(1, "%v", err)
 		return
 	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 
 	// Check that they can change other users
 	if !state.IsAdminUserAndU2F(authUser, loginLevel) && authUser != assumedUser {
@@ -1735,10 +1739,10 @@ func (state *RuntimeState) u2fRegisterResponse(w http.ResponseWriter, r *http.Re
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
-		logger.Printf("%v", err)
-
+		logger.Debugf(1, "%v", err)
 		return
 	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 
 	// Check that they can change other users
 	if !state.IsAdminUserAndU2F(authUser, loginLevel) && authUser != assumedUser {
@@ -1814,10 +1818,10 @@ func (state *RuntimeState) u2fSignRequest(w http.ResponseWriter, r *http.Request
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
-		logger.Printf("%v", err)
-
+		logger.Debugf(1, "%v", err)
 		return
 	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 
 	//////////
 	profile, ok, _, err := state.LoadUserProfile(authUser)
@@ -1875,9 +1879,10 @@ func (state *RuntimeState) u2fSignResponse(w http.ResponseWriter, r *http.Reques
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, currentAuthLevel, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
-		logger.Printf("%v", err)
+		logger.Debugf(1, "%v", err)
 		return
 	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 
 	//now the actual work
 	var signResp u2f.SignResponse
@@ -2020,10 +2025,10 @@ func (state *RuntimeState) usersHandler(
 	}
 	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
-		logger.Printf("%v", err)
-
+		logger.Debugf(1, "%v", err)
 		return
 	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 
 	users, _, err := state.GetUsers()
 	if err != nil {
@@ -2075,10 +2080,10 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
-		logger.Printf("%v", err)
-
+		logger.Debugf(1, "%v", err)
 		return
 	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 
 	readOnlyMsg := ""
 	if assumedUser == "" {
@@ -2161,10 +2166,11 @@ func (state *RuntimeState) u2fTokenManagerHandler(w http.ResponseWriter, r *http
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
-		logger.Printf("%v", err)
+		logger.Debugf(1, "%v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 	// TODO: ensure is a valid method (POST)
 	err = r.ParseForm()
 	if err != nil {
@@ -2284,6 +2290,18 @@ func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Req
 	http.Error(w, "error not found", http.StatusNotFound)
 }
 
+type httpLogger struct {
+	AccessLogger log.DebugLogger
+}
+
+func (l httpLogger) Log(record instrumentedwriter.LogRecord) {
+	if l.AccessLogger != nil {
+		l.AccessLogger.Printf("%s -  %s [%s] \"%s %s %s\" %d %d \"%s\"\n",
+			record.Ip, record.Username, record.Time, record.Method,
+			record.Uri, record.Protocol, record.Status, record.Size, record.UserAgent)
+	}
+}
+
 func Usage() {
 	fmt.Fprintf(os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
 	flag.PrintDefaults()
@@ -2336,11 +2354,27 @@ func main() {
 	logger.Debugf(3, "After load verify")
 
 	publicLogs := runtimeState.Config.Base.PublicLogs
-
 	adminDashboard := newAdminDashboard(realLogger, publicLogs)
+
+	logBufOptions := logbuf.GetStandardOptions()
+	accessLogDirectory := filepath.Join(logBufOptions.Directory, "access")
+	logger.Debugf(1, "acesslogdir=%d ", accessLogDirectory)
+	serviceAccessLogger := serverlogger.NewWithOptions("access",
+		logbuf.Options{MaxFileSize: 10 << 20,
+			Quota: 100 << 20, MaxBufferLines: 100,
+			Directory: accessLogDirectory},
+		stdlog.LstdFlags)
+
+	adminAccesLogDirectory := filepath.Join(logBufOptions.Directory, "access-admin")
+	adminAccessLogger := serverlogger.NewWithOptions("access-admin",
+		logbuf.Options{MaxFileSize: 10 << 20,
+			Quota: 100 << 20, MaxBufferLines: 100,
+			Directory: adminAccesLogDirectory},
+		stdlog.LstdFlags)
+
 	// Expose the registered metrics via HTTP.
 	http.Handle("/", adminDashboard)
-	http.Handle("/prometheus_metrics", prometheus.Handler()) //lint:ignore SA1019 TODO: newer prometheus handler
+	http.Handle("/prometheus_metrics", promhttp.Handler()) //lint:ignore SA1019 TODO: newer prometheus handler
 	http.HandleFunc(secretInjectorPath, runtimeState.secretInjectorHandler)
 
 	serviceMux := http.NewServeMux()
@@ -2390,10 +2424,12 @@ func main() {
 		},
 	}
 	logFilterHandler := NewLogFilterHandler(http.DefaultServeMux, publicLogs)
+	serviceHTTPLogger := httpLogger{AccessLogger: serviceAccessLogger}
+	adminHTTPLogger := httpLogger{AccessLogger: adminAccessLogger}
 	adminSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.AdminAddress,
 		TLSConfig:    cfg,
-		Handler:      logFilterHandler,
+		Handler:      instrumentedwriter.NewLoggingHandler(logFilterHandler, adminHTTPLogger),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -2443,7 +2479,7 @@ func main() {
 
 	serviceSrv := &http.Server{
 		Addr:         runtimeState.Config.Base.HttpAddress,
-		Handler:      serviceMux,
+		Handler:      instrumentedwriter.NewLoggingHandler(serviceMux, serviceHTTPLogger),
 		TLSConfig:    serviceTLSConfig,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,

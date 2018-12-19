@@ -19,6 +19,7 @@ import (
 	"github.com/mendsley/gojwk"
 	//"gopkg.in/dgrijalva/jwt-go.v2"
 	"github.com/Symantec/keymaster/lib/authutil"
+	"github.com/Symantec/keymaster/lib/instrumentedwriter"
 	//"golang.org/x/crypto/ssh"
 	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/jwt"
@@ -149,10 +150,11 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	// We are now at exploration stage... and will require pre-authed clients.
 	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
-		logger.Printf("%v", err)
+		logger.Debugf(1, "%v", err)
 		return
 	}
 	logger.Debugf(1, "AuthUser of idc auth: %s", authUser)
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 	// requst MUST be a GET or POST
 	if !(r.Method == "GET" || r.Method == "POST") {
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Method for Auth Handler")

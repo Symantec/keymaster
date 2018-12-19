@@ -18,10 +18,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	//"time"
 
 	"github.com/Symantec/Dominator/lib/log/debuglogger"
 	"github.com/Symantec/keymaster/keymasterd/eventnotifier"
+	"github.com/Symantec/keymaster/lib/instrumentedwriter"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 )
 
@@ -510,7 +510,8 @@ func TestFailSinginUnexpectedCookie(t *testing.T) {
 
 func checkRequestHandlerCode(req *http.Request, handlerFunc http.HandlerFunc, expectedStatus int) (*httptest.ResponseRecorder, error) {
 	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(handlerFunc)
+	l := httpLogger{}
+	handler := instrumentedwriter.NewLoggingHandler(http.HandlerFunc(handlerFunc), l)
 
 	handler.ServeHTTP(rr, req)
 	if status := rr.Code; status != expectedStatus {
