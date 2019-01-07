@@ -1,0 +1,278 @@
+package main
+
+import (
+	"encoding/json"
+	"errors"
+	"github.com/Symantec/keymaster/lib/instrumentedwriter"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
+	"github.com/Symantec/keymaster/proto/eventmon"
+)
+
+func (state *RuntimeState) startVIPPush(cookieVal string, username string) error {
+	transactionId, err := state.Config.SymantecVIP.Client.StartUserVIPPush(username)
+	if err != nil {
+		logger.Println(err)
+		return err
+	}
+	newLocalData := pushPollTransaction{Username: username, TransactionID: transactionId, ExpiresAt: time.Now().Add(maxAgeSecondsVIPCookie * time.Second)}
+	state.Mutex.Lock()
+	defer state.Mutex.Unlock()
+	state.vipPushCookie[cookieVal] = newLocalData
+
+	return nil
+}
+
+///
+const vipAuthPath = "/api/v0/vipAuth"
+
+func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request) {
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
+
+	//Check for valid method here?
+	switch r.Method {
+	case "GET":
+		logger.Debugf(3, "Got client GET connection")
+		err := r.ParseForm()
+		if err != nil {
+			logger.Println(err)
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+			return
+		}
+	case "POST":
+		logger.Debugf(3, "Got client POST connection")
+		err := r.ParseForm()
+		if err != nil {
+			logger.Println(err)
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+			return
+		}
+	default:
+		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		return
+	}
+	//authUser, authType, err := state.checkAuth(w, r, AuthTypeAny)
+	authUser, currentAuthLevel, err := state.checkAuth(w, r, AuthTypeAny)
+	if err != nil {
+		logger.Debugf(1, "%v", err)
+		return
+	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+
+	var OTPString string
+	if val, ok := r.Form["OTP"]; ok {
+		if len(val) > 1 {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Just one OTP Value allowed")
+			logger.Printf("Login with multiple OTP Values")
+			return
+		}
+		OTPString = val[0]
+	}
+	otpValue, err := strconv.Atoi(OTPString)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing OTP value")
+	}
+
+	start := time.Now()
+	valid, err := state.Config.SymantecVIP.Client.ValidateUserOTP(authUser, otpValue)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
+		return
+	}
+
+	metricLogExternalServiceDuration("vip", time.Since(start))
+
+	//
+	metricLogAuthOperation(getClientType(r), proto.AuthTypeSymantecVIP, valid)
+
+	if !valid {
+		logger.Printf("Invalid OTP value login for %s", authUser)
+		// TODO if client is html then do a redirect back to vipLoginPage
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		return
+
+	}
+
+	// OTP check was  successful
+	eventNotifier.PublishVIPAuthEvent(eventmon.VIPAuthTypeOTP, authUser)
+	_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeSymantecVIP)
+	if err != nil {
+		logger.Printf("Auth Cookie NOT found ? %s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
+		return
+	}
+
+	// Now we send to the appropiate place
+	returnAcceptType := "application/json"
+	acceptHeader, ok := r.Header["Accept"]
+	if ok {
+		for _, acceptValue := range acceptHeader {
+			if strings.Contains(acceptValue, "text/html") {
+				logger.Debugf(1, "Got it  %+v", acceptValue)
+				returnAcceptType = "text/html"
+			}
+		}
+	}
+
+	// TODO: The cert backend should depend also on per user preferences.
+	loginResponse := proto.LoginResponse{Message: "success"} //CertAuthBackend: certBackends
+	switch returnAcceptType {
+	case "text/html":
+		loginDestination := getLoginDestination(r)
+		eventNotifier.PublishWebLoginEvent(authUser)
+		http.Redirect(w, r, loginDestination, 302)
+	default:
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(loginResponse)
+		//fmt.Fprintf(w, "Success!")
+	}
+	return
+}
+
+func (state *RuntimeState) getPushPollTransaction(cookieValue string) (pushPollTransaction, bool) {
+	state.Mutex.Lock()
+	defer state.Mutex.Unlock()
+	value, ok := state.vipPushCookie[cookieValue]
+	return value, ok
+}
+
+///////////////////////////
+const vipPushStartPath = "/api/v0/vipPushStart"
+
+func (state *RuntimeState) vipPushStartHandler(w http.ResponseWriter, r *http.Request) {
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
+	if !state.Config.SymantecVIP.Enabled {
+		logger.Printf("asked for push status but VIP is not enabled")
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "")
+		return
+	}
+	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
+	if err != nil {
+		logger.Debugf(1, "%v", err)
+		return
+	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	logger.Debugf(0, "Vip push start authuser=%s", authUser)
+	vipPushCookie, err := r.Cookie(vipTransactionCookieName)
+	if err != nil {
+		logger.Printf("%v", err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing Cookie")
+		return
+	}
+	pushTransaction, ok := state.getPushPollTransaction(vipPushCookie.Value)
+	if ok {
+		err := errors.New("push transaction found will not start another one")
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Push already sent")
+		return
+	}
+	if len(pushTransaction.TransactionID) > 0 {
+		err := errors.New("VIP push transaction already initiated")
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "Push already sent")
+		return
+	}
+	err = state.startVIPPush(vipPushCookie.Value, authUser)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Cookie not setup ")
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	return
+}
+
+////////////////////////////
+const vipPollCheckPath = "/api/v0/vipPollCheck"
+
+func (state *RuntimeState) VIPPollCheckHandler(w http.ResponseWriter, r *http.Request) {
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
+	if !state.Config.SymantecVIP.Enabled {
+		logger.Printf("asked for push status but VIP is not enabled")
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "")
+		return
+	}
+
+	//Check for valid method here?
+	switch r.Method {
+	case "GET":
+		logger.Debugf(3, "Got client GET connection")
+		err := r.ParseForm()
+		if err != nil {
+			logger.Println(err)
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+			return
+		}
+	case "POST":
+		logger.Debugf(3, "Got client POST connection")
+		err := r.ParseForm()
+		if err != nil {
+			logger.Println(err)
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+			return
+		}
+	default:
+		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		return
+	}
+	authUser, currentAuthLevel, err := state.checkAuth(w, r, AuthTypeAny)
+	if err != nil {
+		logger.Debugf(1, "%v", err)
+		return
+	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	logger.Debugf(1, "VIPPollCheckHandler: authuser=%s", authUser)
+	vipPollCookie, err := r.Cookie(vipTransactionCookieName)
+	if err != nil {
+		logger.Printf("VIPPollCheckHandler: error getting poll cookie %v", err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Missing Cookie")
+		return
+	}
+	pushTransaction, ok := state.getPushPollTransaction(vipPollCookie.Value)
+	if !ok {
+		err := errors.New("VIPPollCheckHandler: push transaction not found for user")
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "Error parsing form")
+		return
+	}
+	//TODO: check username
+	valid, err := state.Config.SymantecVIP.Client.VipPushHasBeenApproved(pushTransaction.TransactionID)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error checking push transaction")
+		return
+	}
+	if !valid {
+		err := errors.New("Not yet") // usually it is not valid, no need to spam the log
+		logger.Debugf(1, "%s", err)
+		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "VIP Push Poller unsuccessful")
+		return
+	}
+
+	// VIP Push check was  successful
+	_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeSymantecVIP)
+	if err != nil {
+		logger.Printf("VIPPollCheckHandler:  Failure to update AuthCookie %s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
+		return
+	}
+	eventNotifier.PublishVIPAuthEvent(eventmon.VIPAuthTypePush, authUser)
+
+	// TODO make something more fancy: JSON?
+	w.WriteHeader(http.StatusOK)
+	return
+
+}
