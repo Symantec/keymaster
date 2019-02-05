@@ -141,11 +141,6 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Unrecognized cert type")
 		return
 	}
-	//SHOULD have never reached this!
-	state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-	logger.Printf("Escape from default paths")
-	return
-
 }
 
 func (state *RuntimeState) postAuthSSHCertHandler(
