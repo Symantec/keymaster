@@ -57,9 +57,6 @@ func initDB(state *RuntimeState) (err error) {
 		return err
 	}
 
-	err = errors.New("invalid state")
-	return err
-
 }
 
 func initDBPostgres(state *RuntimeState) (err error) {
