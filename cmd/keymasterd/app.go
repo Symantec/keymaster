@@ -1544,7 +1544,7 @@ func main() {
 	}
 
 	if len(runtimeState.Config.Ldap.LDAPTargetURLs) > 0 && !runtimeState.Config.Ldap.DisablePasswordCache {
-		err = runtimeState.passwordChecker.UpdateStorage(&runtimeState)
+		err = runtimeState.passwordChecker.UpdateStorage(runtimeState)
 		if err != nil {
 			logger.Fatalf("Cannot update password checker")
 		}

@@ -171,22 +171,22 @@ func (state *RuntimeState) signerPublicKeyToKeymasterKeys() error {
 	return nil
 }
 
-func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
+func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 	var runtimeState RuntimeState
 	runtimeState.isAdminCache = admincache.New(5 * time.Minute)
 	if _, err := os.Stat(configFilename); os.IsNotExist(err) {
 		err = errors.New("mising config file failure")
-		return runtimeState, err
+		return nil, err
 	}
 	source, err := ioutil.ReadFile(configFilename)
 	if err != nil {
 		err = errors.New("cannot read config file")
-		return runtimeState, err
+		return nil, err
 	}
 	err = yaml.Unmarshal(source, &runtimeState.Config)
 	if err != nil {
 		err = errors.New("Cannot parse config file")
-		return runtimeState, err
+		return nil, err
 	}
 
 	//share config
@@ -202,7 +202,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	} else {
 		runtimeState.HostIdentity, err = getHostIdentity()
 		if err != nil {
-			return runtimeState, err
+			return nil, err
 		}
 	}
 	// TODO: This assumes httpAddress is just the port..
@@ -218,18 +218,18 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 
 	_, err = exitsAndCanRead(runtimeState.Config.Base.TLSCertFilename, "http cert file")
 	if err != nil {
-		return runtimeState, err
+		return nil, err
 	}
 	_, err = exitsAndCanRead(runtimeState.Config.Base.TLSKeyFilename, "http key file")
 	if err != nil {
-		return runtimeState, err
+		return nil, err
 	}
 
 	sshCAFilename := runtimeState.Config.Base.SSHCAFilename
 	runtimeState.SSHCARawFileContent, err = exitsAndCanRead(sshCAFilename, "ssh CA File")
 	if err != nil {
 		logger.Printf("Cannot load ssh CA File")
-		return runtimeState, err
+		return nil, err
 	}
 
 	if len(runtimeState.Config.Base.ClientCAFilename) > 0 {
@@ -237,13 +237,13 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			runtimeState.Config.Base.ClientCAFilename, "client CA file")
 		if err != nil {
 			logger.Printf("Cannot load client CA File")
-			return runtimeState, err
+			return nil, err
 		}
 		runtimeState.ClientCAPool = x509.NewCertPool()
 		ok := runtimeState.ClientCAPool.AppendCertsFromPEM(buffer)
 		if !ok {
 			err = errors.New("Cannot append any certs from Client CA file")
-			return runtimeState, err
+			return nil, err
 		}
 		logger.Debugf(3, "client ca file loaded %d ", len(runtimeState.ClientCAPool.Subjects()))
 
@@ -252,12 +252,12 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		filename := runtimeState.Config.Base.KeymasterPublicKeysFilename
 		if _, err := os.Stat(filename); os.IsNotExist(err) {
 			logger.Printf("keymaster_public_keys_filename defined but file does not exist")
-			return runtimeState, err
+			return nil, err
 		}
 		inFile, err := os.Open(filename)
 		if err != nil {
 			logger.Printf("keymaster_public_keys_filename cannot be opened")
-			return runtimeState, err
+			return nil, err
 		}
 		defer inFile.Close()
 		scanner := bufio.NewScanner(inFile)
@@ -267,13 +267,13 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			userPubKey := scanner.Text()
 			sshPubKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(userPubKey))
 			if err != nil {
-				return runtimeState, err
+				return nil, err
 			}
 			//
 			cryptokey, ok := sshPubKey.(ssh.CryptoPublicKey)
 			if !ok {
 				err := errors.New("cannot cast public key!")
-				return runtimeState, err
+				return nil, err
 			}
 			logger.Debugf(3, "adding")
 			runtimeState.KeymasterPublicKeys = append(runtimeState.KeymasterPublicKeys, cryptokey.CryptoPublicKey())
@@ -285,12 +285,12 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		signer, err := getSignerFromPEMBytes(runtimeState.SSHCARawFileContent)
 		if err != nil {
 			logger.Printf("Cannot parse Priave Key file")
-			return runtimeState, err
+			return nil, err
 		}
 		runtimeState.caCertDer, err = generateCADer(&runtimeState, signer)
 		if err != nil {
 			logger.Printf("Cannot generate CA Der")
-			return runtimeState, err
+			return nil, err
 		}
 
 		// Assignmet of signer MUST be the last operation after
@@ -302,13 +302,13 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	} else {
 		if runtimeState.ClientCAPool == nil {
 			err := errors.New("Invalid ssh CA private key file and NO clientCA")
-			return runtimeState, err
+			return nil, err
 		}
 		//check that the loaded date seems like an openpgp armored file
 		fileAsString := string(runtimeState.SSHCARawFileContent[:])
 		if !strings.HasPrefix(fileAsString, "-----BEGIN PGP MESSAGE-----") {
 			err = errors.New("Have a client CA but the CA file does NOT look like and PGP file")
-			return runtimeState, err
+			return nil, err
 		}
 
 	}
@@ -329,17 +329,17 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		logger.Printf("symantec VIP is enabled")
 		certPem, err := exitsAndCanRead(runtimeState.Config.SymantecVIP.CertFile, "VIP certificate file")
 		if err != nil {
-			return runtimeState, err
+			return nil, err
 		}
 
 		keyPem, err := exitsAndCanRead(runtimeState.Config.SymantecVIP.KeyFile, "VIP key file")
 		if err != nil {
-			return runtimeState, err
+			return nil, err
 		}
 
 		client, err := vip.NewClient(certPem, keyPem)
 		if err != nil {
-			return runtimeState, err
+			return nil, err
 		}
 		client.VipPushMessageText = "Keymaster Push Authentication Request"
 		client.VipPushDisplayMessageText = "Keymaster 2FA request from:"
@@ -350,20 +350,20 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	//
 	if runtimeState.Config.Base.HideStandardLogin && !runtimeState.Config.Oauth2.Enabled {
 		err := errors.New("invalid configuration... cannot hide std login without enabling oath2")
-		return runtimeState, err
+		return nil, err
 	}
 
 	//Load extra templates
 	err = runtimeState.loadTemplates()
 	if err != nil {
-		return runtimeState, err
+		return nil, err
 	}
 
 	// ExtAuthCommand
 	if len(runtimeState.Config.Base.ExternalAuthCmd) > 0 {
 		runtimeState.passwordChecker, err = command.New(runtimeState.Config.Base.ExternalAuthCmd, nil, logger)
 		if err != nil {
-			return runtimeState, err
+			return nil, err
 		}
 	}
 	if len(runtimeState.Config.Ldap.LDAPTargetURLs) > 0 {
@@ -378,7 +378,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 			timeoutSecs, nil, pwdCache,
 			logger)
 		if err != nil {
-			return runtimeState, err
+			return nil, err
 		}
 		logger.Debugf(1, "passwordChecker= %+v", runtimeState.passwordChecker)
 	}
@@ -386,12 +386,12 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 		runtimeState.Config.Base.SecsBetweenDependencyChecks = defaultSecsBetweenDependencyChecks
 	}
 
-	logger.Debugf(1, "End of config initialization: %+v", runtimeState)
+	logger.Debugf(1, "End of config initialization: %+v", &runtimeState)
 
 	// DB initialization
 	err = initDB(&runtimeState)
 	if err != nil {
-		return runtimeState, err
+		return nil, err
 	}
 
 	// and we start the cleanup
@@ -400,7 +400,7 @@ func loadVerifyConfigFile(configFilename string) (RuntimeState, error) {
 	//
 	go runtimeState.doDependencyMonitoring(runtimeState.Config.Base.SecsBetweenDependencyChecks)
 
-	return runtimeState, nil
+	return &runtimeState, nil
 }
 
 func generateArmoredEncryptedCAPritaveKey(passphrase []byte, filepath string) error {
