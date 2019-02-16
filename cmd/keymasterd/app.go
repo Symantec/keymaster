@@ -1439,7 +1439,8 @@ func main() {
 	eventNotifier = eventnotifier.New(logger)
 	runtimeState, err := loadVerifyConfigFile(*configFilename)
 	if err != nil {
-		panic(err)
+		logger.Println(err)
+		os.Exit(1)
 	}
 	logger.Debugf(3, "After load verify")
 
@@ -1542,7 +1543,7 @@ func main() {
 		panic("got bad signer ready data")
 	}
 
-	if !runtimeState.Config.Ldap.DisablePasswordCache {
+	if len(runtimeState.Config.Ldap.LDAPTargetURLs) > 0 && !runtimeState.Config.Ldap.DisablePasswordCache {
 		err = runtimeState.passwordChecker.UpdateStorage(&runtimeState)
 		if err != nil {
 			logger.Fatalf("Cannot update password checker")
