@@ -84,9 +84,8 @@ func decodeIPV4AddressChoice(encodedBlock asn1.BitString) (net.IPNet, error) {
 	return netBlock, nil
 }
 
-// returns an x509 cert that has the username in the common name,
-// optionally if a kerberos Realm is present it will also add a kerberos
-// SAN exention for pkinit
+// GenIPRestrictedX509Cert returns an x509 cert that has the username in
+// the common name, with the allowed netyblocks specified
 func GenIPRestrictedX509Cert(userName string, userPub interface{},
 	caCert *x509.Certificate, caPriv crypto.Signer,
 	ipv4Netblocks []net.IPNet, duration time.Duration,
