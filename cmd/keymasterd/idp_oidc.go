@@ -66,12 +66,13 @@ func (state *RuntimeState) idpOpenIDCDiscoveryHandler(w http.ResponseWriter, r *
 
 	b, err := json.Marshal(metadata)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("Error marshalling in idpOpenIDCDiscoveryHandler: %s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
+		return
 	}
 
 	var out bytes.Buffer
 	json.Indent(&out, b, "", "\t")
-	//w.Header.Add("Content-Type", "application/json")
 	w.Header().Set("Content-Type", "application/json")
 	out.WriteTo(w)
 }
@@ -89,17 +90,23 @@ func (state *RuntimeState) idpOpenIDCJWKSHandler(w http.ResponseWriter, r *http.
 	for _, key := range state.KeymasterPublicKeys {
 		jwkKey, err := gojwk.PublicKey(key)
 		if err != nil {
-			log.Fatal(err)
+			log.Printf("error getting key idpOpenIDCJWKSHandler: %s", err)
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
+			return
 		}
 		jwkKey.Kid, err = getKeyFingerprint(key)
 		if err != nil {
-			log.Fatal(err)
+			log.Printf("error computing key fingerprint in  idpOpenIDCJWKSHandler: %s", err)
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
+			return
 		}
 		currentKeys.Keys = append(currentKeys.Keys, jwkKey)
 	}
 	b, err := json.Marshal(currentKeys)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("idpOpenIDCJWKSHandler marshaling error: %s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
+		return
 	}
 
 	var out bytes.Buffer
@@ -389,7 +396,9 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	signerOptions := (&jose.SignerOptions{}).WithType("JWT")
 	kid, err := getKeyFingerprint(state.Signer.Public())
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("error getting key fingerprint in idpOpenIDCTokenHandler: %s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
+		return
 	}
 
 	signerOptions = signerOptions.WithHeader("kid", kid)
@@ -428,7 +437,9 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 	// and write the json output
 	b, err := json.Marshal(outToken)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("error marshaling in idpOpenIDCTokenHandler: %s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
+		return
 	}
 
 	var out bytes.Buffer
@@ -573,7 +584,9 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 	// and write the json output
 	b, err := json.Marshal(userInfo)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("error marshaling in idpOpenIDUserinfonHandler: %s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Internal Error")
+		return
 	}
 	logger.Debugf(1, "userinfo=%+v\n b=%s", userInfo, b)
 
