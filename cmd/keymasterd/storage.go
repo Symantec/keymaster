@@ -57,9 +57,6 @@ func initDB(state *RuntimeState) (err error) {
 		return err
 	}
 
-	err = errors.New("invalid state")
-	return err
-
 }
 
 func initDBPostgres(state *RuntimeState) (err error) {
@@ -230,7 +227,6 @@ func copyDBIntoSQLite(source, destination *sql.DB, destinationType string) error
 		}
 	}
 	if err := rows.Err(); err != nil {
-		//log.Fatal(err)
 		logger.Printf("err='%s'", err)
 		return err
 	}
@@ -306,8 +302,8 @@ func (state *RuntimeState) GetUsers() ([]string, bool, error) {
 		stmtText := getUsersStmt[state.dbType]
 		stmt, err := state.db.Prepare(stmtText)
 		if err != nil {
-			logger.Print("Error Preparing getUsers statement")
-			logger.Fatal(err)
+			logger.Printf("Error Preparing getUsers statement primary DB: %s", err)
+			return
 		}
 		defer stmt.Close()
 		if state.remoteDBQueryTimeout == 0 {
@@ -330,8 +326,8 @@ func (state *RuntimeState) GetUsers() ([]string, bool, error) {
 		stmtText := getUsersStmt["sqlite"]
 		stmt, err := state.cacheDB.Prepare(stmtText)
 		if err != nil {
-			logger.Print("Error Preparing statement")
-			logger.Fatal(err)
+			logger.Printf("Error Preparing getUsers statement cached DB: %s", err)
+			return nil, false, err
 		}
 		defer stmt.Close()
 		names, dbErr := gatherUsers(stmt)
@@ -374,8 +370,8 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 		stmtText := loadUserProfileStmt[state.dbType]
 		stmt, err := state.db.Prepare(stmtText)
 		if err != nil {
-			logger.Print("Error Preparing statement")
-			logger.Fatal(err)
+			logger.Printf("Error Preparing statement LoadUsers primary DB: %s", err)
+			return
 		}
 
 		defer stmt.Close()
@@ -412,8 +408,8 @@ func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfil
 		stmtText := loadUserProfileStmt["sqlite"]
 		stmt, err := state.cacheDB.Prepare(stmtText)
 		if err != nil {
-			logger.Print("Error Preparing statement")
-			logger.Fatal(err)
+			logger.Printf("Error Preparing statement LoadUsers cache DB: %s", err)
+			return nil, false, false, err
 		}
 
 		defer stmt.Close()
@@ -532,15 +528,13 @@ func (state *RuntimeState) GetSigned(username string, dataType int) (bool, strin
 		stmtText := getSignedUserDataStmt[state.dbType]
 		stmt, err := state.db.Prepare(stmtText)
 		if err != nil {
-			logger.Print("Error Preparing statement")
-			logger.Fatal(err)
+			logger.Printf("Error Preparing statement GetSigned Primary DB: %s", err)
+			return
 		}
 		defer stmt.Close()
 		if state.remoteDBQueryTimeout == 0 {
 			time.Sleep(10 * time.Millisecond)
 		}
-		//profilMessage.Err = stmt.QueryRow(username).Scan(&profileMessage.ProfileBytes)
-		//ch <- profileMessage
 		signedDataMessage.Err = stmt.QueryRow(username, dataType, time.Now().Unix()).Scan(&signedDataMessage.JWSData)
 		ch <- signedDataMessage
 	}(username, dataType)
@@ -569,8 +563,8 @@ func (state *RuntimeState) GetSigned(username string, dataType int) (bool, strin
 		stmtText := getSignedUserDataStmt["sqlite"]
 		stmt, err := state.cacheDB.Prepare(stmtText)
 		if err != nil {
-			logger.Print("Error Preparing statement")
-			logger.Fatal(err)
+			logger.Printf("Error Preparing statement GetSigned Cache DB: %s", err)
+			return false, "", err
 		}
 
 		defer stmt.Close()
