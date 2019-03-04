@@ -39,6 +39,7 @@ func startVIPPush(client *http.Client,
 		return err
 	}
 	defer pushStartResp.Body.Close()
+	io.Copy(ioutil.Discard, pushStartResp.Body)
 	if pushStartResp.StatusCode != 200 {
 		logger.Printf("got error from vipStart call %s", pushStartResp.Status)
 		err := errors.New("bad vip response code")
@@ -67,6 +68,7 @@ func checkVIPPollStatus(client *http.Client,
 		return false, err
 	}
 	defer pollCheckResp.Body.Close()
+	io.Copy(ioutil.Discard, pollCheckResp.Body)
 	if pollCheckResp.StatusCode != 200 {
 		if pollCheckResp.StatusCode == 412 {
 			logger.Debugf(1, "got error from vipPollCheck call %s", pollCheckResp.Status)
