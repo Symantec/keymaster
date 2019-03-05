@@ -118,6 +118,7 @@ func getCertsFromServer(
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Add("Accept", "application/json")
 
+	logger.Debugf(1, "About to start login request\n")
 	loginResp, err := client.Do(req) //client.Get(targetUrl)
 	if err != nil {
 		logger.Printf("got error from req")
