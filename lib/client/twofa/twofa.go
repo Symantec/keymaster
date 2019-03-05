@@ -143,9 +143,8 @@ func getCertsFromServer(
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	loginResp.Body.Close()                  //so that we can reuse the channel
 	io.Copy(ioutil.Discard, loginResp.Body) // We also need to read ALL of the body
-
+	loginResp.Body.Close()                  //so that we can reuse the channel
 	logger.Debugf(1, "This the login response=%v\n", loginJSONResponse)
 
 	allowVIP := false
