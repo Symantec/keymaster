@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -76,6 +77,11 @@ func genKeyPair(
 func getHttpClient(tlsConfig *tls.Config) (*http.Client, error) {
 	clientTransport := &http.Transport{
 		TLSClientConfig: tlsConfig,
+		DialContext: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+			DualStack: true,
+		}).DialContext,
 	}
 
 	// proxy env variables in ascending order of preference, lower case 'http_proxy' dominates
@@ -93,7 +99,7 @@ func getHttpClient(tlsConfig *tls.Config) (*http.Client, error) {
 	}
 
 	// TODO: change timeout const for a flag
-	client := &http.Client{Transport: clientTransport, Jar: jar, Timeout: 5 * time.Second}
+	client := &http.Client{Transport: clientTransport, Jar: jar, Timeout: 25 * time.Second}
 	return client, nil
 }
 
