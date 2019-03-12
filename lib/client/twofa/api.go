@@ -28,8 +28,9 @@ func GetCertFromTargetUrls(
 	rootCAs *x509.CertPool,
 	skipu2f bool,
 	addGroups bool,
+	userAgentString string,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
 	return getCertFromTargetUrls(
 		signer, userName, password, targetUrls, rootCAs, skipu2f, addGroups,
-		logger)
+		userAgentString, logger)
 }
