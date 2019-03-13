@@ -56,6 +56,7 @@ const (
 	AuthTypeFederated
 	AuthTypeU2F
 	AuthTypeSymantecVIP
+	AuthTypeIPCertificate
 )
 
 const AuthTypeAny = 0xFFFF
@@ -581,8 +582,25 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 			}
 		}
 	}
+	// We first check for certs if this auth is allowed
+	if (requiredAuthType & AuthTypeIPCertificate) == AuthTypeIPCertificate {
+		if r.TLS != nil {
+			if len(r.TLS.VerifiedChains) > 0 {
+				clientName := r.TLS.VerifiedChains[0][0].Subject.CommonName
+				//check the ip here..
+				valid, err := certgen.VerifyIPRestrictedX509CertIP(r.TLS.VerifiedChains[0][0], r.RemoteAddr)
+				if err == nil && valid { //inverted logic!!!
+					return clientName, AuthTypeIPCertificate, nil
+				}
+				if err != nil {
+					logger.Printf("error on cert verify client err=%s", err)
+				}
 
-	// We first check for cookies
+			}
+		}
+	}
+
+	// Next we check for cookies
 	var authCookie *http.Cookie
 	for _, cookie := range r.Cookies() {
 		if cookie.Name != authCookieName {
