@@ -42,6 +42,7 @@ import (
 	"github.com/Symantec/tricorder/go/healthserver"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/units"
+	"github.com/cloudflare/cfssl/revoke"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/tstranex/u2f"
@@ -583,20 +584,38 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		}
 	}
 	// We first check for certs if this auth is allowed
-	if (requiredAuthType & AuthTypeIPCertificate) == AuthTypeIPCertificate {
-		if r.TLS != nil {
-			if len(r.TLS.VerifiedChains) > 0 {
-				clientName := r.TLS.VerifiedChains[0][0].Subject.CommonName
-				//check the ip here..
-				valid, err := certgen.VerifyIPRestrictedX509CertIP(r.TLS.VerifiedChains[0][0], r.RemoteAddr)
-				if err == nil && valid { //inverted logic!!!
-					return clientName, AuthTypeIPCertificate, nil
-				}
-				if err != nil {
-					logger.Printf("error on cert verify client err=%s", err)
-				}
+	if ((requiredAuthType & AuthTypeIPCertificate) == AuthTypeIPCertificate) &&
+		r.TLS != nil {
+		logger.Debugf(3, "looks like authtype ip cert, r.tls=%+v", r.TLS)
+		if len(r.TLS.VerifiedChains) > 0 {
+			logger.Debugf(3, "looks like authtype ip cert, has verifiedChains")
+			clientName := r.TLS.VerifiedChains[0][0].Subject.CommonName
+			userCert := r.TLS.VerifiedChains[0][0]
 
+			validIP, err := certgen.VerifyIPRestrictedX509CertIP(userCert, r.RemoteAddr)
+			if err != nil {
+				logger.Printf("Error verifying up restricted cert: %s", err)
+				state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error verifying up restricted cert: %s", err)
 			}
+			if !validIP {
+				logger.Printf("Invalid IP for cer: %s is not valid for incoming connection", r.RemoteAddr)
+				state.writeFailureResponse(w, r, http.StatusUnauthorized, "Bad incoming ip address")
+				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error verifying up restricted cert: %s", r.RemoteAddr)
+			}
+
+			revoked, ok, err := revoke.VerifyCertificateError(userCert)
+			if err != nil {
+				logger.Printf("Error checking revocation of cert restricted cert: %s", err)
+			}
+			// Soft Fail: we only fail if the revocation check was successful and the cert ir revoked
+			if revoked == true && ok {
+				logger.Printf("Cert is revoked")
+				state.writeFailureResponse(w, r, http.StatusUnauthorized, "revoked Cert")
+				return "", AuthTypeNone, fmt.Errorf("checkAuth: IP cert is revoked")
+			}
+			return clientName, AuthTypeIPCertificate, nil
+
 		}
 	}
 
@@ -1574,8 +1593,9 @@ func main() {
 	// We need to collect more stats on OS X version used before we can unify the
 	// TLS config for the service and the admin ports
 	serviceTLSConfig := &tls.Config{
-		ClientCAs:                runtimeState.ClientCAPool,
-		ClientAuth:               tls.RequestClientCert,
+		ClientCAs: runtimeState.ClientCAPool,
+		//ClientAuth:               tls.RequestClientCert,
+		ClientAuth:               tls.VerifyClientCertIfGiven,
 		MinVersion:               tls.VersionTLS12,
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 		PreferServerCipherSuites: true,

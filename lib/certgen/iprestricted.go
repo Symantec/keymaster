@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"crypto"
 	"crypto/rand"
+	"crypto/sha1"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"errors"
+	//"log"
 	"math/big"
 	"net"
 	"time"
@@ -32,11 +34,16 @@ func encodeIpAddressChoice(netBlock net.IPNet) (asn1.BitString, error) {
 	}
 	//unusedLen = uint8(ones) % 8
 	var output []byte
-	len := ((ones + 7) / 8)
-	//log.Printf("len=%d, ones=%d", len, ones)
-	output = make([]byte, len, len)
-	for i := 0; i < len; i++ {
-		output[i] = netBlock.IP[12+i]
+	outlen := ((ones + 7) / 8)
+	//log.Printf("outlen=%d, ones=%d", outlen, ones)
+	output = make([]byte, outlen, outlen)
+	//log.Printf("len netbloclen=%+v,", len(netBlock.IP))
+	increment := 12
+	if len(netBlock.IP) == 4 {
+		increment = 0
+	}
+	for i := 0; i < outlen; i++ {
+		output[i] = netBlock.IP[increment+i]
 	}
 	//log.Printf("%+v", output)
 	bitString := asn1.BitString{
@@ -84,6 +91,29 @@ func decodeIPV4AddressChoice(encodedBlock asn1.BitString) (net.IPNet, error) {
 	return netBlock, nil
 }
 
+//
+type subjectPublicKeyInfo struct {
+	Algorithm        pkix.AlgorithmIdentifier
+	SubjectPublicKey asn1.BitString
+}
+
+// This is just This is done by computing the SHA-1 digest of a public Key
+func ComputePublicKeyKeyID(PublicKey interface{}) ([]byte, error) {
+	encodedPub, err := x509.MarshalPKIXPublicKey(PublicKey)
+	if err != nil {
+		return nil, err
+	}
+
+	var subPKI subjectPublicKeyInfo
+	_, err = asn1.Unmarshal(encodedPub, &subPKI)
+	if err != nil {
+		return nil, err
+	}
+
+	pubHash := sha1.Sum(subPKI.SubjectPublicKey.Bytes)
+	return pubHash[:], nil
+}
+
 // GenIPRestrictedX509Cert returns an x509 cert that has the username in
 // the common name, with the allowed netyblocks specified
 func GenIPRestrictedX509Cert(userName string, userPub interface{},
@@ -107,7 +137,6 @@ func GenIPRestrictedX509Cert(userName string, userPub interface{},
 	if err != nil {
 		return nil, err
 	}
-
 	template := x509.Certificate{
 		SerialNumber:          serialNumber,
 		Subject:               subject,
@@ -118,7 +147,7 @@ func GenIPRestrictedX509Cert(userName string, userPub interface{},
 		IssuingCertificateURL: crlURL,
 		OCSPServer:            OCPServer,
 		BasicConstraintsValid: true,
-		IsCA: false,
+		IsCA:                  false,
 	}
 	if ipDelegationExtension != nil {
 		template.ExtraExtensions = append(template.ExtraExtensions,
