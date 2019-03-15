@@ -16,6 +16,14 @@ import (
 
 //const testDuration = time.Duration(120 * time.Second)
 
+func TestComputePublicKeyKeyID(t *testing.T) {
+	userPub, _, _ := setupX509Generator(t)
+	_, err := ComputePublicKeyKeyID(userPub)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestGenDelegationExtension(t *testing.T) {
 
 	netblock := net.IPNet{

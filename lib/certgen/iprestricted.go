@@ -49,7 +49,6 @@ func encodeIpAddressChoice(netBlock net.IPNet) (asn1.BitString, error) {
 	bitString := asn1.BitString{
 		Bytes:     output,
 		BitLength: ones,
-		//BitLength: len * 8, //Len is in bits, however it gets the lengt for the output?
 	}
 
 	return bitString, nil
@@ -147,7 +146,7 @@ func GenIPRestrictedX509Cert(userName string, userPub interface{},
 		IssuingCertificateURL: crlURL,
 		OCSPServer:            OCPServer,
 		BasicConstraintsValid: true,
-		IsCA:                  false,
+		IsCA: false,
 	}
 	if ipDelegationExtension != nil {
 		template.ExtraExtensions = append(template.ExtraExtensions,
@@ -163,7 +162,6 @@ func VerifyIPRestrictedX509CertIP(userCert *x509.Certificate, remoteAddr string)
 	}
 	remoteIP := net.ParseIP(host)
 
-	//log.Printf("+%v")
 	var extension *pkix.Extension = nil
 	for _, certExtension := range userCert.Extensions {
 		if certExtension.Id.Equal(oidIPAddressDelegation) {
@@ -174,13 +172,11 @@ func VerifyIPRestrictedX509CertIP(userCert *x509.Certificate, remoteAddr string)
 	if extension == nil {
 		return false, nil
 	}
-	//log.Printf("extension=%+v", *extension)
 	var ipAddressFamilyList []IpAdressFamily
 	_, err = asn1.Unmarshal(extension.Value, &ipAddressFamilyList)
 	if err != nil {
 		return false, err
 	}
-	//log.Printf("%+v", addressFamilyList)
 	for _, addressList := range ipAddressFamilyList {
 		if !bytes.Equal(addressList.AddressFamily, ipV4FamilyEncoding) {
 			continue
