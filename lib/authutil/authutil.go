@@ -254,15 +254,14 @@ func extractCNFromDNString(input []string) (output []string, err error) {
 	return output, nil
 }
 
-func getUserGroups_RFC2307bis(conn *ldap.Conn, UserSearchBaseDNs []string,
+func getUserGroupsRFC2307bis(conn *ldap.Conn, UserSearchBaseDNs []string,
 	UserSearchFilter string, username string) ([]string, error) {
 	dn, groupDNs, err := getUserDNAndSimpleGroups(conn, UserSearchBaseDNs, UserSearchFilter, username)
 	if err != nil {
 		return nil, err
 	}
 	if dn == "" {
-		err := errors.New("User does not exist or too many entries returned")
-		return nil, err
+		return nil, errors.New("User does not exist or too many entries returned")
 	}
 	groupCNs, err := extractCNFromDNString(groupDNs)
 	if err != nil {
@@ -271,7 +270,7 @@ func getUserGroups_RFC2307bis(conn *ldap.Conn, UserSearchBaseDNs []string,
 	return groupCNs, nil
 }
 
-func getUserGroups_RFC2307(conn *ldap.Conn, GroupSearchBaseDNs []string,
+func getUserGroupsRFC2307(conn *ldap.Conn, GroupSearchBaseDNs []string,
 	groupSearchFilter string, username string) (userGroups []string, err error) {
 	for _, searchDN := range GroupSearchBaseDNs {
 		searchRequest := ldap.NewSearchRequest(
@@ -311,11 +310,11 @@ func GetLDAPUserGroups(u url.URL, bindDN string, bindPassword string,
 	if err != nil {
 		return nil, err
 	}
-	rfcGroups, err := getUserGroups_RFC2307(conn, GroupSearchBaseDNs, GroupSearchFilter, username)
+	rfcGroups, err := getUserGroupsRFC2307(conn, GroupSearchBaseDNs, GroupSearchFilter, username)
 	if err != nil {
 		return nil, err
 	}
-	memberGroups, err := getUserGroups_RFC2307bis(conn, UserSearchBaseDNs, UserSearchFilter, username)
+	memberGroups, err := getUserGroupsRFC2307bis(conn, UserSearchBaseDNs, UserSearchFilter, username)
 	if err != nil {
 		return nil, err
 	}
