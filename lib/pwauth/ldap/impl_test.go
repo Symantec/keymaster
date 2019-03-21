@@ -169,7 +169,7 @@ func init() {
 		config, _ := getTLSconfig()
 		s.Listener = tls.NewListener(s.Listener, config)
 	}
-	go server.ListenAndServe(":10638", secureConn)
+	go server.ListenAndServe(":10640", secureConn)
 
 	//we also make a simple tls listener
 	//
@@ -192,7 +192,7 @@ func init() {
 	time.Sleep(20 * time.Millisecond)
 }
 
-const localLDAPSURL = "ldaps://localhost:10638"
+const localLDAPSURL = "ldaps://localhost:10640"
 
 func TestPasswordAuthetnicateSimple(t *testing.T) {
 	certPool := x509.NewCertPool()
