@@ -318,12 +318,12 @@ func GetLDAPUserGroups(u url.URL, bindDN string, bindPassword string,
 	if err != nil {
 		return nil, err
 	}
-	groupMap := make(map[string]bool)
+	groupMap := make(map[string]struct{})
 	for _, group := range rfcGroups {
-		groupMap[group] = true
+		groupMap[group] = struct{}{}
 	}
 	for _, group := range memberGroups {
-		groupMap[group] = true
+		groupMap[group] = struct{}{}
 	}
 	var userGroups []string
 	for group := range groupMap {
