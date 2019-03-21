@@ -252,27 +252,10 @@ func extractCNFromDNString(input []string) (output []string, err error) {
 		}
 	}
 	return output, nil
-
 }
 
-func GetLDAPUserGroups(u url.URL, bindDN string, bindPassword string,
-	timeoutSecs uint, rootCAs *x509.CertPool,
-	username string,
-	UserSearchBaseDNs []string, UserSearchFilter string) ([]string, error) {
-
-	timeout := time.Duration(time.Duration(timeoutSecs) * time.Second)
-	conn, _, err := getLDAPConnection(u, timeoutSecs, rootCAs)
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-
-	conn.SetTimeout(timeout)
-	conn.Start()
-	err = conn.Bind(bindDN, bindPassword)
-	if err != nil {
-		return nil, err
-	}
+func getUserGroups_RFC2307bis(conn *ldap.Conn, UserSearchBaseDNs []string,
+	UserSearchFilter string, username string) ([]string, error) {
 	dn, groupDNs, err := getUserDNAndSimpleGroups(conn, UserSearchBaseDNs, UserSearchFilter, username)
 	if err != nil {
 		return nil, err
@@ -286,6 +269,68 @@ func GetLDAPUserGroups(u url.URL, bindDN string, bindPassword string,
 		return nil, err
 	}
 	return groupCNs, nil
+}
+
+func getUserGroups_RFC2307(conn *ldap.Conn, GroupSearchBaseDNs []string,
+	groupSearchFilter string, username string) (userGroups []string, err error) {
+	for _, searchDN := range GroupSearchBaseDNs {
+		searchRequest := ldap.NewSearchRequest(
+			searchDN,
+			ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 0, false,
+			fmt.Sprintf(groupSearchFilter, username),
+			[]string{"cn"},
+			nil,
+		)
+		sr, err := conn.Search(searchRequest)
+		if err != nil {
+			log.Printf("error on search request err:%s", err)
+			return nil, err
+		}
+		for _, entry := range sr.Entries {
+			userGroups = append(userGroups, entry.GetAttributeValues("cn")...)
+		}
+	}
+	return userGroups, nil
+}
+
+func GetLDAPUserGroups(u url.URL, bindDN string, bindPassword string,
+	timeoutSecs uint, rootCAs *x509.CertPool,
+	username string,
+	UserSearchBaseDNs []string, UserSearchFilter string,
+	GroupSearchBaseDNs []string, GroupSearchFilter string) ([]string, error) {
+	timeout := time.Duration(time.Duration(timeoutSecs) * time.Second)
+	conn, _, err := getLDAPConnection(u, timeoutSecs, rootCAs)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	conn.SetTimeout(timeout)
+	conn.Start()
+	err = conn.Bind(bindDN, bindPassword)
+	if err != nil {
+		return nil, err
+	}
+	rfcGroups, err := getUserGroups_RFC2307(conn, GroupSearchBaseDNs, GroupSearchFilter, username)
+	if err != nil {
+		return nil, err
+	}
+	memberGroups, err := getUserGroups_RFC2307bis(conn, UserSearchBaseDNs, UserSearchFilter, username)
+	if err != nil {
+		return nil, err
+	}
+	groupMap := make(map[string]bool)
+	for _, group := range rfcGroups {
+		groupMap[group] = true
+	}
+	for _, group := range memberGroups {
+		groupMap[group] = true
+	}
+	var userGroups []string
+	for group := range groupMap {
+		userGroups = append(userGroups, group)
+	}
+	return userGroups, nil
 }
 
 func GetLDAPUserAttributes(u url.URL, bindDN string, bindPassword string,

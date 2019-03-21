@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"net/url"
+	"sort"
 	"testing"
 	"time"
 
@@ -145,6 +146,58 @@ func handleBind(w ldap.ResponseWriter, m *ldap.Message) {
 	w.Write(res)
 }
 
+func handleSearchGroup(w ldap.ResponseWriter, m *ldap.Message) {
+	r := m.GetSearchRequest()
+	log.Printf("Request BaseDn=%s", r.BaseObject())
+	log.Printf("Request Filter=%s", r.Filter())
+	log.Printf("Request FilterString=%s", r.FilterString())
+	log.Printf("Request Attributes=%s", r.Attributes())
+	log.Printf("Request TimeLimit=%d", r.TimeLimit().Int())
+
+	e := ldap.NewSearchResultEntry("cn=group1, " + string(r.BaseObject()))
+	e.AddAttribute("cn", "group1")
+	w.Write(e)
+
+	e = ldap.NewSearchResultEntry("cn=group2, " + string(r.BaseObject()))
+	e.AddAttribute("cn", "group2")
+	w.Write(e)
+
+	res := ldap.NewSearchResultDoneResponse(ldap.LDAPResultSuccess)
+	w.Write(res)
+}
+
+func handleSearch(w ldap.ResponseWriter, m *ldap.Message) {
+	r := m.GetSearchRequest()
+	log.Printf("Request BaseDn=%s", r.BaseObject())
+	log.Printf("Request Filter=%s", r.Filter())
+	log.Printf("Request FilterString=%s", r.FilterString())
+	log.Printf("Request Attributes=%s", r.Attributes())
+	log.Printf("Request TimeLimit=%d", r.TimeLimit().Int())
+
+	// Handle Stop Signal (server stop / client disconnected / Abandoned request....)
+	select {
+	case <-m.Done:
+		log.Print("Leaving handleSearch...")
+		return
+	default:
+	}
+
+	e := ldap.NewSearchResultEntry("cn=Valere JEANTET, " + string(r.BaseObject()))
+	e.AddAttribute("mail", "valere.jeantet@gmail.com", "mail@vjeantet.fr")
+	e.AddAttribute("company", "SODADI")
+	e.AddAttribute("department", "DSI/SEC")
+	e.AddAttribute("l", "Ferrieres en brie")
+	e.AddAttribute("mobile", "0612324567")
+	e.AddAttribute("telephoneNumber", "0612324567")
+	e.AddAttribute("cn", "Valère JEANTET")
+	e.AddAttribute("memberOf", "cn=group2, o=group, o=My Company, c=US", "cn=group3, o=group, o=My Company, c=US")
+	w.Write(e)
+
+	res := ldap.NewSearchResultDoneResponse(ldap.LDAPResultSuccess)
+	w.Write(res)
+
+}
+
 func init() {
 	//Create a new LDAP Server
 	server := ldap.NewServer()
@@ -152,6 +205,11 @@ func init() {
 	//Set routes, here, we only serve bindRequest
 	routes := ldap.NewRouteMux()
 	routes.Bind(handleBind)
+	routes.Search(handleSearchGroup).
+		BaseDn("o=group,o=My Company,c=US").
+		//Scope(ldap.SearchRequestScopeBaseObject).
+		Label("Search - Group Root")
+	routes.Search(handleSearch).Label("Search - Generic")
 	server.Handle(routes)
 
 	//SSL
@@ -282,6 +340,38 @@ func TestCheckLDAPUserPasswordSuccess(t *testing.T) {
 	}
 	if ok != true {
 		t.Fatal("userame not accepted")
+	}
+}
+
+func TestCheckLDAPGetLDAPUserGroupsSuccess(t *testing.T) {
+	certPool := x509.NewCertPool()
+	ok := certPool.AppendCertsFromPEM([]byte(rootCAPem))
+	if !ok {
+		t.Fatal("cannot add certs to certpool")
+	}
+	ldapURL, err := ParseLDAPURL("ldaps://localhost:10636")
+	if err != nil {
+		t.Logf("Failed to parse url")
+		t.Fatal(err)
+	}
+	userGroups, err := GetLDAPUserGroups(*ldapURL, "username", "password", 2, certPool, "username-to-search",
+		[]string{"some user endpoint"}, "(uid=%s)",
+		[]string{"o=group,o=My Company,c=US"}, "(member=%s)")
+	if err != nil {
+		t.Logf("Connect to server")
+		t.Fatal(err)
+	}
+	t.Logf("userGroups=%s", userGroups)
+	expectedUserGroups := []string{"group1", "group2", "group3"}
+	sort.Strings(userGroups)
+	t.Logf("userGroups=%s", userGroups)
+	if len(userGroups) != len(expectedUserGroups) {
+		t.Fatal("expected groups do not match")
+	}
+	for i, expectedGroup := range expectedUserGroups {
+		if expectedGroup != userGroups[i] {
+			t.Fatal("expected groups do not match")
+		}
 	}
 }
 
