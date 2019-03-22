@@ -42,6 +42,7 @@ import (
 	"github.com/Symantec/tricorder/go/healthserver"
 	"github.com/Symantec/tricorder/go/tricorder"
 	"github.com/Symantec/tricorder/go/tricorder/units"
+	"github.com/cloudflare/cfssl/revoke"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/tstranex/u2f"
@@ -56,6 +57,7 @@ const (
 	AuthTypeFederated
 	AuthTypeU2F
 	AuthTypeSymantecVIP
+	AuthTypeIPCertificate
 )
 
 const AuthTypeAny = 0xFFFF
@@ -581,8 +583,43 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 			}
 		}
 	}
+	// We first check for certs if this auth is allowed
+	if ((requiredAuthType & AuthTypeIPCertificate) == AuthTypeIPCertificate) &&
+		r.TLS != nil {
+		logger.Debugf(3, "looks like authtype ip cert, r.tls=%+v", r.TLS)
+		if len(r.TLS.VerifiedChains) > 0 {
+			logger.Debugf(3, "looks like authtype ip cert, has verifiedChains")
+			clientName := r.TLS.VerifiedChains[0][0].Subject.CommonName
+			userCert := r.TLS.VerifiedChains[0][0]
 
-	// We first check for cookies
+			validIP, err := certgen.VerifyIPRestrictedX509CertIP(userCert, r.RemoteAddr)
+			if err != nil {
+				logger.Printf("Error verifying up restricted cert: %s", err)
+				state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error verifying IP restricted cert: %s", err)
+			}
+			if !validIP {
+				logger.Printf("Invalid IP for cert: %s is not valid for incoming connection", r.RemoteAddr)
+				state.writeFailureResponse(w, r, http.StatusUnauthorized, "Bad incoming ip address")
+				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error verifying IP restricted cert. Invalid incoming address: %s", r.RemoteAddr)
+			}
+
+			revoked, ok, err := revoke.VerifyCertificateError(userCert)
+			if err != nil {
+				logger.Printf("Error checking revocation of IP  restricted cert: %s", err)
+			}
+			// Soft Fail: we only fail if the revocation check was successful and the cert is revoked
+			if revoked == true && ok {
+				logger.Printf("Cert is revoked")
+				state.writeFailureResponse(w, r, http.StatusUnauthorized, "revoked Cert")
+				return "", AuthTypeNone, fmt.Errorf("checkAuth: IP cert is revoked")
+			}
+			return clientName, AuthTypeIPCertificate, nil
+
+		}
+	}
+
+	// Next we check for cookies
 	var authCookie *http.Cookie
 	for _, cookie := range r.Cookies() {
 		if cookie.Name != authCookieName {
@@ -1551,13 +1588,12 @@ func main() {
 	}
 
 	// Safari in MacOS 10.12.x required a cert to be presented by the user even
-	// when optional. Thus for the service port the clientAuth is setup to NOT
-	// verify the given cert.
-	// We need to collect more stats on OS X version used before we can unify the
-	// TLS config for the service and the admin ports
+	// when optional.
+	// Our usage shows this is less than 1% of users so we are now mandating
+	// verification on issues we will need to update clientAuth back  to tls.RequestClientCert
 	serviceTLSConfig := &tls.Config{
 		ClientCAs:                runtimeState.ClientCAPool,
-		ClientAuth:               tls.RequestClientCert,
+		ClientAuth:               tls.VerifyClientCertIfGiven,
 		MinVersion:               tls.VersionTLS12,
 		CurvePreferences:         []tls.CurveID{tls.CurveP521, tls.CurveP384, tls.CurveP256},
 		PreferServerCipherSuites: true,
