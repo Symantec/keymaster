@@ -96,7 +96,7 @@ type subjectPublicKeyInfo struct {
 	SubjectPublicKey asn1.BitString
 }
 
-// This is just This is done by computing the SHA-1 digest of a public Key
+// ComputePublicKeyKeyID computes the SHA-1 digest of a public Key
 func ComputePublicKeyKeyID(PublicKey interface{}) ([]byte, error) {
 	encodedPub, err := x509.MarshalPKIXPublicKey(PublicKey)
 	if err != nil {
@@ -119,7 +119,7 @@ func GenIPRestrictedX509Cert(userName string, userPub interface{},
 	caCert *x509.Certificate, caPriv crypto.Signer,
 	ipv4Netblocks []net.IPNet, duration time.Duration,
 	crlURL []string, OCPServer []string) ([]byte, error) {
-	//// Now do the actual work...
+	// Now do the actual work...
 	notBefore := time.Now()
 	notAfter := notBefore.Add(duration)
 
@@ -131,7 +131,6 @@ func GenIPRestrictedX509Cert(userName string, userPub interface{},
 	subject := pkix.Name{
 		CommonName: userName,
 	}
-
 	ipDelegationExtension, err := genDelegationExtension(ipv4Netblocks)
 	if err != nil {
 		return nil, err
@@ -146,7 +145,7 @@ func GenIPRestrictedX509Cert(userName string, userPub interface{},
 		IssuingCertificateURL: crlURL,
 		OCSPServer:            OCPServer,
 		BasicConstraintsValid: true,
-		IsCA: false,
+		IsCA:                  false,
 	}
 	if ipDelegationExtension != nil {
 		template.ExtraExtensions = append(template.ExtraExtensions,
@@ -155,13 +154,15 @@ func GenIPRestrictedX509Cert(userName string, userPub interface{},
 	return x509.CreateCertificate(rand.Reader, &template, caCert, userPub, caPriv)
 }
 
+// VerifyIPRestrictedX509CertIP takes a x509 cert and verifies that it is valid given
+// an incoming remote address. If the cert does not contain an IP restriction extension
+// the verification is considered failed.
 func VerifyIPRestrictedX509CertIP(userCert *x509.Certificate, remoteAddr string) (bool, error) {
 	host, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {
 		return false, err
 	}
 	remoteIP := net.ParseIP(host)
-
 	var extension *pkix.Extension = nil
 	for _, certExtension := range userCert.Extensions {
 		if certExtension.Id.Equal(oidIPAddressDelegation) {

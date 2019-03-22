@@ -596,19 +596,19 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 			if err != nil {
 				logger.Printf("Error verifying up restricted cert: %s", err)
 				state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
-				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error verifying up restricted cert: %s", err)
+				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error verifying IP restricted cert: %s", err)
 			}
 			if !validIP {
-				logger.Printf("Invalid IP for cer: %s is not valid for incoming connection", r.RemoteAddr)
+				logger.Printf("Invalid IP for cert: %s is not valid for incoming connection", r.RemoteAddr)
 				state.writeFailureResponse(w, r, http.StatusUnauthorized, "Bad incoming ip address")
-				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error verifying up restricted cert: %s", r.RemoteAddr)
+				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error verifying IP restricted cert. Invalid incoming address: %s", r.RemoteAddr)
 			}
 
 			revoked, ok, err := revoke.VerifyCertificateError(userCert)
 			if err != nil {
-				logger.Printf("Error checking revocation of cert restricted cert: %s", err)
+				logger.Printf("Error checking revocation of IP  restricted cert: %s", err)
 			}
-			// Soft Fail: we only fail if the revocation check was successful and the cert ir revoked
+			// Soft Fail: we only fail if the revocation check was successful and the cert is revoked
 			if revoked == true && ok {
 				logger.Printf("Cert is revoked")
 				state.writeFailureResponse(w, r, http.StatusUnauthorized, "revoked Cert")

@@ -1,20 +1,13 @@
 package certgen
 
 import (
-	//"crypto"
-	//"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/hex"
-	//"encoding/pem"
 	"errors"
-	//"fmt"
 	"net"
 	"testing"
-	//"time"
 )
-
-//const testDuration = time.Duration(120 * time.Second)
 
 func TestComputePublicKeyKeyID(t *testing.T) {
 	userPub, _, _ := setupX509Generator(t)
