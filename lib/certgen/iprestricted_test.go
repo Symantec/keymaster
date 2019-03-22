@@ -40,8 +40,6 @@ func TestGenDelegationExtension(t *testing.T) {
 	}
 
 	t.Logf("encodedExt=\n%s", hex.Dump(extensionDer))
-	/*
-	 */
 	var addressFamilyList []IpAdressFamily
 	_, err = asn1.Unmarshal(extension.Value, &addressFamilyList)
 	if err != nil {
