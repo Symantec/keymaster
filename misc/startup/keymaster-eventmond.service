@@ -1,0 +1,13 @@
+[Unit]
+Description=Keymaster event monitor server
+After=network.target
+
+[Service]
+ExecStart=/usr/local/sbin/keymaster-eventmond
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=1
+User=nobody
+
+[Install]
+WantedBy=multi-user.target
