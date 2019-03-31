@@ -7,15 +7,18 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/cmdlogger"
+	"github.com/Symantec/Dominator/lib/net/rrdialer"
 	"github.com/Symantec/keymaster/lib/client/config"
 	"github.com/Symantec/keymaster/lib/client/twofa"
 	"github.com/Symantec/keymaster/lib/client/twofa/u2f"
@@ -40,6 +43,7 @@ var (
 	checkDevices   = flag.Bool("checkDevices", false, "CheckU2F devices in your system")
 	cliFilePrefix  = flag.String("fileprefix", "", "Prefix for the output files")
 	FilePrefix     = "keymaster"
+	rrDialer       *rrdialer.Dialer
 )
 
 func getUserHomeDir() (homeDir string) {
@@ -105,14 +109,15 @@ func loadConfigFile(rootCAs *x509.CertPool, logger log.Logger) (
 	}
 
 	if len(*configHost) > 1 {
-		err = config.GetConfigFromHost(*configFilename, *configHost, rootCAs, logger)
+		err = config.GetConfigFromHost(*configFilename, *configHost, rootCAs,
+			rrDialer, logger)
 		if err != nil {
 			logger.Fatal(err)
 		}
 	} else if len(defaultConfigHost) > 1 { // if there is a configHost AND there is NO config file, create one
 		if _, err := os.Stat(*configFilename); os.IsNotExist(err) {
 			err = config.GetConfigFromHost(
-				*configFilename, defaultConfigHost, rootCAs, logger)
+				*configFilename, defaultConfigHost, rootCAs, rrDialer, logger)
 			if err != nil {
 				logger.Fatal(err)
 			}
@@ -170,6 +175,7 @@ func setupCerts(
 		rootCAs,
 		false,
 		configContents.Base.AddGroups,
+		rrDialer,
 		logger)
 	if err != nil {
 		logger.Fatal(err)
@@ -262,6 +268,17 @@ func main() {
 	flag.Usage = Usage
 	flag.Parse()
 	logger := cmdlogger.New()
+	var err error
+	rrDialer, err = rrdialer.New(&net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+		DualStack: true,
+	},
+		"", logger)
+	if err != nil {
+		logger.Fatalln(err)
+	}
+	defer rrDialer.WaitForBackgroundResults(time.Second)
 
 	if *checkDevices {
 		u2f.CheckU2FDevices(logger)

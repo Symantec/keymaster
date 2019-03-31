@@ -44,9 +44,10 @@ func getConfigFromHost(
 	configFilename string,
 	hostname string,
 	rootCAs *x509.CertPool,
+	dialer Dialer,
 	logger log.Logger) error {
 	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
-	client, err := util.GetHttpClient(tlsConfig)
+	client, err := util.GetHttpClient(tlsConfig, dialer)
 	if err != nil {
 		return err
 	}
