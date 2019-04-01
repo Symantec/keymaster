@@ -2,14 +2,13 @@
 package twofa
 
 import (
-	"context"
 	"crypto"
 	"crypto/x509"
 	"flag"
-	"net"
 	"time"
 
 	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/keymaster/lib/client/net"
 )
 
 var (
@@ -21,11 +20,6 @@ var (
 	noVIPAccess = flag.Bool("noVIPAccess", false, "Don't use VIPAccess as second factor")
 )
 
-type Dialer interface {
-	Dial(network, address string) (net.Conn, error)
-	DialContext(ctx context.Context, network, address string) (net.Conn, error)
-}
-
 // GetCertFromTargetUrls gets a signed cert from the given target URLs.
 func GetCertFromTargetUrls(
 	signer crypto.Signer,
@@ -35,7 +29,7 @@ func GetCertFromTargetUrls(
 	rootCAs *x509.CertPool,
 	skipu2f bool,
 	addGroups bool,
-	dialer Dialer,
+	dialer net.Dialer,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
 	return getCertFromTargetUrls(
 		signer, userName, password, targetUrls, rootCAs, skipu2f, addGroups,

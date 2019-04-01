@@ -1,17 +1,11 @@
 package config
 
 import (
-	"context"
 	"crypto/x509"
-	"net"
 
 	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/keymaster/lib/client/net"
 )
-
-type Dialer interface {
-	Dial(network, address string) (net.Conn, error)
-	DialContext(ctx context.Context, network, address string) (net.Conn, error)
-}
 
 type BaseConfig struct {
 	Gen_Cert_URLS string `yaml:"gen_cert_urls"`
@@ -38,7 +32,7 @@ func GetConfigFromHost(
 	configFilename string,
 	hostname string,
 	rootCAs *x509.CertPool,
-	dialer Dialer,
+	dialer net.Dialer,
 	logger log.Logger) error {
 	return getConfigFromHost(configFilename, hostname, rootCAs, dialer, logger)
 }

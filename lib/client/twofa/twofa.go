@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/keymaster/lib/client/net"
 	"github.com/Symantec/keymaster/lib/client/twofa/u2f"
 	"github.com/Symantec/keymaster/lib/client/twofa/vip"
 	"github.com/Symantec/keymaster/lib/client/util"
@@ -97,7 +98,7 @@ func getCertsFromServer(
 	tlsConfig *tls.Config,
 	skip2fa bool,
 	addGroups bool,
-	dialer Dialer,
+	dialer net.Dialer,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
 
 	//First Do Login
@@ -277,7 +278,7 @@ func getCertFromTargetUrls(
 	rootCAs *x509.CertPool,
 	skipu2f bool,
 	addGroups bool,
-	dialer Dialer,
+	dialer net.Dialer,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
 	success := false
 	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}

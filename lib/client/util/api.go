@@ -2,22 +2,16 @@
 package util
 
 import (
-	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
-	"net"
 	"net/http"
 	"os/user"
 
 	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/keymaster/lib/client/net"
 )
-
-type Dialer interface {
-	Dial(network, address string) (net.Conn, error)
-	DialContext(ctx context.Context, network, address string) (net.Conn, error)
-}
 
 // GetUserCreds prompts the user for thier password and returns it.
 func GetUserCreds(userName string) (password []byte, err error) {
@@ -39,7 +33,8 @@ func GenKeyPair(
 
 // GetHttpClient returns an http client instance to use given a
 // particular TLS configuration.
-func GetHttpClient(tlsConfig *tls.Config, dialer Dialer) (*http.Client, error) {
+func GetHttpClient(tlsConfig *tls.Config,
+	dialer net.Dialer) (*http.Client, error) {
 	return getHttpClient(tlsConfig, dialer)
 }
 

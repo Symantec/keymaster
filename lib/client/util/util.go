@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/keymaster/lib/client/net"
 	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/net/publicsuffix"
@@ -73,7 +74,8 @@ func genKeyPair(
 	return privateKey, pubKeyPath, ioutil.WriteFile(pubKeyPath, pubKeyBuffer.Bytes(), 0644)
 }
 
-func getHttpClient(tlsConfig *tls.Config, dialer Dialer) (*http.Client, error) {
+func getHttpClient(tlsConfig *tls.Config,
+	dialer net.Dialer) (*http.Client, error) {
 	clientTransport := &http.Transport{
 		TLSClientConfig: tlsConfig,
 		DialContext:     dialer.DialContext,
