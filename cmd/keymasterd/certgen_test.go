@@ -128,7 +128,7 @@ func TestSuccessFullSigningX509IPCert(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Now add username to the set of valid users to get certs from
-	state.Config.Base.AllowedUsersForIPCerts = append(state.Config.Base.AllowedUsersForIPCerts, "username")
+	state.Config.Base.AutomationUsers = append(state.Config.Base.AutomationUsers, "username")
 	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusOK)
 	if err != nil {
 		t.Fatal(err)

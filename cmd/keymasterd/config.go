@@ -52,8 +52,8 @@ type baseConfig struct {
 	AdminGroups                 []string `yaml:"admin_groups"`
 	PublicLogs                  bool     `yaml:"public_logs"`
 	SecsBetweenDependencyChecks int      `yaml:"secs_between_dependency_checks"`
-	AllowedGroupsForIPCerts     []string `yaml:"allowed_ipcert_groups"`
-	AllowedUsersForIPCerts      []string `yaml:"allowed_ipcert_users"`
+	AutomationUserGroups        []string `yaml:"automation_user_groups"`
+	AutomationUsers             []string `yaml:"automation_users"`
 }
 
 type LdapConfig struct {

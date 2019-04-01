@@ -561,9 +561,9 @@ func (state *RuntimeState) updateAuthCookieAuthlevel(w http.ResponseWriter, r *h
 	http.SetCookie(w, &updatedAuthCookie)
 	return authCookie.Value, nil
 }
-func (state *RuntimeState) userAllowedIPCerts(username string) (bool, error) {
-	for _, allowedIPUser := range state.Config.Base.AllowedUsersForIPCerts {
-		if allowedIPUser == username {
+func (state *RuntimeState) isAutomationUser(username string) (bool, error) {
+	for _, automationUsername := range state.Config.Base.AutomationUsers {
+		if automationUsername == username {
 			return true, nil
 		}
 	}
@@ -571,9 +571,9 @@ func (state *RuntimeState) userAllowedIPCerts(username string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	for _, allowedIPGroup := range state.Config.Base.AllowedGroupsForIPCerts {
+	for _, automationGroup := range state.Config.Base.AutomationUserGroups {
 		for _, groupName := range userGroups {
-			if groupName == allowedIPGroup {
+			if groupName == automationGroup {
 				return true, nil
 			}
 		}
@@ -623,7 +623,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error verifying IP restricted cert. Invalid incoming address: %s", r.RemoteAddr)
 			}
 			// Check if there are group restrictions on
-			ok, err := state.userAllowedIPCerts(clientName)
+			ok, err := state.isAutomationUser(clientName)
 			if err != nil {
 				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
 				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error checking user permissions for IP restricted cert : %s", err)
