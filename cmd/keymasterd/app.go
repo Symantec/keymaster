@@ -561,6 +561,25 @@ func (state *RuntimeState) updateAuthCookieAuthlevel(w http.ResponseWriter, r *h
 	http.SetCookie(w, &updatedAuthCookie)
 	return authCookie.Value, nil
 }
+func (state *RuntimeState) userAllowedIPCerts(username string) (bool, error) {
+	for _, allowedIPUser := range state.Config.Base.AllowedUsersForIPCerts {
+		if allowedIPUser == username {
+			return true, nil
+		}
+	}
+	userGroups, err := state.getUserGroups(username)
+	if err != nil {
+		return false, err
+	}
+	for _, allowedIPGroup := range state.Config.Base.AllowedGroupsForIPCerts {
+		for _, groupName := range userGroups {
+			if groupName == allowedIPGroup {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
 
 // Inspired by http://stackoverflow.com/questions/21936332/idiomatic-way-of-requiring-http-basic-auth-in-go
 func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, requiredAuthType int) (string, int, error) {
@@ -602,6 +621,16 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 				logger.Printf("Invalid IP for cert: %s is not valid for incoming connection", r.RemoteAddr)
 				state.writeFailureResponse(w, r, http.StatusUnauthorized, "Bad incoming ip address")
 				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error verifying IP restricted cert. Invalid incoming address: %s", r.RemoteAddr)
+			}
+			// Check if there are group restrictions on
+			ok, err := state.userAllowedIPCerts(clientName)
+			if err != nil {
+				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error checking user permissions for IP restricted cert : %s", err)
+			}
+			if !ok {
+				state.writeFailureResponse(w, r, http.StatusUnauthorized, "Bad incoming ip address")
+				return "", AuthTypeNone, fmt.Errorf("checkAuth: User not allowed to use ip restricted certs %s", clientName)
 			}
 
 			revoked, ok, err := revoke.VerifyCertificateError(userCert)
