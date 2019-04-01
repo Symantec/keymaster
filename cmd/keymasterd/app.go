@@ -629,7 +629,7 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error checking user permissions for IP restricted cert : %s", err)
 			}
 			if !ok {
-				state.writeFailureResponse(w, r, http.StatusUnauthorized, "Bad incoming ip address")
+				state.writeFailureResponse(w, r, http.StatusUnauthorized, "Bad username  for ip restricted cert ")
 				return "", AuthTypeNone, fmt.Errorf("checkAuth: User not allowed to use ip restricted certs %s", clientName)
 			}
 
