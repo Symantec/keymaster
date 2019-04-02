@@ -626,11 +626,11 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 			ok, err := state.isAutomationUser(clientName)
 			if err != nil {
 				state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
-				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error checking user permissions for IP restricted cert : %s", err)
+				return "", AuthTypeNone, fmt.Errorf("checkAuth: Error checking user permissions for automation certs : %s", err)
 			}
 			if !ok {
 				state.writeFailureResponse(w, r, http.StatusUnauthorized, "Bad username  for ip restricted cert ")
-				return "", AuthTypeNone, fmt.Errorf("checkAuth: User not allowed to use ip restricted certs %s", clientName)
+				return "", AuthTypeNone, fmt.Errorf("checkAuth: User %s is not a service account.", clientName)
 			}
 
 			revoked, ok, err := revoke.VerifyCertificateError(userCert)
