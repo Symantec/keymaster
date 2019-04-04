@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/keymaster/lib/client/net"
 )
 
 var (
@@ -28,8 +29,9 @@ func GetCertFromTargetUrls(
 	rootCAs *x509.CertPool,
 	skipu2f bool,
 	addGroups bool,
+	dialer net.Dialer,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
 	return getCertFromTargetUrls(
 		signer, userName, password, targetUrls, rootCAs, skipu2f, addGroups,
-		logger)
+		dialer, logger)
 }

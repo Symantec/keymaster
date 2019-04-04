@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"testing"
 
@@ -161,6 +162,7 @@ func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
 		certPool,
 		skipu2f,
 		false,
+		&net.Dialer{},
 		testlogger.New(t)) //(cert []byte, err error)
 	if err != nil {
 		t.Fatal(err)
@@ -181,6 +183,7 @@ func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
 		nil,
 		skipu2f,
 		false,
+		&net.Dialer{},
 		testlogger.New(t))
 	if err == nil {
 		t.Fatal("Should have failed to connect untrusted CA")

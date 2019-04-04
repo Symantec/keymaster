@@ -7,16 +7,20 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/Dominator/lib/log/cmdlogger"
+	"github.com/Symantec/Dominator/lib/net/rrdialer"
 	"github.com/Symantec/keymaster/lib/client/config"
+	libnet "github.com/Symantec/keymaster/lib/client/net"
 	"github.com/Symantec/keymaster/lib/client/twofa"
 	"github.com/Symantec/keymaster/lib/client/twofa/u2f"
 	"github.com/Symantec/keymaster/lib/client/util"
@@ -33,13 +37,17 @@ var (
 )
 
 var (
-	configFilename = flag.String("config", filepath.Join(getUserHomeDir(), ".keymaster", "client_config.yml"), "The filename of the configuration")
-	rootCAFilename = flag.String("rootCAFilename", "", "(optional) name for using non OS root CA to verify TLS connections")
-	configHost     = flag.String("configHost", "", "Get a bootstrap config from this host")
-	cliUsername    = flag.String("username", "", "username for keymaster")
-	checkDevices   = flag.Bool("checkDevices", false, "CheckU2F devices in your system")
-	cliFilePrefix  = flag.String("fileprefix", "", "Prefix for the output files")
-	FilePrefix     = "keymaster"
+	configFilename   = flag.String("config", filepath.Join(getUserHomeDir(), ".keymaster", "client_config.yml"), "The filename of the configuration")
+	rootCAFilename   = flag.String("rootCAFilename", "", "(optional) name for using non OS root CA to verify TLS connections")
+	configHost       = flag.String("configHost", "", "Get a bootstrap config from this host")
+	cliUsername      = flag.String("username", "", "username for keymaster")
+	checkDevices     = flag.Bool("checkDevices", false, "CheckU2F devices in your system")
+	cliFilePrefix    = flag.String("fileprefix", "", "Prefix for the output files")
+	roundRobinDialer = flag.Bool("roundRobinDialer", false,
+		"If true, use the smart round-robin dialer")
+
+	FilePrefix = "keymaster"
+	dialer     libnet.Dialer
 )
 
 func getUserHomeDir() (homeDir string) {
@@ -105,14 +113,15 @@ func loadConfigFile(rootCAs *x509.CertPool, logger log.Logger) (
 	}
 
 	if len(*configHost) > 1 {
-		err = config.GetConfigFromHost(*configFilename, *configHost, rootCAs, logger)
+		err = config.GetConfigFromHost(*configFilename, *configHost, rootCAs,
+			dialer, logger)
 		if err != nil {
 			logger.Fatal(err)
 		}
 	} else if len(defaultConfigHost) > 1 { // if there is a configHost AND there is NO config file, create one
 		if _, err := os.Stat(*configFilename); os.IsNotExist(err) {
 			err = config.GetConfigFromHost(
-				*configFilename, defaultConfigHost, rootCAs, logger)
+				*configFilename, defaultConfigHost, rootCAs, dialer, logger)
 			if err != nil {
 				logger.Fatal(err)
 			}
@@ -170,6 +179,7 @@ func setupCerts(
 		rootCAs,
 		false,
 		configContents.Base.AddGroups,
+		dialer,
 		logger)
 	if err != nil {
 		logger.Fatal(err)
@@ -262,6 +272,21 @@ func main() {
 	flag.Usage = Usage
 	flag.Parse()
 	logger := cmdlogger.New()
+	rawDialer := &net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+		DualStack: true,
+	}
+	if *roundRobinDialer {
+		if rrDialer, err := rrdialer.New(rawDialer, "", logger); err != nil {
+			logger.Fatalln(err)
+		} else {
+			defer rrDialer.WaitForBackgroundResults(time.Second)
+			dialer = rrDialer
+		}
+	} else {
+		dialer = rawDialer
+	}
 
 	if *checkDevices {
 		u2f.CheckU2FDevices(logger)

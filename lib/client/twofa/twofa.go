@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/keymaster/lib/client/net"
 	"github.com/Symantec/keymaster/lib/client/twofa/u2f"
 	"github.com/Symantec/keymaster/lib/client/twofa/vip"
 	"github.com/Symantec/keymaster/lib/client/util"
@@ -97,10 +98,11 @@ func getCertsFromServer(
 	tlsConfig *tls.Config,
 	skip2fa bool,
 	addGroups bool,
+	dialer net.Dialer,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
 
 	//First Do Login
-	client, err := util.GetHttpClient(tlsConfig)
+	client, err := util.GetHttpClient(tlsConfig, dialer)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -276,6 +278,7 @@ func getCertFromTargetUrls(
 	rootCAs *x509.CertPool,
 	skipu2f bool,
 	addGroups bool,
+	dialer net.Dialer,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
 	success := false
 	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
@@ -284,7 +287,7 @@ func getCertFromTargetUrls(
 		logger.Printf("attempting to target '%s' for '%s'\n", baseUrl, userName)
 		sshCert, x509Cert, kubernetesCert, err = getCertsFromServer(
 			signer, userName, password, baseUrl, tlsConfig, skipu2f, addGroups,
-			logger)
+			dialer, logger)
 		if err != nil {
 			logger.Println(err)
 			continue

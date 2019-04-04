@@ -10,6 +10,7 @@ import (
 	"os/user"
 
 	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/keymaster/lib/client/net"
 )
 
 // GetUserCreds prompts the user for thier password and returns it.
@@ -32,8 +33,9 @@ func GenKeyPair(
 
 // GetHttpClient returns an http client instance to use given a
 // particular TLS configuration.
-func GetHttpClient(tlsConfig *tls.Config) (*http.Client, error) {
-	return getHttpClient(tlsConfig)
+func GetHttpClient(tlsConfig *tls.Config,
+	dialer net.Dialer) (*http.Client, error) {
+	return getHttpClient(tlsConfig, dialer)
 }
 
 // GenerateKey generates a random 2048 byte rsa key
