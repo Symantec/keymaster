@@ -122,6 +122,13 @@ func TestSuccessFullSigningX509IPCert(t *testing.T) {
 		PeerCertificates: fakePeerCertificates}
 	req.TLS = connectionState
 
+	// Will fail due to bad username
+	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusUnauthorized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Now add username to the set of valid users to get certs from
+	state.Config.Base.AutomationUsers = append(state.Config.Base.AutomationUsers, "username")
 	_, err = checkRequestHandlerCode(req, state.certGenHandler, http.StatusOK)
 	if err != nil {
 		t.Fatal(err)

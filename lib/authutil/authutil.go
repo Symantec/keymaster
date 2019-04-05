@@ -241,7 +241,6 @@ func getSimpleUserAttributes(conn *ldap.Conn, UserSearchBaseDNs []string,
 
 func extractCNFromDNString(input []string) (output []string, err error) {
 	re := regexp.MustCompile("^cn=([^,]+),.*")
-	log.Printf("input=%v ", input)
 	for _, dn := range input {
 		matches := re.FindStringSubmatch(dn)
 		if len(matches) == 2 {
