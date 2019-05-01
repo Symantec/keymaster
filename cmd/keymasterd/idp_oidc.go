@@ -472,6 +472,19 @@ func (state *RuntimeState) getUserAttributes(username string, attributes []strin
 		if err != nil {
 			continue
 		}
+		var userGroups []string
+		userGroups, err = authutil.GetLDAPUserGroups(*u,
+			ldapConfig.BindUsername, ldapConfig.BindPassword,
+			timeoutSecs, nil, username,
+			ldapConfig.UserSearchBaseDNs, ldapConfig.UserSearchFilter,
+			ldapConfig.GroupSearchBaseDNs, ldapConfig.GroupSearchFilter)
+		if err != nil {
+			// TODO: We actually need to check the error, right now we are assuming
+			// the user does not exists and go with that.
+			logger.Printf("Failed get userGroups '%s'", ldapUrl)
+		}
+		logger.Debugf(1, "Got groups for username %s: %s", username, userGroups)
+		attributeMap["groups"] = userGroups
 		return attributeMap, nil
 
 	}
@@ -483,12 +496,13 @@ func (state *RuntimeState) getUserAttributes(username string, attributes []strin
 }
 
 type openidConnectUserInfo struct {
-	Subject           string `json:"sub"`
-	Name              string `json:"name"`
-	Login             string `json:"login,omitempty"`
-	Username          string `json:"username,omitempty"`
-	PreferredUsername string `json:"preferred_username,omitempty"`
-	Email             string `json:"email,omitempty"`
+	Subject           string   `json:"sub"`
+	Name              string   `json:"name"`
+	Login             string   `json:"login,omitempty"`
+	Username          string   `json:"username,omitempty"`
+	PreferredUsername string   `json:"preferred_username,omitempty"`
+	Email             string   `json:"email,omitempty"`
+	Groups            []string `json:"groups,omitempty"`
 }
 
 func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *http.Request) {
@@ -567,11 +581,14 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 	if err != nil {
 		logger.Printf("warn: failed to get user attributes for %s, %s", parsedAccessToken.Username, err)
 	}
+	var userGroups []string
 	if userAttributeMap != nil {
+		logger.Debugf(2, "useMa=%+v", userAttributeMap)
 		mailList, ok := userAttributeMap["mail"]
 		if ok {
 			email = mailList[0]
 		}
+		userGroups = userAttributeMap["groups"]
 	}
 
 	userInfo := openidConnectUserInfo{
@@ -579,7 +596,9 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 		Username: parsedAccessToken.Username,
 		Email:    email,
 		Name:     parsedAccessToken.Username,
-		Login:    parsedAccessToken.Username}
+		Login:    parsedAccessToken.Username,
+		Groups:   userGroups,
+	}
 
 	// and write the json output
 	b, err := json.Marshal(userInfo)
