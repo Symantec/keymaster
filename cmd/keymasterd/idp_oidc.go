@@ -481,7 +481,7 @@ func (state *RuntimeState) getUserAttributes(username string, attributes []strin
 		if err != nil {
 			// TODO: We actually need to check the error, right now we are assuming
 			// the user does not exists and go with that.
-			logger.Printf("Failed get userGroups '%s'", ldapUrl)
+			logger.Printf("Failed get userGroups for user '%s'", username)
 		}
 		logger.Debugf(1, "Got groups for username %s: %s", username, userGroups)
 		attributeMap["groups"] = userGroups
