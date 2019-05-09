@@ -472,8 +472,7 @@ func (state *RuntimeState) getUserAttributes(username string, attributes []strin
 		if err != nil {
 			continue
 		}
-		var userGroups []string
-		userGroups, err = authutil.GetLDAPUserGroups(*u,
+		userGroups, err := authutil.GetLDAPUserGroups(*u,
 			ldapConfig.BindUsername, ldapConfig.BindPassword,
 			timeoutSecs, nil, username,
 			ldapConfig.UserSearchBaseDNs, ldapConfig.UserSearchFilter,
@@ -482,9 +481,10 @@ func (state *RuntimeState) getUserAttributes(username string, attributes []strin
 			// TODO: We actually need to check the error, right now we are assuming
 			// the user does not exists and go with that.
 			logger.Printf("Failed get userGroups for user '%s'", username)
+		} else {
+			logger.Debugf(1, "Got groups for username %s: %s", username, userGroups)
+			attributeMap["groups"] = userGroups
 		}
-		logger.Debugf(1, "Got groups for username %s: %s", username, userGroups)
-		attributeMap["groups"] = userGroups
 		return attributeMap, nil
 
 	}
@@ -588,7 +588,10 @@ func (state *RuntimeState) idpOpenIDCUserinfoHandler(w http.ResponseWriter, r *h
 		if ok {
 			email = mailList[0]
 		}
-		userGroups = userAttributeMap["groups"]
+		groupList, ok := userAttributeMap["groups"]
+		if ok {
+			userGroups = groupList
+		}
 	}
 
 	userInfo := openidConnectUserInfo{
