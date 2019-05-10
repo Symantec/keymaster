@@ -61,6 +61,9 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 		if certPref == proto.AuthTypeSymantecVIP && ((authLevel & AuthTypeSymantecVIP) == AuthTypeSymantecVIP) {
 			sufficientAuthLevel = true
 		}
+		if certPref == proto.AuthTypeIPCertificate && ((authLevel & AuthTypeIPCertificate) == AuthTypeIPCertificate) {
+			sufficientAuthLevel = true
+		}
 	}
 	// if you have u2f you can always get the cert
 	if (authLevel & AuthTypeU2F) == AuthTypeU2F {
@@ -230,7 +233,8 @@ func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
 		groups, err := authutil.GetLDAPUserGroups(*u,
 			ldapConfig.BindUsername, ldapConfig.BindPassword,
 			timeoutSecs, nil, username,
-			ldapConfig.UserSearchBaseDNs, ldapConfig.UserSearchFilter)
+			ldapConfig.UserSearchBaseDNs, ldapConfig.UserSearchFilter,
+			ldapConfig.GroupSearchBaseDNs, ldapConfig.GroupSearchFilter)
 		if err != nil {
 			continue
 		}

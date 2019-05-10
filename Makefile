@@ -10,7 +10,7 @@ endif
 BINARY=keymaster
 
 # These are the values we want to pass for Version and BuildTime
-VERSION=1.4.12
+VERSION=1.5.1
 #BUILD_TIME=`date +%FT%T%z`
 
 # Setup the -ldflags option for go build here, interpolate the variable values
@@ -48,6 +48,9 @@ rpm:	${BINARY}-${VERSION}.tar.gz
 tar:	${BINARY}-${VERSION}.tar.gz
 
 test:	init-config-host
+	go test ./...
+
+verbose-test:	init-config-host
 	go test -v ./...
 
 format:
