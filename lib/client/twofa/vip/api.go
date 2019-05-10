@@ -11,6 +11,7 @@ import (
 func DoVIPAuthenticate(
 	client *http.Client,
 	baseURL string,
+	userAgentString string,
 	logger log.DebugLogger) error {
-	return doVIPAuthenticate(client, baseURL, logger)
+	return doVIPAuthenticate(client, baseURL, userAgentString, logger)
 }

@@ -163,6 +163,7 @@ func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
 		skipu2f,
 		false,
 		&net.Dialer{},
+		"someUserAgent",
 		testlogger.New(t)) //(cert []byte, err error)
 	if err != nil {
 		t.Fatal(err)
@@ -184,6 +185,7 @@ func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
 		skipu2f,
 		false,
 		&net.Dialer{},
+		"someUserAgent",
 		testlogger.New(t))
 	if err == nil {
 		t.Fatal("Should have failed to connect untrusted CA")
