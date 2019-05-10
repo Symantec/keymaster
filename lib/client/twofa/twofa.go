@@ -201,7 +201,7 @@ func getCertsFromServer(
 
 		if allowVIP && !successful2fa {
 			err = vip.DoVIPAuthenticate(
-				client, baseUrl, logger)
+				client, baseUrl, userAgentString, logger)
 			if err != nil {
 
 				return nil, nil, nil, err
