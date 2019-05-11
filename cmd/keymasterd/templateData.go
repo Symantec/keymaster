@@ -312,6 +312,7 @@ type newTOTPPageTemplateData struct {
 	AuthUsername    string
 	JSSources       []string
 	TOTPBase64Image template.HTML
+	TOTPSecret      string
 }
 
 const newTOTPHTML = `

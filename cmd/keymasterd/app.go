@@ -103,7 +103,7 @@ type u2fAuthData struct {
 type totpAuthData struct {
 	CreatedAt       time.Time
 	Name            string
-	EncryptedSecret string
+	EncryptedSecret [][]byte
 	TOTPType        int
 }
 
@@ -111,7 +111,7 @@ type userProfile struct {
 	U2fAuthData           map[int64]*u2fAuthData
 	RegistrationChallenge *u2f.Challenge
 	//U2fAuthChallenge      *u2f.Challenge
-	pendingTOTPSecret *string
+	pendingTOTPSecret [][]byte
 	TOTPAuthData      map[int64]*totpAuthData
 }
 
