@@ -131,6 +131,11 @@ func (state *RuntimeState) loadTemplates() (err error) {
 		return err
 	}
 	state.htmlTemplate = template.New("main")
+	state.htmlTemplate.Funcs(template.FuncMap{
+		"safeHTML": func(b []byte) template.HTML {
+			return template.HTML(b)
+		},
+	})
 	templateFiles := []string{"footer_extra.tmpl", "header_extra.tmpl", "login_extra.tmpl"}
 	for _, templateFilename := range templateFiles {
 		templatePath := filepath.Join(templatesPath, templateFilename)
@@ -140,7 +145,8 @@ func (state *RuntimeState) loadTemplates() (err error) {
 		}
 	}
 	/// Load the oter built in templates
-	extraTemplates := []string{footerTemplateText, loginFormText, secondFactorAuthFormText, profileHTML, usersHTML, headerTemplateText}
+	extraTemplates := []string{footerTemplateText, loginFormText, secondFactorAuthFormText,
+		profileHTML, usersHTML, headerTemplateText, newTOTPHTML}
 	for _, templateString := range extraTemplates {
 		_, err = state.htmlTemplate.Parse(templateString)
 		if err != nil {
