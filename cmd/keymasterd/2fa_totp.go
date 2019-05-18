@@ -12,6 +12,7 @@ import (
 	"image/png"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/Symantec/keymaster/lib/instrumentedwriter"
 	//"github.com/pquerna/otp"
@@ -24,16 +25,11 @@ func (state *RuntimeState) encryptWithPublicKeys(clearTextMessage []byte) ([][]b
 	var cipherTexts [][]byte
 	for _, key := range state.KeymasterPublicKeys {
 		logger.Debugf(3, "encryptWithPublicKeys: On internal loop with type %T", key)
-		// TODO: do NOT asssume RSA
+		// TODO: do Handle ECC keys
 		rsaPubKey, ok := key.(*rsa.PublicKey)
 		if ok {
-			//secretMessage := []byte("send reinforcements, we're going to advance")
 			label := []byte(labelRSA)
-
-			// crypto/rand.Reader is a good source of entropy for randomizing the
-			// encryption function.
 			rng := rand.Reader
-
 			ciphertext, err := rsa.EncryptOAEP(sha256.New(), rng, rsaPubKey, clearTextMessage, label)
 			if err != nil {
 				logger.Printf("Error from encryption: %s\n", err)
@@ -52,7 +48,6 @@ func (state *RuntimeState) encryptWithPublicKeys(clearTextMessage []byte) ([][]b
 
 func (state *RuntimeState) decryptWithPublicKeys(cipherTexts [][]byte) ([]byte, error) {
 	//logger.Printf("signer type=%T", state.Signer)
-
 	for _, cipherText := range cipherTexts {
 		rsaPrivateKey, ok := state.Signer.(*rsa.PrivateKey)
 		if ok {
@@ -97,7 +92,7 @@ func (state *RuntimeState) GenerateNewTOTP(w http.ResponseWriter, r *http.Reques
 	}
 	if fromCache {
 		logger.Printf("DB is being cached and requesting registration aborting it")
-		http.Error(w, "db backend is offline for writes", http.StatusServiceUnavailable)
+		state.writeFailureResponse(w, r, http.StatusServiceUnavailable, "DB in cached state, cannot create new TOTP now")
 		return
 	}
 	logger.Debugf(2, "%v", profile)
@@ -125,10 +120,7 @@ func (state *RuntimeState) GenerateNewTOTP(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-	logger.Debugf(2, "Generate TOTP: profile=%+v", profile)
-	//state.decryptWithPublicKeys(encryptedKeys)
-	//profile2, _, _, _ := state.LoadUserProfile(authUser)
-	//logger.Printf("Generate TOTP: profile2=%+v", profile2)
+	logger.Debugf(3, "Generate TOTP: profile=%+v", profile)
 
 	// Convert TOTP key into a PNG
 	var buf bytes.Buffer
@@ -139,7 +131,7 @@ func (state *RuntimeState) GenerateNewTOTP(w http.ResponseWriter, r *http.Reques
 	png.Encode(&buf, img)
 	base64Image := base64.StdEncoding.EncodeToString(buf.Bytes())
 
-	logger.Debugf(4, "base64image=%s", base64Image)
+	logger.Debugf(10, "base64image=%s", base64Image)
 
 	// We need custom CSP policy to allow embedded images
 	w.Header().Set("Content-Security-Policy", "default-src 'self' ;img-src 'self'  data: ;style-src 'self' fonts.googleapis.com 'unsafe-inline'; font-src fonts.gstatic.com fonts.googleapis.com")
@@ -206,7 +198,7 @@ func (state *RuntimeState) validateNewTOTP(w http.ResponseWriter, r *http.Reques
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing OTP value")
 	}
 
-	profile, ok, fromCache, err := state.LoadUserProfile(authUser)
+	profile, _, fromCache, err := state.LoadUserProfile(authUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -257,11 +249,18 @@ func (state *RuntimeState) validateNewTOTP(w http.ResponseWriter, r *http.Reques
 		default:
 			json.NewEncoder(w).Encode(displayData)
 		}
-		//http.Error(w, "It is an invalid enry", http.StatusServiceUnavailable)
 		return
 
 	}
-	// TODO: cleanup state
+	// TODO: check if same secret already there
+
+	newTOTPAuthData := totpAuthData{
+		CreatedAt:       time.Now(),
+		EncryptedSecret: *profile.PendingTOTPSecret,
+		ValidatorAddr:   r.RemoteAddr,
+	}
+	newIndex := newTOTPAuthData.CreatedAt.Unix()
+	profile.TOTPAuthData[newIndex] = &newTOTPAuthData
 	profile.PendingTOTPSecret = nil
 	err = state.SaveUserProfile(authUser, profile)
 	if err != nil {
@@ -271,5 +270,4 @@ func (state *RuntimeState) validateNewTOTP(w http.ResponseWriter, r *http.Reques
 	}
 	//redirect to profile page?
 	http.Redirect(w, r, profilePath, 302)
-
 }

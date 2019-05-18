@@ -102,6 +102,7 @@ type u2fAuthData struct {
 
 type totpAuthData struct {
 	CreatedAt       time.Time
+	ValidatorAddr   string
 	Name            string
 	EncryptedSecret [][]byte
 	TOTPType        int

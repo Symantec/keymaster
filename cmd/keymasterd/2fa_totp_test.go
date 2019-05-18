@@ -84,9 +84,6 @@ func TestGenerateNewTOTPSuccess(t *testing.T) {
 	}
 	t.Logf("totpDataToken='%+v'", resultAccessToken)
 
-	//sleep to give time to save?
-	time.Sleep(40 * time.Millisecond)
-
 	// now we validate
 	otpValue, err := totp.GenerateCode(resultAccessToken.TOTPSecret, time.Now())
 	if err != nil {
