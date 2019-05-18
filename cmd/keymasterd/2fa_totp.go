@@ -8,9 +8,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"html/template"
 	"image/png"
 	"net/http"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -270,4 +272,111 @@ func (state *RuntimeState) validateNewTOTP(w http.ResponseWriter, r *http.Reques
 	}
 	//redirect to profile page?
 	http.Redirect(w, r, profilePath, 302)
+}
+
+const totpTokenManagementPath = "/api/v0/manageTOTPToken"
+
+func (state *RuntimeState) totpTokenManagerHandler(w http.ResponseWriter, r *http.Request) {
+	// User must be logged in
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
+	/*
+	 */
+	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
+	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	if err != nil {
+		logger.Debugf(1, "%v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	// TODO: ensure is a valid method (POST)
+	err = r.ParseForm()
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+		return
+	}
+	logger.Debugf(3, "Form: %+v", r.Form)
+
+	assumedUser := r.Form.Get("username")
+
+	// Have admin rights = Must be admin + authenticated with U2F
+	hasAdminRights := state.IsAdminUserAndU2F(authUser, loginLevel)
+
+	// Check params
+	if !hasAdminRights && assumedUser != authUser {
+		logger.Printf("bad username authUser=%s requested=%s", authUser, r.Form.Get("username"))
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		return
+	}
+
+	tokenIndex, err := strconv.ParseInt(r.Form.Get("index"), 10, 64)
+	if err != nil {
+		logger.Printf("tokenindex is not a number")
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "tokenindex is not a number")
+		return
+	}
+
+	//Do a redirect
+	profile, _, fromCache, err := state.LoadUserProfile(assumedUser)
+	if err != nil {
+		logger.Printf("loading profile error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+
+	}
+	if fromCache {
+		logger.Printf("DB is being cached and requesting registration aborting it")
+		http.Error(w, "db backend is offline for writes", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Todo: check for negative values
+	_, ok := profile.TOTPAuthData[tokenIndex]
+	if !ok {
+		//if tokenIndex >= len(profile.U2fAuthData) {
+		logger.Printf("bad index number")
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad index Value")
+		return
+	}
+	actionName := r.Form.Get("action")
+	switch actionName {
+	case "Update":
+		tokenName := r.Form.Get("name")
+		if m, _ := regexp.MatchString("^[-/.a-zA-Z0-9_ ]+$", tokenName); !m {
+			logger.Printf("%s", tokenName)
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "invalidtokenName")
+			return
+		}
+		profile.TOTPAuthData[tokenIndex].Name = tokenName
+	case "Disable":
+		profile.TOTPAuthData[tokenIndex].Enabled = false
+	case "Enable":
+		profile.TOTPAuthData[tokenIndex].Enabled = true
+	case "Delete":
+		delete(profile.TOTPAuthData, tokenIndex)
+	default:
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid Operation")
+		return
+	}
+	err = state.SaveUserProfile(assumedUser, profile)
+	if err != nil {
+		logger.Printf("Saving profile error: %v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+
+	// Success!
+	returnAcceptType := getPreferredAcceptType(r)
+	switch returnAcceptType {
+	case "text/html":
+		http.Redirect(w, r, profileURI(authUser, assumedUser), 302)
+	default:
+		w.WriteHeader(200)
+		fmt.Fprintf(w, "Success!")
+	}
+	return
+
 }

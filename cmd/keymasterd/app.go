@@ -101,11 +101,12 @@ type u2fAuthData struct {
 }
 
 type totpAuthData struct {
+	Enabled         bool
 	CreatedAt       time.Time
-	ValidatorAddr   string
 	Name            string
 	EncryptedSecret [][]byte
 	TOTPType        int
+	ValidatorAddr   string
 }
 
 type userProfile struct {
@@ -1279,34 +1280,48 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		JSSources = []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/keymaster-u2f.js"}
 	}
 
-	var devices []registeredU2FTokenDisplayInfo
+	// TODO: move deviceinfo mapping/sorting to its own function
+	var u2fdevices []registeredU2FTokenDisplayInfo
 	for i, tokenInfo := range profile.U2fAuthData {
-
 		deviceData := registeredU2FTokenDisplayInfo{
 			DeviceData: fmt.Sprintf("%+v", tokenInfo.Registration.AttestationCert.Subject.CommonName),
 			Enabled:    tokenInfo.Enabled,
 			Name:       tokenInfo.Name,
 			Index:      i}
-		devices = append(devices, deviceData)
+		u2fdevices = append(u2fdevices, deviceData)
 	}
-	sort.Slice(devices, func(i, j int) bool {
-		if devices[i].Name < devices[j].Name {
+	sort.Slice(u2fdevices, func(i, j int) bool {
+		if u2fdevices[i].Name < u2fdevices[j].Name {
 			return true
 		}
-		if devices[i].Name > devices[j].Name {
+		if u2fdevices[i].Name > u2fdevices[j].Name {
 			return false
 		}
-		return devices[i].DeviceData < devices[j].DeviceData
+		return u2fdevices[i].DeviceData < u2fdevices[j].DeviceData
 	})
+	var totpdevices []registeredTOTPTDeviceDisplayInfo
+	for i, deviceInfo := range profile.TOTPAuthData {
+		deviceData := registeredTOTPTDeviceDisplayInfo{
+			Enabled: deviceInfo.Enabled,
+			Name:    deviceInfo.Name,
+			Index:   i,
+		}
+		totpdevices = append(totpdevices, deviceData)
+	}
+	showTOTP := len(totpdevices) > 0 || true
+
 	displayData := profilePageTemplateData{
-		Username:        assumedUser,
-		AuthUsername:    authUser,
-		Title:           "Keymaster User Profile",
-		ShowU2F:         showU2F,
-		JSSources:       JSSources,
-		ReadOnlyMsg:     readOnlyMsg,
-		UsersLink:       state.IsAdminUser(authUser),
-		RegisteredToken: devices}
+		Username:             assumedUser,
+		AuthUsername:         authUser,
+		Title:                "Keymaster User Profile",
+		ShowU2F:              showU2F,
+		JSSources:            JSSources,
+		ReadOnlyMsg:          readOnlyMsg,
+		UsersLink:            state.IsAdminUser(authUser),
+		RegisteredU2FToken:   u2fdevices,
+		ShowTOTP:             showTOTP,
+		RegisteredTOTPDevice: totpdevices,
+	}
 	logger.Debugf(1, "%v", displayData)
 
 	err = state.htmlTemplate.ExecuteTemplate(w, "userProfilePage", displayData)
@@ -1577,6 +1592,7 @@ func main() {
 	serviceMux.HandleFunc(vipPollCheckPath, runtimeState.VIPPollCheckHandler)
 	serviceMux.HandleFunc(totpGeneratNewPath, runtimeState.GenerateNewTOTP)
 	serviceMux.HandleFunc(totpValidateNewPath, runtimeState.validateNewTOTP)
+	serviceMux.HandleFunc(totpTokenManagementPath, runtimeState.totpTokenManagerHandler)
 
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 
