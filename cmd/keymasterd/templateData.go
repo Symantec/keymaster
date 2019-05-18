@@ -311,6 +311,7 @@ type newTOTPPageTemplateData struct {
 	Title           string
 	AuthUsername    string
 	JSSources       []string
+	ErrorMessage    string
 	TOTPBase64Image template.HTML
 	TOTPSecret      string
 }
@@ -339,15 +340,18 @@ const newTOTPHTML = `
     <div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
 
     <h1>{{.Title}}</h1>
-    <ul>
 
+    {{if .ErrorMessage}}
+    <p style="color:red;">{{.ErrorMessage}} </p>
+    {{end}}
+
+    <div>
+
+    {{if .TOTPBase64Image}}
     New TOTP:
-    <img src="data:image/png;base64,iVBORw0KGgoAAA
-ANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4
-//8/w38GIAXDIBKE0DHxgljNBAAO9TXL0Y4OHwAAAABJRU
-5ErkJggg==" alt="Red dot" />
     {{.TOTPBase64Image}}
-    </ul>
+    {{ end }}
+    </div>
     <form enctype="application/x-www-form-urlencoded" action="/totp/ValidateNew/" method="post">
             <p>
             Enter OTP token value: <INPUT TYPE="text" NAME="OTP" SIZE=18  autocomplete="off">

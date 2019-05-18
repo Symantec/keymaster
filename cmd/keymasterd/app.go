@@ -111,7 +111,7 @@ type userProfile struct {
 	U2fAuthData           map[int64]*u2fAuthData
 	RegistrationChallenge *u2f.Challenge
 	//U2fAuthChallenge      *u2f.Challenge
-	pendingTOTPSecret [][]byte
+	PendingTOTPSecret *[][]byte
 	TOTPAuthData      map[int64]*totpAuthData
 }
 
@@ -1575,6 +1575,7 @@ func main() {
 	serviceMux.HandleFunc(vipPushStartPath, runtimeState.vipPushStartHandler)
 	serviceMux.HandleFunc(vipPollCheckPath, runtimeState.VIPPollCheckHandler)
 	serviceMux.HandleFunc(totpGeneratNewPath, runtimeState.GenerateNewTOTP)
+	serviceMux.HandleFunc(totpValidateNewPath, runtimeState.validateNewTOTP)
 
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 
