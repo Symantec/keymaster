@@ -248,6 +248,11 @@ const profileHTML = `
     {{.ReadOnlyMsg}}
     <ul>
       <li><a href="/api/v0/logout" >Logout </a></li>
+    {{if .UsersLink}}
+      <li><a href="/users/">Users</a></li>
+    {{end}}
+    </ul>
+    <ul>
        {{if .ShowU2F}}
        {{if not .ReadOnlyMsg}}
       <li>
@@ -261,12 +266,9 @@ const profileHTML = `
       {{else}}
       <div id="auth_action_text" style="color: blue;background-color: yellow;"> Your browser does not support U2F. However you can still Enable/Disable/Delete U2F tokens </div>
       {{end}}
-    {{if .UsersLink}}
-      <li><a href="/users/">Users</a></li>
-    {{end}}
     </ul>
     {{if .RegisteredToken -}}
-        Your U2F Token(s):
+        <p>Your U2F Token(s):</p>
         <table>
 	    <tr>
 	    <th>Name</th>
