@@ -165,43 +165,12 @@ func (state *RuntimeState) GenerateNewTOTP(w http.ResponseWriter, r *http.Reques
 const totpValidateNewPath = "/totp/ValidateNew/"
 
 func (state *RuntimeState) validateNewTOTP(w http.ResponseWriter, r *http.Request) {
-	if state.sendFailureToClientIfLocked(w, r) {
-		return
-	}
-	// TODO: think if we are going to allow admins to register these tokens
-	authUser, _, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authUser, _, otpValue, err := state.commonTOTPPostHandler(w, r)
 	if err != nil {
-		logger.Debugf(1, "%v", err)
+		logger.Printf("Error in common Handler")
 		return
 	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-
-	if r.Method != "POST" {
-		logger.Printf("Wanted Post got='%s'", r.Method)
-		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
-		return
-	}
-	err = r.ParseForm()
-	if err != nil {
-		logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
-		return
-	}
-	var OTPString string
-	if val, ok := r.Form["OTP"]; ok {
-		if len(val) > 1 {
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "Just one OTP Value allowed")
-			logger.Printf("Login with multiple OTP Values")
-			return
-		}
-		OTPString = val[0]
-	}
-	_, err = strconv.Atoi(OTPString)
-	if err != nil {
-		logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing OTP value")
-	}
-
+	OTPString := fmt.Sprintf("%06d", otpValue)
 	profile, _, fromCache, err := state.LoadUserProfile(authUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
@@ -412,7 +381,7 @@ func (state *RuntimeState) validateUserTOTP(username string, OTPValue int, t tim
 		logger.Printf("validateUserTOTP: alredy done TOTP for time period")
 		return false, nil
 	}
-	OTPString := fmt.Sprintf("%d", OTPValue)
+	OTPString := fmt.Sprintf("%06d", OTPValue)
 	//Now iterate
 	for _, deviceInfo := range profile.TOTPAuthData {
 		if !deviceInfo.Enabled {
