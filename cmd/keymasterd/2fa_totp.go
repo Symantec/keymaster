@@ -165,7 +165,7 @@ func (state *RuntimeState) GenerateNewTOTP(w http.ResponseWriter, r *http.Reques
 const totpValidateNewPath = "/totp/ValidateNew/"
 
 func (state *RuntimeState) validateNewTOTP(w http.ResponseWriter, r *http.Request) {
-	authUser, _, otpValue, err := state.commonTOTPPostHandler(w, r)
+	authUser, _, otpValue, err := state.commonTOTPPostHandler(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("Error in common Handler")
 		return
@@ -414,7 +414,7 @@ func (state *RuntimeState) validateUserTOTP(username string, OTPValue int, t tim
 
 ///
 
-func (state *RuntimeState) commonTOTPPostHandler(w http.ResponseWriter, r *http.Request) (string, int, int, error) {
+func (state *RuntimeState) commonTOTPPostHandler(w http.ResponseWriter, r *http.Request, requiredAuthLevel int) (string, int, int, error) {
 	// User must be logged in
 	if state.sendFailureToClientIfLocked(w, r) {
 		return "", 0, 0, errors.New("server still sealed")
@@ -422,7 +422,7 @@ func (state *RuntimeState) commonTOTPPostHandler(w http.ResponseWriter, r *http.
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, loginLevel, err := state.checkAuth(w, r, AuthTypeAny)
+	authUser, loginLevel, err := state.checkAuth(w, r, requiredAuthLevel)
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -465,7 +465,7 @@ func (state *RuntimeState) commonTOTPPostHandler(w http.ResponseWriter, r *http.
 const totpVerifyHandlerPath = "/api/v0/VerifyTOTP"
 
 func (state *RuntimeState) verifyTOTPHandler(w http.ResponseWriter, r *http.Request) {
-	authUser, _, otpValue, err := state.commonTOTPPostHandler(w, r)
+	authUser, _, otpValue, err := state.commonTOTPPostHandler(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
 		logger.Printf("Error in common Handler")
 		return
@@ -490,7 +490,7 @@ const totpAuthPath = "/api/v0/TOTPAuth"
 
 func (state *RuntimeState) TOTPAuthHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Debugf(1, "Top of TOTPAuthHandler")
-	authUser, currentAuthLevel, otpValue, err := state.commonTOTPPostHandler(w, r)
+	authUser, currentAuthLevel, otpValue, err := state.commonTOTPPostHandler(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Printf("Error in common Handler err:%s", err)
 		return
