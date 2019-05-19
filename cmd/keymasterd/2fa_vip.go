@@ -6,7 +6,6 @@ import (
 	"github.com/Symantec/keymaster/lib/instrumentedwriter"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
@@ -99,7 +98,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	//
 	metricLogAuthOperation(getClientType(r), proto.AuthTypeSymantecVIP, valid)
 	if !valid {
-		logger.Printf("Invalid OTP value login for %s", authUser)
+		logger.Printf("Invalid VIP OTP value login for %s", authUser)
 		// TODO if client is html then do a redirect back to vipLoginPage
 		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
 		return
@@ -116,16 +115,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	// Now we send to the appropiate place
-	returnAcceptType := "application/json"
-	acceptHeader, ok := r.Header["Accept"]
-	if ok {
-		for _, acceptValue := range acceptHeader {
-			if strings.Contains(acceptValue, "text/html") {
-				logger.Debugf(1, "Got it  %+v", acceptValue)
-				returnAcceptType = "text/html"
-			}
-		}
-	}
+	returnAcceptType := getPreferredAcceptType(r)
 
 	// TODO: The cert backend should depend also on per user preferences.
 	loginResponse := proto.LoginResponse{Message: "success"} //CertAuthBackend: certBackends

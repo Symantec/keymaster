@@ -410,16 +410,21 @@ func getClientType(r *http.Request) string {
 
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.Request,
 	loginDestination string, tryShowU2f bool) error {
-	JSSources := []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/webui-2fa-symc-vip.js"}
+	JSSources := []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js"}
 	showU2F := browserSupportsU2F(r) && tryShowU2f
 	if showU2F {
-		JSSources = []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/webui-2fa-u2f.js", "/static/webui-2fa-symc-vip.js"}
+
+		JSSources = append(JSSources, "/static/webui-2fa-u2f.js") // "/static/webui-2fa-symc-vip.js"}
+	}
+	if state.Config.SymantecVIP.Enabled {
+		JSSources = append(JSSources, "/static/webui-2fa-symc-vip.js")
 	}
 	displayData := secondFactorAuthTemplateData{
 		Title:            "Keymaster 2FA Auth",
 		JSSources:        JSSources,
 		ShowVIP:          state.Config.SymantecVIP.Enabled,
 		ShowU2F:          showU2F,
+		ShowTOTP:         state.Config.Base.EnableLocalTOTP,
 		LoginDestination: loginDestination}
 	err := state.htmlTemplate.ExecuteTemplate(w, "secondFactorLoginPage", displayData)
 	if err != nil {
@@ -740,6 +745,9 @@ func (state *RuntimeState) getRequiredWebUIAuthLevel() int {
 		if webUIPref == proto.AuthTypeSymantecVIP {
 			AuthLevel |= AuthTypeSymantecVIP
 		}
+		if webUIPref == proto.AuthTypeTOTP {
+			AuthLevel |= AuthTypeTOTP
+		}
 	}
 	return AuthLevel
 }
@@ -1041,6 +1049,9 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		}
 		if certPref == proto.AuthTypeSymantecVIP && state.Config.SymantecVIP.Enabled {
 			certBackends = append(certBackends, proto.AuthTypeSymantecVIP)
+		}
+		if certPref == proto.AuthTypeTOTP && state.Config.Base.EnableLocalTOTP {
+			certBackends = append(certBackends, proto.AuthTypeTOTP)
 		}
 	}
 	// logger.Printf("current backends=%+v", certBackends)
@@ -1596,6 +1607,7 @@ func main() {
 	serviceMux.HandleFunc(totpValidateNewPath, runtimeState.validateNewTOTP)
 	serviceMux.HandleFunc(totpTokenManagementPath, runtimeState.totpTokenManagerHandler)
 	serviceMux.HandleFunc(totpVerifyHandlerPath, runtimeState.verifyTOTPHandler)
+	serviceMux.HandleFunc(totpAuthPath, runtimeState.TOTPAuthHandler)
 
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 

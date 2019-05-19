@@ -90,6 +90,7 @@ type secondFactorAuthTemplateData struct {
 	JSSources        []string
 	ShowVIP          bool
 	ShowU2F          bool
+	ShowTOTP         bool
 	LoginDestination string
 }
 
@@ -114,6 +115,7 @@ const secondFactorAuthFormText = `
 	{{template "header" .}}
 	<div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
         <h2> Keymaster second factor Authentication </h2>
+
 	{{if .ShowVIP}}
 	<div id="vip_login_destination" style="display: none;">{{.LoginDestination}}</div>
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/vipAuth" method="post">
@@ -133,6 +135,7 @@ const secondFactorAuthFormText = `
 	<p> Or wait for a VIP push</p>
 	{{end}}
 	{{end}}
+
 	{{if .ShowU2F}}
 	<p>
 	       <div id="u2f_login_destination" style="display: none;">{{.LoginDestination}}</div>
@@ -146,8 +149,18 @@ const secondFactorAuthFormText = `
 	<p> <button id="start_vip_push_button" >Start VIP Push</button>(VIP push will autostart in a few seconds)</p>
         </div>
 	{{end}}
-
 	{{end}}
+
+        {{if .ShowTOTP}}
+        <form enctype="application/x-www-form-urlencoded" action="/api/v0/TOTPAuth" method="post">
+            <p>
+            Enter TOTP token value: <INPUT TYPE="text" NAME="OTP" SIZE=18  autocomplete="off">
+            <INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
+            <input type="submit" value="Submit" />
+            </p>
+        </form>
+	{{end}}
+
 	</div>
 	{{template "footer" . }}
 	</div>

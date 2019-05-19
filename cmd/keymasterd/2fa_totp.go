@@ -344,7 +344,6 @@ func (state *RuntimeState) totpTokenManagerHandler(w http.ResponseWriter, r *htt
 	// Todo: check for negative values
 	_, ok := profile.TOTPAuthData[tokenIndex]
 	if !ok {
-		//if tokenIndex >= len(profile.U2fAuthData) {
 		logger.Printf("bad index number")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "bad index Value")
 		return
@@ -454,7 +453,7 @@ func (state *RuntimeState) commonTOTPPostHandler(w http.ResponseWriter, r *http.
 	/*
 	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
-	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	authUser, loginLevel, err := state.checkAuth(w, r, AuthTypeAny)
 	if err != nil {
 		logger.Debugf(1, "%v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
@@ -521,11 +520,17 @@ func (state *RuntimeState) verifyTOTPHandler(w http.ResponseWriter, r *http.Requ
 const totpAuthPath = "/api/v0/TOTPAuth"
 
 func (state *RuntimeState) TOTPAuthHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Debugf(1, "Top of TOTPAuthHandler")
 	authUser, currentAuthLevel, otpValue, err := state.commonTOTPPostHandler(w, r)
 	if err != nil {
-		logger.Printf("Error in common Handler")
+		logger.Printf("Error in common Handler err:%s", err)
 		return
 	}
+	logger.Debugf(1, "TOTPAuthHandler, After commonPostHandler, currentAuthLevel=%x", currentAuthLevel)
+	state.internalTOTPAuthHandler(w, r, authUser, currentAuthLevel, otpValue)
+	return
+}
+func (state *RuntimeState) internalTOTPAuthHandler(w http.ResponseWriter, r *http.Request, authUser string, currentAuthLevel int, otpValue int) {
 	valid, err := state.validateUserTOTP(authUser, otpValue, time.Now())
 	if err != nil {
 		logger.Printf("Error validating TOTP %s", err)
