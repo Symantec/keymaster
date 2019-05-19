@@ -11,12 +11,14 @@ import (
 	"fmt"
 	"html/template"
 	"image/png"
+	"math"
 	"net/http"
 	"regexp"
 	"strconv"
 	"time"
 
 	"github.com/Symantec/keymaster/lib/instrumentedwriter"
+	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	//"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 )
@@ -260,6 +262,7 @@ func (state *RuntimeState) validateNewTOTP(w http.ResponseWriter, r *http.Reques
 		CreatedAt:       time.Now(),
 		EncryptedSecret: *profile.PendingTOTPSecret,
 		ValidatorAddr:   r.RemoteAddr,
+		Enabled:         true,
 	}
 	newIndex := newTOTPAuthData.CreatedAt.Unix()
 	profile.TOTPAuthData[newIndex] = &newTOTPAuthData
@@ -292,6 +295,11 @@ func (state *RuntimeState) totpTokenManagerHandler(w http.ResponseWriter, r *htt
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 	// TODO: ensure is a valid method (POST)
+	if r.Method != "POST" {
+		logger.Printf("Wanted Post got='%s'", r.Method)
+		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		return
+	}
 	err = r.ParseForm()
 	if err != nil {
 		logger.Println(err)
@@ -376,6 +384,176 @@ func (state *RuntimeState) totpTokenManagerHandler(w http.ResponseWriter, r *htt
 	default:
 		w.WriteHeader(200)
 		fmt.Fprintf(w, "Success!")
+	}
+	return
+}
+
+func (state *RuntimeState) validateUserTOTP(username string, OTPValue int, t time.Time) (bool, error) {
+	//Do a redirect
+	profile, _, fromCache, err := state.LoadUserProfile(username)
+	if err != nil {
+		logger.Printf("validateUserTOTP: loading profile error: %v", err)
+		return false, err
+
+	}
+
+	if fromCache {
+		//TODO we what do do on disconnected? I think we should allow it to proceed, but
+		// enable a blacklist so that ip addresses/users have a limit of say 5/min?
+		logger.Printf("DB is being cached and requesting registration aborting it")
+		//http.Error(w, "db backend is offline for writes", http.StatusServiceUnavailable)
+		//return
+	}
+
+	//Check if value is on blacklist for that user?
+	// Check if there is a value successfully accepted for that counter value
+	const defaultPeriod = 30
+	counter := int64(math.Floor(float64(t.Unix()) / float64(defaultPeriod)))
+	if profile.LastSuccessfullTOTPCounter == counter {
+		logger.Printf("validateUserTOTP: alredy done TOTP for time period")
+		return false, nil
+	}
+	OTPString := fmt.Sprintf("%d", OTPValue)
+	//Now iterate
+	for _, deviceInfo := range profile.TOTPAuthData {
+		if !deviceInfo.Enabled {
+			continue
+		}
+		clearTextKey, err := state.decryptWithPublicKeys(deviceInfo.EncryptedSecret)
+		if err != nil {
+			logger.Printf("Decrypting secret error: %v", err)
+			return false, err
+		}
+
+		valid := totp.Validate(OTPString, string(clearTextKey))
+		if !valid {
+			continue
+		}
+		if !fromCache {
+			profile.LastSuccessfullTOTPCounter = counter
+			err = state.SaveUserProfile(username, profile)
+			if err != nil {
+				logger.Printf("Saving profile error: %v", err)
+				return false, err
+			}
+		}
+
+		return true, nil
+	}
+
+	return false, nil
+}
+
+///
+
+func (state *RuntimeState) commonTOTPPostHandler(w http.ResponseWriter, r *http.Request) (string, int, int, error) {
+	// User must be logged in
+	if state.sendFailureToClientIfLocked(w, r) {
+		return "", 0, 0, errors.New("server still sealed")
+	}
+	/*
+	 */
+	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
+	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
+	if err != nil {
+		logger.Debugf(1, "%v", err)
+		http.Error(w, "error", http.StatusInternalServerError)
+		return "", 0, 0, err
+	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+	// TODO: ensure is a valid method (POST)
+	if r.Method != "POST" {
+		logger.Printf("Wanted Post got='%s'", r.Method)
+		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		return "", 0, 0, errors.New("Invalid Method requeted")
+	}
+	err = r.ParseForm()
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+		return "", 0, 0, err
+	}
+	logger.Debugf(3, "Form: %+v", r.Form)
+
+	var OTPString string
+	if val, ok := r.Form["OTP"]; ok {
+		if len(val) > 1 {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Just one OTP Value allowed")
+			logger.Printf("Login with multiple OTP Values")
+			return "", 0, 0, errors.New("multiple OTP values")
+		}
+		OTPString = val[0]
+	}
+	otpValue, err := strconv.Atoi(OTPString)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing OTP value")
+		return "", 0, 0, err
+	}
+
+	return authUser, loginLevel, otpValue, nil
+}
+
+const totpVerifyHandlerPath = "/api/v0/VerifyTOTP"
+
+func (state *RuntimeState) verifyTOTPHandler(w http.ResponseWriter, r *http.Request) {
+	authUser, _, otpValue, err := state.commonTOTPPostHandler(w, r)
+	if err != nil {
+		logger.Printf("Error in common Handler")
+		return
+	}
+	valid, err := state.validateUserTOTP(authUser, otpValue, time.Now())
+	if err != nil {
+		logger.Printf("Error validating UserTOTP. Err: %s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+		return
+	}
+	// TODO change these for real continuation Messages.
+	if !valid {
+		//Send to contine Page of Error?
+		state.writeFailureResponse(w, r, http.StatusOK, "Verification Failed")
+		return
+
+	}
+	http.Redirect(w, r, profilePath, 302)
+}
+
+const totpAuthPath = "/api/v0/TOTPAuth"
+
+func (state *RuntimeState) TOTPAuthHandler(w http.ResponseWriter, r *http.Request) {
+	authUser, currentAuthLevel, otpValue, err := state.commonTOTPPostHandler(w, r)
+	if err != nil {
+		logger.Printf("Error in common Handler")
+		return
+	}
+	valid, err := state.validateUserTOTP(authUser, otpValue, time.Now())
+	if err != nil {
+		logger.Printf("Error validating TOTP %s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating OTP token")
+		return
+	}
+	if !valid {
+		logger.Printf("Invalid OTP value login for %s", authUser)
+		// TODO if client is html then do a redirect back to vipLoginPage
+		state.writeFailureResponse(w, r, http.StatusUnauthorized, "")
+		return
+	}
+
+	_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeTOTP)
+	if err != nil {
+		logger.Printf("Auth Cookie NOT found ? %s", err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating OTP token")
+		return
+	}
+	returnAcceptType := getPreferredAcceptType(r)
+	switch returnAcceptType {
+	case "text/html":
+		loginDestination := getLoginDestination(r)
+		http.Redirect(w, r, loginDestination, 302)
+	default:
+		loginResponse := proto.LoginResponse{Message: "success"}
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(loginResponse)
 	}
 	return
 

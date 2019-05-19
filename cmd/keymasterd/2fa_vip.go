@@ -78,6 +78,12 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		logger.Println(err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing OTP value")
+		return
+	}
+	if !state.Config.SymantecVIP.Enabled {
+		logger.Printf("request for VIP auth, but VIP not enabled")
+		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "VIP not enabled")
+		return
 	}
 
 	start := time.Now()
@@ -92,7 +98,6 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 
 	//
 	metricLogAuthOperation(getClientType(r), proto.AuthTypeSymantecVIP, valid)
-
 	if !valid {
 		logger.Printf("Invalid OTP value login for %s", authUser)
 		// TODO if client is html then do a redirect back to vipLoginPage

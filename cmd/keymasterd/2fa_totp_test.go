@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -102,6 +103,27 @@ func TestGenerateNewTOTPSuccess(t *testing.T) {
 	_, err = checkRequestHandlerCode(validateReq, state.validateNewTOTP, http.StatusFound)
 	if err != nil {
 		t.Fatal(err)
+	}
+	//now check auth against it
+	now := time.Now()
+	otpValueInt, err := strconv.Atoi(otpValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid, err := state.validateUserTOTP("username", otpValueInt, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !valid {
+		t.Fatal("should have been valid")
+	}
+	// now we retry with same value and should fail
+	valid, err = state.validateUserTOTP("username", otpValueInt, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if valid {
+		t.Fatal("should NOT have been valid")
 	}
 
 }

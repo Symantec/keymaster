@@ -58,6 +58,7 @@ const (
 	AuthTypeU2F
 	AuthTypeSymantecVIP
 	AuthTypeIPCertificate
+	AuthTypeTOTP
 )
 
 const AuthTypeAny = 0xFFFF
@@ -113,8 +114,9 @@ type userProfile struct {
 	U2fAuthData           map[int64]*u2fAuthData
 	RegistrationChallenge *u2f.Challenge
 	//U2fAuthChallenge      *u2f.Challenge
-	PendingTOTPSecret *[][]byte
-	TOTPAuthData      map[int64]*totpAuthData
+	PendingTOTPSecret          *[][]byte
+	LastSuccessfullTOTPCounter int64
+	TOTPAuthData               map[int64]*totpAuthData
 }
 
 type localUserData struct {
@@ -416,7 +418,7 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.R
 	displayData := secondFactorAuthTemplateData{
 		Title:            "Keymaster 2FA Auth",
 		JSSources:        JSSources,
-		ShowOTP:          state.Config.SymantecVIP.Enabled,
+		ShowVIP:          state.Config.SymantecVIP.Enabled,
 		ShowU2F:          showU2F,
 		LoginDestination: loginDestination}
 	err := state.htmlTemplate.ExecuteTemplate(w, "secondFactorLoginPage", displayData)
@@ -1593,6 +1595,7 @@ func main() {
 	serviceMux.HandleFunc(totpGeneratNewPath, runtimeState.GenerateNewTOTP)
 	serviceMux.HandleFunc(totpValidateNewPath, runtimeState.validateNewTOTP)
 	serviceMux.HandleFunc(totpTokenManagementPath, runtimeState.totpTokenManagerHandler)
+	serviceMux.HandleFunc(totpVerifyHandlerPath, runtimeState.verifyTOTPHandler)
 
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 

@@ -88,7 +88,7 @@ type secondFactorAuthTemplateData struct {
 	Title            string
 	AuthUsername     string
 	JSSources        []string
-	ShowOTP          bool
+	ShowVIP          bool
 	ShowU2F          bool
 	LoginDestination string
 }
@@ -114,7 +114,7 @@ const secondFactorAuthFormText = `
 	{{template "header" .}}
 	<div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
         <h2> Keymaster second factor Authentication </h2>
-	{{if .ShowOTP}}
+	{{if .ShowVIP}}
 	<div id="vip_login_destination" style="display: none;">{{.LoginDestination}}</div>
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/vipAuth" method="post">
             <p>
@@ -138,7 +138,7 @@ const secondFactorAuthFormText = `
 	       <div id="u2f_login_destination" style="display: none;">{{.LoginDestination}}</div>
                <div id="auth_action_text" > Authenticate by touching a blinking registered U2F device (insert if not inserted yet)</div>
         </p>
-        {{if .ShowOTP}}
+        {{if .ShowVIP}}
 	<div id="manual_start_vip_div">
 	<p>
 	<h4>Or</h4>
@@ -315,7 +315,16 @@ const profileHTML = `
     {{if .ShowTOTP}}
        <h3>TOTP</h3>
        <ul>
-          <li>New token will be here</li>
+          <li><a href="/totp/GenerateNew/">Generate New TOTP</a></li>
+	  <li>
+              <form enctype="application/x-www-form-urlencoded" action="/api/v0/VerifyTOTP" method="post">
+                  <p>
+                  Authenticate TOTP: <INPUT TYPE="text" NAME="OTP" SIZE=8  autocomplete="off">
+                  <INPUT TYPE="hidden" NAME="login_destination" VALUE="/">
+                  <input type="submit" value="Submit" />
+                  </p>
+              </form>
+	  </li>
        </ul>
        {{if .RegisteredTOTPDevice -}}
        <p> Your registered totp devices </p>
@@ -347,7 +356,7 @@ const profileHTML = `
        </table>
        {{end}}
     {{end}}
-    </div> <!-- end of u2f div -->
+    </div> <!-- end of totp div -->
     {{end}}
     </div>
     {{template "footer" . }}

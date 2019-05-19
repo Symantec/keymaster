@@ -8,6 +8,7 @@ const (
 	AuthTypeU2F           = "U2F"
 	AuthTypeSymantecVIP   = "SymantecVIP"
 	AuthTypeIPCertificate = "IPCertificate"
+	AuthTypeTOTP          = "TOTP"
 )
 
 type LoginResponse struct {
