@@ -295,8 +295,6 @@ func TestTOTPTokenManagerHandlerUpdateSuccess(t *testing.T) {
 	profile := &userProfile{}
 	profile.TOTPAuthData = make(map[int64]*totpAuthData)
 	profile.TOTPAuthData[0] = &totpAuthData{Name: oldName}
-	//profile.U2fAuthData = make(map[int64]*u2fAuthData)
-	//profile.U2fAuthData[0] = &u2fAuthData{Name: oldName}
 	err = state.SaveUserProfile("username", profile)
 	if err != nil {
 		t.Fatal(err)
@@ -304,7 +302,6 @@ func TestTOTPTokenManagerHandlerUpdateSuccess(t *testing.T) {
 
 	form := url.Values{}
 	form.Add("username", "username")
-	//form.Add("password", validPasswordConst)
 	form.Add("index", "0")
 	form.Add("name", newName)
 	form.Add("action", "Update")
