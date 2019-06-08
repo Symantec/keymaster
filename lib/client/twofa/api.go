@@ -30,8 +30,9 @@ func GetCertFromTargetUrls(
 	skipu2f bool,
 	addGroups bool,
 	dialer net.Dialer,
+	userAgentString string,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
 	return getCertFromTargetUrls(
 		signer, userName, password, targetUrls, rootCAs, skipu2f, addGroups,
-		dialer, logger)
+		dialer, userAgentString, logger)
 }
