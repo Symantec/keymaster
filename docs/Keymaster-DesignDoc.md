@@ -1,6 +1,6 @@
 # Keymaster: Usable Short-term Credentials with Multi-Factor Authentication
 
-#### Camilo Viecco[^1], Richard Gooch
+#### Camilo Viecco[[1]](#footnote1), Richard Gooch
 #### Symantec Corporation
 
 [https://github.com/Symantec/keymaster]()
@@ -32,7 +32,7 @@ Every organisation will have its own set of requirements when deciding on access
 * Should not depend on any specific Public Cloud provider technology (i.e. no AWS KMS)
 * Can output credentials for
    * SSH access
-   * Kerberos ticket generation (x509 pkinit)[^2]
+   * Kerberos ticket generation (x509 pkinit)[[2]](#footnote2)
    * Generic x509 client side certificates
 * Supports a migration path from long-lived SSH keys recorded in LDAP to the new system
 * Can be expanded to provide authentication services for Web services (i.e. act as an IDentity Provider)
@@ -94,7 +94,7 @@ The impact of the remote U2F token database becoming unavailable would be that u
 Keymaster requires users to enter their password (this is their first authentication factor) in order to generate fresh credentials. Keymaster supports authenticating with a local password database on the keymaster servers, however this mode of operation will require separate mechanisms to manage and distribute the password database. We expect that most deployments will connect to an LDAP/AD service to perform password validation. This introduces a dependency on the LDAP service. If this service is unavailable, users will be unable to authenticate. One approach to limit the impact of LDAP failures is to co-host keymaster and LDAP servers, so that every keymaster server has a local LDAP server to use for authentication. This is a robust solution, but requires deploying more LDAP servers, which are non-trivial to configure.
 
 
-Keymaster has temporary access to the password of every user who authenticates with it (users provide their password to keymaster and it connects to LDAP to verify it). Keymaster will generate a salted, hashed password and store that in the remote database (the same one used for the U2F token database), where it is then distributed to the read-only cache for all the keymaster servers. The password is hashed with the best currently available password hashing function (Argon2[^3], with extra iterations), making each password very expensive to crack.
+Keymaster has temporary access to the password of every user who authenticates with it (users provide their password to keymaster and it connects to LDAP to verify it). Keymaster will generate a salted, hashed password and store that in the remote database (the same one used for the U2F token database), where it is then distributed to the read-only cache for all the keymaster servers. The password is hashed with the best currently available password hashing function (Argon2[[3]](#footnote3), with extra iterations), making each password very expensive to crack.
 
 
 When a user authenticates with their password, LDAP is consulted, if it is available (the usual case). If LDAP is unavailable, the local salted, hashed password is checked. These salted, hashed passwords expire after a configurable time. We suggest 96 hours (4 days), so that an extended LDAP outage does not prevent issuing of credentials on the first day of work after a long weekend. Note that, as long as LDAP is working, users who are remove/disabled are immediately prevented from authenticating. A disabled user who attempted to authenticate would immediately have their cached, salted, hashed password invalidated.
@@ -167,7 +167,9 @@ Keymaster could provide a true SSO experience for all authenticated access, whet
 * Enhance the keymaster client to fetch web cookies from the keymasterd and write them to a local file so that a single login with keymaster yields all authentication credentials needed (SSH, SSL, API keys, web cookies)
 * Write extensions for relevant Web browsers (i.e. Firefox and Chrome) to read web cookies from a local file
 
+### Footnotes
+<a name="footnote1">[1]</a> Camilo did all the hard work: design, development and deployment
 
-[^1]: Camilo did all the hard work: design, development and deployment
-[^2]: Hadoop’s security implementation requires the use of Kerberos. We also want to avoid the synchronization of Kerberos tickets and the need of password availability on public cloud servers.
-[^3]: "The password hash Argon2, winner of PHC - GitHub." https://github.com/P-H-C/phc-winner-argon2. Accessed 19 Nov. 2017.
+<a name="footnote2">[2]</a> Hadoop’s security implementation requires the use of Kerberos. We also want to avoid the synchronization of Kerberos tickets and the need of password availability on public cloud servers.
+
+<a name="footnote3">[3]</a> "The password hash Argon2, winner of PHC - GitHub." https://github.com/P-H-C/phc-winner-argon2. Accessed 19 Nov. 2017.
