@@ -17,6 +17,7 @@ func CheckU2FDevices(logger log.Logger) {
 func DoU2FAuthenticate(
 	client *http.Client,
 	baseURL string,
+	userAgentString string,
 	logger log.DebugLogger) error {
-	return doU2FAuthenticate(client, baseURL, logger)
+	return doU2FAuthenticate(client, baseURL, userAgentString, logger)
 }

@@ -29,11 +29,15 @@ import (
 const DefaultSSHKeysLocation = "/.ssh/"
 const DefaultTLSKeysLocation = "/.ssl/"
 
+const userAgentAppName = "keymaster"
+const defaultVersionNumber = "No version provided"
+
 var (
 	// Must be a global variable in the data segment so that the build
 	// process can inject the version number on the fly when building the
 	// binary. Use only from the Usage() function.
-	Version = "No version provided"
+	Version         = defaultVersionNumber
+	userAgentString = userAgentAppName
 )
 
 var (
@@ -180,6 +184,7 @@ func setupCerts(
 		false,
 		configContents.Base.AddGroups,
 		dialer,
+		userAgentString,
 		logger)
 	if err != nil {
 		logger.Fatal(err)
@@ -262,6 +267,15 @@ func setupCerts(
 	}
 }
 
+func computeUserAgent() {
+	uaVersion := Version
+	if Version == defaultVersionNumber {
+		uaVersion = "0.0"
+	}
+
+	userAgentString = fmt.Sprintf("%s/%s (%s %s)", userAgentAppName, uaVersion, runtime.GOOS, runtime.GOARCH)
+}
+
 func Usage() {
 	fmt.Fprintf(
 		os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
@@ -292,6 +306,7 @@ func main() {
 		u2f.CheckU2FDevices(logger)
 		return
 	}
+	computeUserAgent()
 
 	rootCAs := maybeGetRootCas(logger)
 	userName, homeDir := getUserNameAndHomeDir(logger)

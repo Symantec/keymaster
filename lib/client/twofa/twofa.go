@@ -14,6 +14,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -66,7 +68,8 @@ func createKeyBodyRequest(method, urlStr, filedata string) (*http.Request, error
 	return req, nil
 }
 
-func doCertRequest(client *http.Client, authCookies []*http.Cookie, url, filedata string, logger log.Logger) ([]byte, error) {
+func doCertRequest(client *http.Client, authCookies []*http.Cookie, url, filedata string,
+	userAgentString string, logger log.Logger) ([]byte, error) {
 
 	req, err := createKeyBodyRequest("POST", url, filedata)
 	if err != nil {
@@ -76,6 +79,7 @@ func doCertRequest(client *http.Client, authCookies []*http.Cookie, url, filedat
 	for _, cookie := range authCookies {
 		req.AddCookie(cookie)
 	}
+	req.Header.Set("User-Agent", userAgentString)
 	resp, err := client.Do(req) // Client.Get(targetUrl)
 	if err != nil {
 		logger.Printf("Failure to do cert request %s", err)
@@ -99,6 +103,7 @@ func getCertsFromServer(
 	skip2fa bool,
 	addGroups bool,
 	dialer net.Dialer,
+	userAgentString string,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
 
 	//First Do Login
@@ -119,6 +124,7 @@ func getCertsFromServer(
 	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Add("Accept", "application/json")
+	req.Header.Set("User-Agent", userAgentString)
 
 	logger.Debugf(1, "About to start login request\n")
 	loginResp, err := client.Do(req) //client.Get(targetUrl)
@@ -174,6 +180,14 @@ func getCertsFromServer(
 		allowVIP = false
 	}
 
+	// on linux disable U2F is the /sys/class/hidraw is missing
+	if runtime.GOOS == "linux" && allowU2F {
+		if _, err := os.Stat("/sys/class/hidraw"); os.IsNotExist(err) {
+			allowU2F = false
+		}
+
+	}
+
 	// upgrade to u2f
 	successful2fa := false
 	if !skip2fa {
@@ -186,7 +200,7 @@ func getCertsFromServer(
 			if len(devices) > 0 {
 
 				err = u2f.DoU2FAuthenticate(
-					client, baseUrl, logger)
+					client, baseUrl, userAgentString, logger)
 				if err != nil {
 
 					return nil, nil, nil, err
@@ -197,7 +211,7 @@ func getCertsFromServer(
 
 		if allowVIP && !successful2fa {
 			err = vip.DoVIPAuthenticate(
-				client, baseUrl, logger)
+				client, baseUrl, userAgentString, logger)
 			if err != nil {
 
 				return nil, nil, nil, err
@@ -233,6 +247,7 @@ func getCertsFromServer(
 		loginResp.Cookies(),
 		baseUrl+"/certgen/"+userName+"?type=x509"+urlPostfix,
 		pemKey,
+		userAgentString,
 		logger)
 	if err != nil {
 		return nil, nil, nil, err
@@ -243,6 +258,7 @@ func getCertsFromServer(
 		loginResp.Cookies(),
 		baseUrl+"/certgen/"+userName+"?type=x509-kubernetes",
 		pemKey,
+		userAgentString,
 		logger)
 	if err != nil {
 		//logger.Printf("Warning: could not get the kubernets cert (old server?) err=%s \n", err)
@@ -262,6 +278,7 @@ func getCertsFromServer(
 		loginResp.Cookies(),
 		baseUrl+"/certgen/"+userName+"?type=ssh",
 		sshAuthFile,
+		userAgentString,
 		logger)
 	if err != nil {
 		return nil, nil, nil, err
@@ -279,6 +296,7 @@ func getCertFromTargetUrls(
 	skipu2f bool,
 	addGroups bool,
 	dialer net.Dialer,
+	userAgentString string,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
 	success := false
 	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
@@ -287,7 +305,7 @@ func getCertFromTargetUrls(
 		logger.Printf("attempting to target '%s' for '%s'\n", baseUrl, userName)
 		sshCert, x509Cert, kubernetesCert, err = getCertsFromServer(
 			signer, userName, password, baseUrl, tlsConfig, skipu2f, addGroups,
-			dialer, logger)
+			dialer, userAgentString, logger)
 		if err != nil {
 			logger.Println(err)
 			continue

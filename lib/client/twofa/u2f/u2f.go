@@ -47,6 +47,7 @@ func checkU2FDevices(logger log.Logger) {
 func doU2FAuthenticate(
 	client *http.Client,
 	baseURL string,
+	userAgentString string,
 	logger log.DebugLogger) error {
 	logger.Printf("top of doU2fAuthenticate")
 	url := baseURL + "/u2f/SignRequest"
@@ -54,6 +55,7 @@ func doU2FAuthenticate(
 	if err != nil {
 		logger.Fatal(err)
 	}
+	signRequest.Header.Set("User-Agent", userAgentString)
 
 	signRequestResp, err := client.Do(signRequest) // Client.Get(targetUrl)
 	if err != nil {
@@ -191,6 +193,7 @@ func doU2FAuthenticate(
 		logger.Printf("Failure to make http request")
 		return err
 	}
+	webSignRequest2.Header.Set("User-Agent", userAgentString)
 
 	signRequestResp2, err := client.Do(webSignRequest2) // Client.Get(targetUrl)
 	if err != nil {
