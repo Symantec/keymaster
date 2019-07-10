@@ -675,6 +675,9 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		state.Mutex.Lock()
 		config := state.Config
 		state.Mutex.Unlock()
+		if !state.Config.Base.DisableUsernameNormalization {
+			user = strings.ToLower(user)
+		}
 		valid, err := checkUserPassword(user, pass, config, state.passwordChecker, r)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -976,6 +979,9 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	if !state.Config.Base.DisableUsernameNormalization {
+		username = strings.ToLower(username)
+	}
 	valid, err := checkUserPassword(username, password, state.Config, state.passwordChecker, r)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
