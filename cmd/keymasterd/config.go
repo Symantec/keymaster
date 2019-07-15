@@ -106,10 +106,11 @@ type ProfileStorageConfig struct {
 }
 
 type SymantecVIPConfig struct {
-	Client   *vip.Client
-	Enabled  bool   `yaml:"enabled"`
-	CertFile string `yaml:"cert_file"`
-	KeyFile  string `yaml:"key_file"`
+	Client            *vip.Client
+	Enabled           bool   `yaml:"enabled"`
+	CertFile          string `yaml:"cert_file"`
+	KeyFile           string `yaml:"key_file"`
+	RequireAppAproval bool   `yaml:"require_app_approval"`
 }
 
 type AppConfigFile struct {
@@ -347,6 +348,7 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 		client.VipPushMessageText = "Keymaster Push Authentication Request"
 		client.VipPushDisplayMessageText = "Keymaster 2FA request from:"
 		client.VipPushDisplayMessageProfile = u2fAppID //TODO change this for host identity
+		client.RequireAppApproval = runtimeState.Config.SymantecVIP.RequireAppAproval
 		runtimeState.Config.SymantecVIP.Client = &client
 	}
 
