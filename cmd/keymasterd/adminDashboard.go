@@ -48,7 +48,7 @@ func (dashboard *adminDashboardType) ServeHTTP(w http.ResponseWriter,
 	}
 	fmt.Fprintln(writer, "</h3>")
 	fmt.Fprintln(writer, "<hr>")
-	if Version != defaultVersionString {
+	if Version != "" {
 		fmt.Fprintf(writer, "Keymasterd version: %s <br>", Version)
 	}
 	html.WriteFooter(writer)
