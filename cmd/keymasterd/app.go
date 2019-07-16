@@ -152,7 +152,7 @@ type RuntimeState struct {
 const redirectPath = "/auth/oauth2/callback"
 const secsBetweenCleanup = 30
 const maxAgeU2FVerifySeconds = 30
-const defaultVersionString = "No version provided"
+const defaultVersionString = ""
 
 var (
 	Version        = defaultVersionString
@@ -1466,7 +1466,11 @@ func (l httpLogger) Log(record instrumentedwriter.LogRecord) {
 }
 
 func Usage() {
-	fmt.Fprintf(os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
+	displayVersion := Version
+	if Version == defaultVersionString {
+		displayVersion = "No version provided"
+	}
+	fmt.Fprintf(os.Stderr, "Usage of %s (version %s):\n", os.Args[0], displayVersion)
 	flag.PrintDefaults()
 }
 
