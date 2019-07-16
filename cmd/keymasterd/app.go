@@ -152,9 +152,10 @@ type RuntimeState struct {
 const redirectPath = "/auth/oauth2/callback"
 const secsBetweenCleanup = 30
 const maxAgeU2FVerifySeconds = 30
+const defaultVersionString = "No version provided"
 
 var (
-	Version        = "No version provided"
+	Version        = defaultVersionString
 	configFilename = flag.String("config", "/etc/keymaster/config.yml",
 		"The filename of the configuration")
 	generateConfig = flag.Bool("generateConfig", false,
