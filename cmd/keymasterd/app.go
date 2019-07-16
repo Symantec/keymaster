@@ -154,7 +154,7 @@ const secsBetweenCleanup = 30
 const maxAgeU2FVerifySeconds = 30
 
 var (
-	Version        = "No version provided"
+	Version        = ""
 	configFilename = flag.String("config", "/etc/keymaster/config.yml",
 		"The filename of the configuration")
 	generateConfig = flag.Bool("generateConfig", false,
@@ -1465,7 +1465,11 @@ func (l httpLogger) Log(record instrumentedwriter.LogRecord) {
 }
 
 func Usage() {
-	fmt.Fprintf(os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
+	displayVersion := Version
+	if Version == "" {
+		displayVersion = "No version provided"
+	}
+	fmt.Fprintf(os.Stderr, "Usage of %s (version %s):\n", os.Args[0], displayVersion)
 	flag.PrintDefaults()
 }
 
