@@ -1438,6 +1438,11 @@ func (state *RuntimeState) serveClientConfHandler(w http.ResponseWriter, r *http
 
 func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Request) {
 	setSecurityHeaders(w)
+	if r.URL.Path == "/favicon.ico" {
+		w.Header().Set("Cache-Control", "public, max-age=120")
+		http.Redirect(w, r, "/static/favicon.ico", http.StatusFound)
+		return
+	}
 	//redirect to profile
 	if r.URL.Path[:] == "/" {
 		//landing page
