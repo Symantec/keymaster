@@ -397,10 +397,10 @@ func getClientType(r *http.Request) string {
 
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.Request,
 	loginDestination string, tryShowU2f bool) error {
-	JSSources := []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/webui-2fa-symc-vip.js"}
+	JSSources := []string{"/static/jquery-3.3.1.js", "/static/jquery-migrate-3.1.0.js", "/static/u2f-api.js", "/static/webui-2fa-symc-vip.js"}
 	showU2F := browserSupportsU2F(r) && tryShowU2f
 	if showU2F {
-		JSSources = []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/webui-2fa-u2f.js", "/static/webui-2fa-symc-vip.js"}
+		JSSources = append(JSSources, "/static/webui-2fa-u2f.js")
 	}
 	displayData := secondFactorAuthTemplateData{
 		Title:            "Keymaster 2FA Auth",
@@ -1200,7 +1200,7 @@ func (state *RuntimeState) usersHandler(
 
 	}
 
-	JSSources := []string{"/static/jquery-1.12.4.patched.min.js"}
+	JSSources := []string{"/static/jquery-3.3.1.js", "/static/jquery-migrate-3.1.0.js"}
 
 	displayData := usersPageTemplateData{
 		AuthUsername: authUser,
@@ -1269,10 +1269,10 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		readOnlyMsg = "The active keymaster is running disconnected from its DB backend. All token operations execpt for Authentication cannot proceed."
 	}
 
-	JSSources := []string{"/static/jquery-1.12.4.patched.min.js"}
+	JSSources := []string{"/static/jquery-3.3.1.js"}
 	showU2F := browserSupportsU2F(r)
 	if showU2F {
-		JSSources = []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/keymaster-u2f.js"}
+		JSSources = append(JSSources, "/static/u2f-api.js", "/static/keymaster-u2f.js")
 	}
 
 	var devices []registeredU2FTokenDisplayInfo
