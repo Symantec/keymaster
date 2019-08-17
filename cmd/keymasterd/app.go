@@ -154,7 +154,7 @@ const secsBetweenCleanup = 30
 const maxAgeU2FVerifySeconds = 30
 
 var (
-	Version        = "No version provided"
+	Version        = ""
 	configFilename = flag.String("config", "/etc/keymaster/config.yml",
 		"The filename of the configuration")
 	generateConfig = flag.Bool("generateConfig", false,
@@ -397,10 +397,10 @@ func getClientType(r *http.Request) string {
 
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.Request,
 	loginDestination string, tryShowU2f bool) error {
-	JSSources := []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/webui-2fa-symc-vip.js"}
+	JSSources := []string{"/static/jquery-3.4.1.min.js", "/static/u2f-api.js", "/static/webui-2fa-symc-vip.js"}
 	showU2F := browserSupportsU2F(r) && tryShowU2f
 	if showU2F {
-		JSSources = []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/webui-2fa-u2f.js", "/static/webui-2fa-symc-vip.js"}
+		JSSources = append(JSSources, "/static/webui-2fa-u2f.js")
 	}
 	displayData := secondFactorAuthTemplateData{
 		Title:            "Keymaster 2FA Auth",
@@ -675,6 +675,9 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 		state.Mutex.Lock()
 		config := state.Config
 		state.Mutex.Unlock()
+		if !state.Config.Base.DisableUsernameNormalization {
+			user = strings.ToLower(user)
+		}
 		valid, err := checkUserPassword(user, pass, config, state.passwordChecker, r)
 		if err != nil {
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -976,6 +979,9 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	if !state.Config.Base.DisableUsernameNormalization {
+		username = strings.ToLower(username)
+	}
 	valid, err := checkUserPassword(username, password, state.Config, state.passwordChecker, r)
 	if err != nil {
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -1194,7 +1200,7 @@ func (state *RuntimeState) usersHandler(
 
 	}
 
-	JSSources := []string{"/static/jquery-1.12.4.patched.min.js"}
+	JSSources := []string{"/static/jquery-3.4.1.min.js"}
 
 	displayData := usersPageTemplateData{
 		AuthUsername: authUser,
@@ -1263,10 +1269,10 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		readOnlyMsg = "The active keymaster is running disconnected from its DB backend. All token operations execpt for Authentication cannot proceed."
 	}
 
-	JSSources := []string{"/static/jquery-1.12.4.patched.min.js"}
+	JSSources := []string{"/static/jquery-3.4.1.min.js"}
 	showU2F := browserSupportsU2F(r)
 	if showU2F {
-		JSSources = []string{"/static/jquery-1.12.4.patched.min.js", "/static/u2f-api.js", "/static/keymaster-u2f.js"}
+		JSSources = append(JSSources, "/static/u2f-api.js", "/static/keymaster-u2f.js")
 	}
 
 	var devices []registeredU2FTokenDisplayInfo
@@ -1432,6 +1438,11 @@ func (state *RuntimeState) serveClientConfHandler(w http.ResponseWriter, r *http
 
 func (state *RuntimeState) defaultPathHandler(w http.ResponseWriter, r *http.Request) {
 	setSecurityHeaders(w)
+	if r.URL.Path == "/favicon.ico" {
+		w.Header().Set("Cache-Control", "public, max-age=120")
+		http.Redirect(w, r, "/static/favicon.ico", http.StatusFound)
+		return
+	}
 	//redirect to profile
 	if r.URL.Path[:] == "/" {
 		//landing page
@@ -1459,7 +1470,11 @@ func (l httpLogger) Log(record instrumentedwriter.LogRecord) {
 }
 
 func Usage() {
-	fmt.Fprintf(os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
+	displayVersion := Version
+	if Version == "" {
+		displayVersion = "No version provided"
+	}
+	fmt.Fprintf(os.Stderr, "Usage of %s (version %s):\n", os.Args[0], displayVersion)
 	flag.PrintDefaults()
 }
 

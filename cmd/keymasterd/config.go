@@ -36,24 +36,25 @@ type baseConfig struct {
 	TLSCertFilename string `yaml:"tls_cert_filename"`
 	TLSKeyFilename  string `yaml:"tls_key_filename"`
 	//RequiredAuthForCert         string   `yaml:"required_auth_for_cert"`
-	SSHCAFilename               string   `yaml:"ssh_ca_filename"`
-	HtpasswdFilename            string   `yaml:"htpasswd_filename"`
-	ExternalAuthCmd             string   `yaml:"external_auth_command"`
-	ClientCAFilename            string   `yaml:"client_ca_filename"`
-	KeymasterPublicKeysFilename string   `yaml:"keymaster_public_keys_filename"`
-	HostIdentity                string   `yaml:"host_identity"`
-	KerberosRealm               string   `yaml:"kerberos_realm"`
-	DataDirectory               string   `yaml:"data_directory"`
-	SharedDataDirectory         string   `yaml:"shared_data_directory"`
-	HideStandardLogin           bool     `yaml:"hide_standard_login"`
-	AllowedAuthBackendsForCerts []string `yaml:"allowed_auth_backends_for_certs"`
-	AllowedAuthBackendsForWebUI []string `yaml:"allowed_auth_backends_for_webui"`
-	AdminUsers                  []string `yaml:"admin_users"`
-	AdminGroups                 []string `yaml:"admin_groups"`
-	PublicLogs                  bool     `yaml:"public_logs"`
-	SecsBetweenDependencyChecks int      `yaml:"secs_between_dependency_checks"`
-	AutomationUserGroups        []string `yaml:"automation_user_groups"`
-	AutomationUsers             []string `yaml:"automation_users"`
+	SSHCAFilename                string   `yaml:"ssh_ca_filename"`
+	HtpasswdFilename             string   `yaml:"htpasswd_filename"`
+	ExternalAuthCmd              string   `yaml:"external_auth_command"`
+	ClientCAFilename             string   `yaml:"client_ca_filename"`
+	KeymasterPublicKeysFilename  string   `yaml:"keymaster_public_keys_filename"`
+	HostIdentity                 string   `yaml:"host_identity"`
+	KerberosRealm                string   `yaml:"kerberos_realm"`
+	DataDirectory                string   `yaml:"data_directory"`
+	SharedDataDirectory          string   `yaml:"shared_data_directory"`
+	HideStandardLogin            bool     `yaml:"hide_standard_login"`
+	AllowedAuthBackendsForCerts  []string `yaml:"allowed_auth_backends_for_certs"`
+	AllowedAuthBackendsForWebUI  []string `yaml:"allowed_auth_backends_for_webui"`
+	AdminUsers                   []string `yaml:"admin_users"`
+	AdminGroups                  []string `yaml:"admin_groups"`
+	PublicLogs                   bool     `yaml:"public_logs"`
+	SecsBetweenDependencyChecks  int      `yaml:"secs_between_dependency_checks"`
+	AutomationUserGroups         []string `yaml:"automation_user_groups"`
+	AutomationUsers              []string `yaml:"automation_users"`
+	DisableUsernameNormalization bool     `yaml:"disable_username_normalization"`
 }
 
 type LdapConfig struct {
@@ -105,10 +106,11 @@ type ProfileStorageConfig struct {
 }
 
 type SymantecVIPConfig struct {
-	Client   *vip.Client
-	Enabled  bool   `yaml:"enabled"`
-	CertFile string `yaml:"cert_file"`
-	KeyFile  string `yaml:"key_file"`
+	Client            *vip.Client
+	Enabled           bool   `yaml:"enabled"`
+	CertFile          string `yaml:"cert_file"`
+	KeyFile           string `yaml:"key_file"`
+	RequireAppAproval bool   `yaml:"require_app_approval"`
 }
 
 type AppConfigFile struct {
@@ -346,6 +348,7 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 		client.VipPushMessageText = "Keymaster Push Authentication Request"
 		client.VipPushDisplayMessageText = "Keymaster 2FA request from:"
 		client.VipPushDisplayMessageProfile = u2fAppID //TODO change this for host identity
+		client.RequireAppApproval = runtimeState.Config.SymantecVIP.RequireAppAproval
 		runtimeState.Config.SymantecVIP.Client = &client
 	}
 
