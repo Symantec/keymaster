@@ -15,11 +15,12 @@ import (
 	"time"
 
 	"github.com/Symantec/keymaster/lib/instrumentedwriter"
-	//"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 )
 
 const labelRSA = "totp:rsa:"
+const totpGeneratNewPath = "/totp/GenerateNew/"
+const totpValidateNewPath = "/totp/ValidateNew/"
 
 func (state *RuntimeState) encryptWithPublicKeys(clearTextMessage []byte) ([][]byte, error) {
 	var cipherTexts [][]byte
@@ -38,7 +39,6 @@ func (state *RuntimeState) encryptWithPublicKeys(clearTextMessage []byte) ([][]b
 			cipherTexts = append(cipherTexts, ciphertext)
 			continue
 		}
-
 	}
 	if len(cipherTexts) < 1 {
 		return nil, errors.New("cannot encrypt with any key")
@@ -47,7 +47,7 @@ func (state *RuntimeState) encryptWithPublicKeys(clearTextMessage []byte) ([][]b
 }
 
 func (state *RuntimeState) decryptWithPublicKeys(cipherTexts [][]byte) ([]byte, error) {
-	//logger.Printf("signer type=%T", state.Signer)
+	logger.Debugf(5, "signer type=%T", state.Signer)
 	for _, cipherText := range cipherTexts {
 		rsaPrivateKey, ok := state.Signer.(*rsa.PrivateKey)
 		if ok {
@@ -65,8 +65,6 @@ func (state *RuntimeState) decryptWithPublicKeys(cipherTexts [][]byte) ([]byte, 
 
 	return nil, errors.New("Cannot decrypt Message")
 }
-
-const totpGeneratNewPath = "/totp/GenerateNew/"
 
 func (state *RuntimeState) GenerateNewTOTP(w http.ResponseWriter, r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
@@ -157,8 +155,6 @@ func (state *RuntimeState) GenerateNewTOTP(w http.ResponseWriter, r *http.Reques
 	}
 	return
 }
-
-const totpValidateNewPath = "/totp/ValidateNew/"
 
 func (state *RuntimeState) validateNewTOTP(w http.ResponseWriter, r *http.Request) {
 	if state.sendFailureToClientIfLocked(w, r) {
