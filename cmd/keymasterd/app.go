@@ -370,7 +370,9 @@ func browserSupportsU2F(r *http.Request) bool {
 	if strings.Contains(r.UserAgent(), "Firefox/57") ||
 		strings.Contains(r.UserAgent(), "Firefox/58") ||
 		strings.Contains(r.UserAgent(), "Firefox/59") ||
-		strings.Contains(r.UserAgent(), "Firefox/6") {
+		strings.Contains(r.UserAgent(), "Firefox/6") ||
+		strings.Contains(r.UserAgent(), "Firefox/7") ||
+		strings.Contains(r.UserAgent(), "Firefox/8") {
 		return true
 	}
 	return false
