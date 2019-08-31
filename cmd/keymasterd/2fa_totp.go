@@ -62,7 +62,6 @@ func (state *RuntimeState) decryptWithPublicKeys(cipherTexts [][]byte) ([]byte, 
 		}
 
 	}
-
 	return nil, errors.New("Cannot decrypt Message")
 }
 
@@ -112,7 +111,6 @@ func (state *RuntimeState) GenerateNewTOTP(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-
 	profile.PendingTOTPSecret = &encryptedKeys
 	err = state.SaveUserProfile(authUser, profile)
 	if err != nil {
@@ -121,7 +119,6 @@ func (state *RuntimeState) GenerateNewTOTP(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	logger.Debugf(3, "Generate TOTP: profile=%+v", profile)
-
 	// Convert TOTP key into a PNG
 	var buf bytes.Buffer
 	img, err := key.Image(200, 200)
@@ -130,19 +127,15 @@ func (state *RuntimeState) GenerateNewTOTP(w http.ResponseWriter, r *http.Reques
 	}
 	png.Encode(&buf, img)
 	base64Image := base64.StdEncoding.EncodeToString(buf.Bytes())
-
 	logger.Debugf(10, "base64image=%s", base64Image)
-
 	// We need custom CSP policy to allow embedded images
 	w.Header().Set("Content-Security-Policy", "default-src 'self' ;img-src 'self'  data: ;style-src 'self' fonts.googleapis.com 'unsafe-inline'; font-src fonts.gstatic.com fonts.googleapis.com")
-
 	displayData := newTOTPPageTemplateData{
 		AuthUsername:    authUser,
 		Title:           "New TOTP Generation", //TODO: maybe include username?
 		TOTPSecret:      key.Secret(),
 		TOTPBase64Image: template.HTML("<img src=\"data:image/png;base64," + base64Image + "\" alt=\"beastie.png\" scale=\"0\" />"),
 	}
-
 	returnAcceptType := getPreferredAcceptType(r)
 	switch returnAcceptType {
 	case "text/html":
@@ -171,7 +164,6 @@ func (state *RuntimeState) validateNewTOTP(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-
 	if r.Method != "POST" {
 		logger.Printf("Wanted Post got='%s'", r.Method)
 		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
@@ -197,7 +189,6 @@ func (state *RuntimeState) validateNewTOTP(w http.ResponseWriter, r *http.Reques
 		logger.Println(err)
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing OTP value")
 	}
-
 	profile, _, fromCache, err := state.LoadUserProfile(authUser)
 	if err != nil {
 		logger.Printf("loading profile error: %v", err)
@@ -210,23 +201,19 @@ func (state *RuntimeState) validateNewTOTP(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "db backend is offline for writes", http.StatusServiceUnavailable)
 		return
 	}
-
 	if profile.PendingTOTPSecret == nil {
 		logger.Printf("No pending Secrets")
 		state.writeFailureResponse(w, r, http.StatusBadRequest, "No pending Secrets")
 		return
 	}
-
 	// TODO: The encrypted value MUST have also an expiration
 	encryptedKeys := profile.PendingTOTPSecret
-
 	clearTextKey, err := state.decryptWithPublicKeys(*encryptedKeys)
 	if err != nil {
 		logger.Printf("Decrypting secret error: %v", err)
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
 	}
-
 	valid := totp.Validate(OTPString, string(clearTextKey))
 	if !valid {
 		//render try again vailidate page, with an error message
@@ -253,7 +240,6 @@ func (state *RuntimeState) validateNewTOTP(w http.ResponseWriter, r *http.Reques
 
 	}
 	// TODO: check if same secret already there
-
 	newTOTPAuthData := totpAuthData{
 		CreatedAt:       time.Now(),
 		EncryptedSecret: *profile.PendingTOTPSecret,
