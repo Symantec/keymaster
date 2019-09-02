@@ -14,6 +14,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"os"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -176,6 +178,14 @@ func getCertsFromServer(
 	}
 	if *noVIPAccess {
 		allowVIP = false
+	}
+
+	// on linux disable U2F is the /sys/class/hidraw is missing
+	if runtime.GOOS == "linux" && allowU2F {
+		if _, err := os.Stat("/sys/class/hidraw"); os.IsNotExist(err) {
+			allowU2F = false
+		}
+
 	}
 
 	// upgrade to u2f

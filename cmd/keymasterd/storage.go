@@ -361,6 +361,7 @@ type loadUserProfileData struct {
 func (state *RuntimeState) LoadUserProfile(username string) (profile *userProfile, ok bool, fromCache bool, err error) {
 	var defaultProfile userProfile
 	defaultProfile.U2fAuthData = make(map[int64]*u2fAuthData)
+	defaultProfile.TOTPAuthData = make(map[int64]*totpAuthData)
 
 	ch := make(chan loadUserProfileData, 1)
 	start := time.Now()

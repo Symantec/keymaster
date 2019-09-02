@@ -1,6 +1,7 @@
 package main
 
 import (
+	"html/template"
 	"time"
 )
 
@@ -298,6 +299,65 @@ const profileHTML = `
 	You Dont have any registered tokens.
     {{- end}}
     {{end}}
+    </div>
+    {{template "footer" . }}
+    </div>
+  </body>
+</html>
+{{end}}
+`
+
+type newTOTPPageTemplateData struct {
+	Title           string
+	AuthUsername    string
+	JSSources       []string
+	ErrorMessage    string
+	TOTPBase64Image template.HTML
+	TOTPSecret      string
+}
+
+const newTOTPHTML = `
+{{define "newTOTPage"}}
+<!DOCTYPE html>
+<html style="height:100%; padding:0;border:0;margin:0">
+  <head>
+    <title>{{.Title}}</title>
+    {{if .JSSources -}}
+    {{- range .JSSources }}
+    <script type="text/javascript" src="{{.}}"></script>
+    {{- end}}
+    {{- end}}
+    <!-- The original u2f-api.js code can be found here:
+    https://github.com/google/u2f-ref-code/blob/master/u2f-gae-demo/war/js/u2f-api.js -->
+    <!-- script type="text/javascript" src="https://demo.yubico.com/js/u2f-api.js"></script-->
+    <link rel="stylesheet" type="text/css" href="//fonts.googleapis.com/css?family=Droid+Sans" />
+    <link rel="stylesheet" type="text/css" href="/custom_static/customization.css">
+    <link rel="stylesheet" type="text/css" href="/static/keymaster.css">
+  </head>
+  <body>
+    <div style="min-height:100%;position:relative;">
+    {{template "header" .}}
+    <div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
+
+    <h1>{{.Title}}</h1>
+
+    {{if .ErrorMessage}}
+    <p style="color:red;">{{.ErrorMessage}} </p>
+    {{end}}
+
+    <div>
+
+    {{if .TOTPBase64Image}}
+    New TOTP:
+    {{.TOTPBase64Image}}
+    {{ end }}
+    </div>
+    <form enctype="application/x-www-form-urlencoded" action="/totp/ValidateNew/" method="post">
+            <p>
+            Enter OTP token value: <INPUT TYPE="text" NAME="OTP" SIZE=18  autocomplete="off">
+            <input type="submit" value="Validate" />
+            </p>
+    </form>
     </div>
     {{template "footer" . }}
     </div>
