@@ -290,6 +290,7 @@ const profileHTML = `
       <div id="auth_action_text" style="color: blue;background-color: yellow;"> Your browser does not support U2F. However you can still Enable/Disable/Delete U2F tokens </div>
       {{end}}
     </ul>
+    <div style="margin-left: 40px">
     {{if .RegisteredU2FToken -}}
         <p>Your U2F Token(s):</p>
         <table>
@@ -323,6 +324,7 @@ const profileHTML = `
     {{- else}}
 	You Dont have any registered tokens.
     {{- end}}
+    </div>
     </div> <!-- end of u2f div -->
     <div id="totp-tokens">
     {{if .ShowTOTP}}
@@ -340,7 +342,8 @@ const profileHTML = `
 	  </li>
        </ul>
        {{if .RegisteredTOTPDevice -}}
-       <p> Your registered totp devices </p>
+       <div style="margin-left: 40px">
+       <p> Your registered totp device(s) </p>
        <table>
             <tr>
                <th>Name</th>
@@ -367,6 +370,7 @@ const profileHTML = `
 	    </tr>
 	    {{- end}}
        </table>
+       </div><!-- end of RegisteredTOTPDevice div-->
        {{end}}
     {{end}}
     </div> <!-- end of totp div -->
