@@ -22,6 +22,7 @@ const vipCheckTimeoutSecs = 180
 
 func startVIPPush(client *http.Client,
 	baseURL string,
+	userAgentString string,
 	logger log.DebugLogger) error {
 
 	VIPPushStartURL := baseURL + "/api/v0/vipPushStart"
@@ -31,6 +32,7 @@ func startVIPPush(client *http.Client,
 		return err
 	}
 	req.Header.Add("Accept", "application/json")
+	req.Header.Set("User-Agent", userAgentString)
 
 	pushStartResp, err := client.Do(req)
 	if err != nil {
@@ -52,6 +54,7 @@ func startVIPPush(client *http.Client,
 
 func checkVIPPollStatus(client *http.Client,
 	baseURL string,
+	userAgentString string,
 	logger log.DebugLogger) (bool, error) {
 
 	VIPPollCheckURL := baseURL + "/api/v0/vipPollCheck"
@@ -61,6 +64,7 @@ func checkVIPPollStatus(client *http.Client,
 		return false, err
 	}
 	req.Header.Add("Accept", "application/json")
+	req.Header.Set("User-Agent", userAgentString)
 
 	pollCheckResp, err := client.Do(req)
 	if err != nil {
@@ -86,10 +90,11 @@ func checkVIPPollStatus(client *http.Client,
 
 func doVIPPushCheck(client *http.Client,
 	baseURL string,
+	userAgentString string,
 	logger log.DebugLogger,
 	errorReturnDuration time.Duration) error {
 
-	err := startVIPPush(client, baseURL, logger)
+	err := startVIPPush(client, baseURL, userAgentString, logger)
 	if err != nil {
 		logger.Printf("got error from pushStart, will sleep to allow code to be entered")
 		logger.Println(err)
@@ -99,7 +104,7 @@ func doVIPPushCheck(client *http.Client,
 	endTime := time.Now().Add(errorReturnDuration)
 	//initial sleep
 	for time.Now().Before(endTime) {
-		ok, err := checkVIPPollStatus(client, baseURL, logger)
+		ok, err := checkVIPPollStatus(client, baseURL, userAgentString, logger)
 		if err != nil {
 			logger.Printf("got error from vipPollCheck, will sleep to allow code to be entered")
 			logger.Println(err)
@@ -120,6 +125,7 @@ func doVIPPushCheck(client *http.Client,
 func VIPAuthenticateWithToken(
 	client *http.Client,
 	baseURL string,
+	userAgentString string,
 	logger log.DebugLogger) error {
 	logger.Printf("top of doVIPAuthenticate")
 
@@ -152,6 +158,7 @@ func VIPAuthenticateWithToken(
 	req.Header.Add("Content-Length", strconv.Itoa(len(form.Encode())))
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Add("Accept", "application/json")
+	req.Header.Set("User-Agent", userAgentString)
 
 	loginResp, err := client.Do(req) //client.Get(targetUrl)
 	if err != nil {
@@ -183,16 +190,18 @@ func VIPAuthenticateWithToken(
 func doVIPAuthenticate(
 	client *http.Client,
 	baseURL string,
+	userAgentString string,
 	logger log.DebugLogger) error {
 
 	timeout := time.Duration(time.Duration(vipCheckTimeoutSecs) * time.Second)
 	ch := make(chan error, 1)
 	go func() {
-		err := VIPAuthenticateWithToken(client, baseURL, logger)
+		err := VIPAuthenticateWithToken(client, baseURL, userAgentString, logger)
 		ch <- err
 	}()
 	go func() {
 		err := doVIPPushCheck(client, baseURL,
+			userAgentString,
 			logger, timeout)
 		ch <- err
 
