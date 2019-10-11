@@ -124,6 +124,7 @@ type authenticateUserWithPushRequest struct {
 	PushMessageText       string
 	DisplayMessageText    string
 	DisplayMessageProfile string
+	RequireAppApproval    bool
 }
 
 const authenticateUserWithPushRequestTemplate = `<?xml version="1.0"?>
@@ -156,7 +157,7 @@ const authenticateUserWithPushRequestTemplate = `<?xml version="1.0"?>
         </requestParameters>
         <requestParameters>
           <Key>nonactionable.notification</Key>
-          <Value>true</Value>
+	  <Value>{{if .RequireAppApproval}}true{{else}}false{{end}}</Value>
         </requestParameters>
         <requestParameters>
           <Key>enforceLocalAuth</Key>
@@ -317,6 +318,7 @@ type Client struct {
 	VipPushDisplayMessageText       string // what is shown after
 	VipPushDisplayMessageProfile    string // The url?
 	Debug                           bool
+	RequireAppApproval              bool
 }
 
 func NewClient(certPEMBlock, keyPEMBlock []byte) (client Client, err error) {
@@ -496,7 +498,9 @@ func (client *Client) StartUserVIPPush(userID string) (transactionID string, err
 		UserId:                userID,
 		PushMessageText:       client.VipPushMessageText,
 		DisplayMessageText:    client.VipPushDisplayMessageText,
-		DisplayMessageProfile: client.VipPushDisplayMessageProfile}
+		DisplayMessageProfile: client.VipPushDisplayMessageProfile,
+		RequireAppApproval:    client.RequireAppApproval,
+	}
 	tmpl, err := template.New("pushRequest").Parse(authenticateUserWithPushRequestTemplate)
 	if err != nil {
 		panic(err)

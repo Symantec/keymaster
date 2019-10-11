@@ -31,7 +31,7 @@ function checkError(resp) {
     if (checkError(resp)) {
       return;
     }
-    $.post('/u2f/RegisterResponse/' + username, JSON.stringify(resp)).success(function() {
+    $.post('/u2f/RegisterResponse/' + username, JSON.stringify(resp)).done(function() {
       alert('Success');
       location.reload();
     }).fail(serverError);
@@ -39,7 +39,7 @@ function checkError(resp) {
   function register() {
     var username = document.getElementById('username').textContent;
     document.getElementById('register_action_text').style.display="block";
-    $.getJSON('/u2f/RegisterRequest/' + username).success(function(req) {
+    $.getJSON('/u2f/RegisterRequest/' + username).done(function(req) {
       console.log(req);
       u2f.register(req.appId, req.registerRequests, req.registeredKeys, u2fRegistered, 30);
     }).fail(serverError);
@@ -50,13 +50,13 @@ function checkError(resp) {
     if (checkError(resp)) {
       return;
     }
-    $.post('/u2f/SignResponse', JSON.stringify(resp)).success(function() {
+    $.post('/u2f/SignResponse', JSON.stringify(resp)).done(function() {
       alert('Success');
     }).fail(serverError);
   }
   function sign() {
      document.getElementById('auth_action_text').style.display="block";
-    $.getJSON('/u2f/SignRequest').success(function(req) {
+    $.getJSON('/u2f/SignRequest').done(function(req) {
       console.log(req);
       u2f.sign(req.appId, req.challenge, req.registeredKeys, u2fSigned, 30);
     }).fail(serverError);

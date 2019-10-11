@@ -43,7 +43,7 @@ function checkError(resp) {
     if (checkError(resp)) {
       return;
     }
-    $.post('/u2f/SignResponse', JSON.stringify(resp)).success(function() {
+    $.post('/u2f/SignResponse', JSON.stringify(resp)).done(function() {
       //alert('Success');
       var destination = document.getElementById("u2f_login_destination").innerHTML;
       window.location.href = destination;
@@ -51,7 +51,7 @@ function checkError(resp) {
   }
   function sign() {
      document.getElementById('auth_action_text').style.display="block";
-    $.getJSON('/u2f/SignRequest').success(function(req) {
+    $.getJSON('/u2f/SignRequest').done(function(req) {
       console.log(req);
       u2f.sign(req.appId, req.challenge, req.registeredKeys, u2fSigned, 45);
     }).fail(serverError);

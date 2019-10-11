@@ -106,6 +106,7 @@ func (state *RuntimeState) VIPAuthHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	// OTP check was  successful
+	logger.Debugf(1, "Successful vipOTP auth for user: %s", authUser)
 	eventNotifier.PublishVIPAuthEvent(eventmon.VIPAuthTypeOTP, authUser)
 	_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeSymantecVIP)
 	if err != nil {
