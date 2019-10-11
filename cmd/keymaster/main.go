@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"flag"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/user"
@@ -144,6 +146,7 @@ func setupCerts(
 	userName string,
 	homeDir string,
 	configContents config.AppConfigFile,
+	client *http.Client,
 	logger log.DebugLogger) {
 	// create dirs
 	sshKeyPath := filepath.Join(homeDir, DefaultSSHKeysLocation, FilePrefix)
@@ -184,6 +187,7 @@ func setupCerts(
 		false,
 		configContents.Base.AddGroups,
 		dialer,
+		client,
 		userAgentString,
 		logger)
 	if err != nil {
@@ -301,6 +305,12 @@ func main() {
 	} else {
 		dialer = rawDialer
 	}
+	rootCAs := maybeGetRootCas(logger)
+	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
+	client, err := util.GetHttpClient(tlsConfig, dialer)
+	if err != nil {
+		logger.Fatal(err)
+	}
 
 	if *checkDevices {
 		u2f.CheckU2FDevices(logger)
@@ -308,7 +318,6 @@ func main() {
 	}
 	computeUserAgent()
 
-	rootCAs := maybeGetRootCas(logger)
 	userName, homeDir := getUserNameAndHomeDir(logger)
 	config := loadConfigFile(rootCAs, logger)
 
@@ -328,5 +337,5 @@ func main() {
 		FilePrefix = *cliFilePrefix
 	}
 
-	setupCerts(rootCAs, userName, homeDir, config, logger)
+	setupCerts(rootCAs, userName, homeDir, config, client, logger)
 }

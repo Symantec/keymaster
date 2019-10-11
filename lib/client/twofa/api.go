@@ -5,6 +5,7 @@ import (
 	"crypto"
 	"crypto/x509"
 	"flag"
+	"net/http"
 	"time"
 
 	"github.com/Symantec/Dominator/lib/log"
@@ -30,9 +31,10 @@ func GetCertFromTargetUrls(
 	skipu2f bool,
 	addGroups bool,
 	dialer net.Dialer,
+	client *http.Client,
 	userAgentString string,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
 	return getCertFromTargetUrls(
-		signer, userName, password, targetUrls, rootCAs, skipu2f, addGroups,
-		dialer, userAgentString, logger)
+		signer, userName, password, targetUrls, skipu2f, addGroups,
+		client, userAgentString, logger)
 }
