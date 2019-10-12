@@ -109,7 +109,7 @@ func getUserNameAndHomeDir(logger log.Logger) (userName, homeDir string) {
 	return
 }
 
-func loadConfigFile(rootCAs *x509.CertPool, client *http.Client, logger log.Logger) (
+func loadConfigFile(client *http.Client, logger log.Logger) (
 	configContents config.AppConfigFile) {
 	configPath, _ := filepath.Split(*configFilename)
 
@@ -293,7 +293,6 @@ func getHttpClient(rootCAs *x509.CertPool, logger log.DebugLogger) (*http.Client
 	} else {
 		dialer = rawDialer
 	}
-	//rootCAs := maybeGetRootCas(logger)
 	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
 	return util.GetHttpClient(tlsConfig, dialer)
 }
@@ -321,7 +320,7 @@ func main() {
 	computeUserAgent()
 
 	userName, homeDir := getUserNameAndHomeDir(logger)
-	config := loadConfigFile(rootCAs, client, logger)
+	config := loadConfigFile(client, logger)
 
 	// Adjust user name
 	if len(config.Base.Username) > 0 {
