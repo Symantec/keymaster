@@ -1,15 +1,12 @@
 package config
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"io/ioutil"
+	"net/http"
 	"os"
 
 	"github.com/Symantec/Dominator/lib/log"
-	"github.com/Symantec/keymaster/lib/client/net"
-	"github.com/Symantec/keymaster/lib/client/util"
 	"gopkg.in/yaml.v2"
 )
 
@@ -44,21 +41,9 @@ const hostConfigPath = "/public/clientConfig"
 func getConfigFromHost(
 	configFilename string,
 	hostname string,
-	rootCAs *x509.CertPool,
-	dialer net.Dialer,
+	client *http.Client,
 	logger log.Logger) error {
-	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
-	client, err := util.GetHttpClient(tlsConfig, dialer)
-	if err != nil {
-		return err
-	}
 	configUrl := "https://" + hostname + hostConfigPath
-	/*
-		        req, err := http.NewRequest("GET", configUrl, nil)
-				        if err != nil {
-								            return err
-											        }
-	*/
 	resp, err := client.Get(configUrl)
 	if err != nil {
 		logger.Printf("got error from req")

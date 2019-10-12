@@ -109,7 +109,7 @@ func getUserNameAndHomeDir(logger log.Logger) (userName, homeDir string) {
 	return
 }
 
-func loadConfigFile(rootCAs *x509.CertPool, logger log.Logger) (
+func loadConfigFile(rootCAs *x509.CertPool, client *http.Client, logger log.Logger) (
 	configContents config.AppConfigFile) {
 	configPath, _ := filepath.Split(*configFilename)
 
@@ -119,15 +119,15 @@ func loadConfigFile(rootCAs *x509.CertPool, logger log.Logger) (
 	}
 
 	if len(*configHost) > 1 {
-		err = config.GetConfigFromHost(*configFilename, *configHost, rootCAs,
-			dialer, logger)
+		err = config.GetConfigFromHost(*configFilename, *configHost,
+			client, logger)
 		if err != nil {
 			logger.Fatal(err)
 		}
 	} else if len(defaultConfigHost) > 1 { // if there is a configHost AND there is NO config file, create one
 		if _, err := os.Stat(*configFilename); os.IsNotExist(err) {
 			err = config.GetConfigFromHost(
-				*configFilename, defaultConfigHost, rootCAs, dialer, logger)
+				*configFilename, defaultConfigHost, client, logger)
 			if err != nil {
 				logger.Fatal(err)
 			}
@@ -321,7 +321,7 @@ func main() {
 	computeUserAgent()
 
 	userName, homeDir := getUserNameAndHomeDir(logger)
-	config := loadConfigFile(rootCAs, logger)
+	config := loadConfigFile(rootCAs, client, logger)
 
 	// Adjust user name
 	if len(config.Base.Username) > 0 {
