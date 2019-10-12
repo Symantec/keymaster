@@ -21,7 +21,6 @@ import (
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/keymaster/lib/client/twofa/u2f"
 	"github.com/Symantec/keymaster/lib/client/twofa/vip"
-	//"github.com/Symantec/keymaster/lib/client/util"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"github.com/flynn/u2f/u2fhid" // client side (interface with hardware)
 	"golang.org/x/crypto/ssh"
@@ -102,14 +101,6 @@ func getCertsFromServer(
 	client *http.Client,
 	userAgentString string,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
-
-	//First Do Login
-	/*
-		client, err := util.GetHttpClient(tlsConfig, dialer)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-	*/
 
 	loginUrl := baseUrl + proto.LoginPath
 	form := url.Values{}
@@ -297,7 +288,6 @@ func getCertFromTargetUrls(
 	userAgentString string,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
 	success := false
-	//tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
 
 	for _, baseUrl := range targetUrls {
 		logger.Printf("attempting to target '%s' for '%s'\n", baseUrl, userName)
