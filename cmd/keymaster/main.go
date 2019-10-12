@@ -142,7 +142,6 @@ func loadConfigFile(rootCAs *x509.CertPool, logger log.Logger) (
 }
 
 func setupCerts(
-	rootCAs *x509.CertPool,
 	userName string,
 	homeDir string,
 	configContents config.AppConfigFile,
@@ -183,10 +182,8 @@ func setupCerts(
 		userName,
 		password,
 		strings.Split(configContents.Base.Gen_Cert_URLS, ","),
-		rootCAs,
 		false,
 		configContents.Base.AddGroups,
-		dialer,
 		client,
 		userAgentString,
 		logger)
@@ -280,16 +277,7 @@ func computeUserAgent() {
 	userAgentString = fmt.Sprintf("%s/%s (%s %s)", userAgentAppName, uaVersion, runtime.GOOS, runtime.GOARCH)
 }
 
-func Usage() {
-	fmt.Fprintf(
-		os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
-	flag.PrintDefaults()
-}
-
-func main() {
-	flag.Usage = Usage
-	flag.Parse()
-	logger := cmdlogger.New()
+func getHttpClient(rootCAs *x509.CertPool, logger log.DebugLogger) (*http.Client, error) {
 	rawDialer := &net.Dialer{
 		Timeout:   10 * time.Second,
 		KeepAlive: 30 * time.Second,
@@ -305,9 +293,23 @@ func main() {
 	} else {
 		dialer = rawDialer
 	}
-	rootCAs := maybeGetRootCas(logger)
+	//rootCAs := maybeGetRootCas(logger)
 	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
-	client, err := util.GetHttpClient(tlsConfig, dialer)
+	return util.GetHttpClient(tlsConfig, dialer)
+}
+
+func Usage() {
+	fmt.Fprintf(
+		os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
+	flag.PrintDefaults()
+}
+
+func main() {
+	flag.Usage = Usage
+	flag.Parse()
+	logger := cmdlogger.New()
+	rootCAs := maybeGetRootCas(logger)
+	client, err := getHttpClient(rootCAs, logger)
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -337,5 +339,5 @@ func main() {
 		FilePrefix = *cliFilePrefix
 	}
 
-	setupCerts(rootCAs, userName, homeDir, config, client, logger)
+	setupCerts(userName, homeDir, config, client, logger)
 }
