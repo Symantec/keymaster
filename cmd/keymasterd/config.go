@@ -454,7 +454,6 @@ func generateArmoredEncryptedCAPrivateKey(passphrase []byte,
 	if len(passphrase) < 1 {
 		return nil
 	} else {
-		plaintextWriter.Close()
 		armoredWriter.Close()
 		return ioutil.WriteFile(filepath, armoredBuf.Bytes(), 0600)
 	}
@@ -583,48 +582,57 @@ func generateCerts(configDir string, config *baseConfig, rsaKeySize int,
 		x509.ExtKeyUsageServerAuth}
 	caTemplate.Subject = pkix.Name{Organization: []string{"Acme Co CA"}}
 	if needAdminCA {
-		adminCAKeyFilename := configDir + "/adminCA.key"
-		adminCAKey, err := generateRSAKeyAndSaveInFile(adminCAKeyFilename,
-			rsaKeySize)
+		err := config.createAdminCA(configDir, rsaKeySize, template, caTemplate)
 		if err != nil {
-			return err
-		}
-		adminCACertFilename := configDir + "/adminCA.pem"
-		config.ClientCAFilename = adminCACertFilename
-		caDer, err := generateCertAndWriteToFile(adminCACertFilename,
-			&caTemplate, &caTemplate, &adminCAKey.PublicKey, adminCAKey)
-		if err != nil {
-			logger.Printf("Failed to create certificate: %s", err)
-			return err
-		}
-		// Now the admin client
-		caCert, err := x509.ParseCertificate(caDer)
-		if err != nil {
-			logger.Printf("Failed to parse certificate: %s", err)
-			return err
-		}
-		clientKeyFilename := configDir + "/adminClient.key"
-		clientKey, err := generateRSAKeyAndSaveInFile(clientKeyFilename,
-			rsaKeySize)
-		if err != nil {
-			logger.Printf("Failed to generate file for key: %s", err)
-			return err
-		}
-		//Fix template!
-		clientTemplate := template
-		//client.KeyUsage |= ExtKeyUsageClientAuth
-		clientTemplate.ExtKeyUsage = []x509.ExtKeyUsage{
-			x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth}
-		clientCertFilename := configDir + "/adminClient.pem"
-		_, err = generateCertAndWriteToFile(clientCertFilename, &clientTemplate,
-			caCert, &clientKey.PublicKey, adminCAKey)
-		if err != nil {
-			logger.Printf("Failed to create certificate: %s", err)
 			return err
 		}
 	}
 	config.TLSKeyFilename = serverKeyFilename
 	config.TLSCertFilename = serverCertFilename
+	return nil
+}
+
+func (config *baseConfig) createAdminCA(configDir string,
+	rsaKeySize int, template, caTemplate x509.Certificate) error {
+	adminCAKeyFilename := configDir + "/adminCA.key"
+	adminCAKey, err := generateRSAKeyAndSaveInFile(adminCAKeyFilename,
+		rsaKeySize)
+	if err != nil {
+		return err
+	}
+	adminCACertFilename := configDir + "/adminCA.pem"
+	config.ClientCAFilename = adminCACertFilename
+	caDer, err := generateCertAndWriteToFile(adminCACertFilename,
+		&caTemplate, &caTemplate, &adminCAKey.PublicKey, adminCAKey)
+	if err != nil {
+		logger.Printf("Failed to create certificate: %s", err)
+		return err
+	}
+	// Now the admin client
+	caCert, err := x509.ParseCertificate(caDer)
+	if err != nil {
+		logger.Printf("Failed to parse certificate: %s", err)
+		return err
+	}
+	clientKeyFilename := configDir + "/adminClient.key"
+	clientKey, err := generateRSAKeyAndSaveInFile(clientKeyFilename,
+		rsaKeySize)
+	if err != nil {
+		logger.Printf("Failed to generate file for key: %s", err)
+		return err
+	}
+	//Fix template!
+	clientTemplate := template
+	//client.KeyUsage |= ExtKeyUsageClientAuth
+	clientTemplate.ExtKeyUsage = []x509.ExtKeyUsage{
+		x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth}
+	clientCertFilename := configDir + "/adminClient.pem"
+	_, err = generateCertAndWriteToFile(clientCertFilename, &clientTemplate,
+		caCert, &clientKey.PublicKey, adminCAKey)
+	if err != nil {
+		logger.Printf("Failed to create certificate: %s", err)
+		return err
+	}
 	return nil
 }
 
