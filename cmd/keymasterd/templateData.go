@@ -112,7 +112,7 @@ const secondFactorAuthFormText = `
         <div  style="min-height:100%;position:relative;">
 	{{template "header" .}}
 	<div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
-        <h2> Keymaster second factor Authentication </h2>
+        <h2> Keymaster second factor authentication </h2>
 	{{if .ShowOTP}}
 	<div id="vip_login_destination" style="display: none;">{{.LoginDestination}}</div>
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/vipAuth" method="post">
