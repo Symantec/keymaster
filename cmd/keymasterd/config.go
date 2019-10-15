@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"io/ioutil"
 	"math/big"
 	"os"
@@ -408,12 +409,12 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 	return &runtimeState, nil
 }
 
-func generateArmoredEncryptedCAPritaveKey(passphrase []byte, filepath string) error {
+func generateArmoredEncryptedCAPrivateKey(passphrase []byte,
+	filepath string) error {
 	privateKey, err := rsa.GenerateKey(rand.Reader, defaultRSAKeySize)
 	if err != nil {
 		return err
 	}
-
 	sshPublicKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
 	if err != nil {
 		return err
@@ -423,28 +424,39 @@ func generateArmoredEncryptedCAPritaveKey(passphrase []byte, filepath string) er
 	if err != nil {
 		return err
 	}
-
 	encryptionType := "PGP MESSAGE"
 	armoredBuf := new(bytes.Buffer)
 	armoredWriter, err := armor.Encode(armoredBuf, encryptionType, nil)
 	if err != nil {
 		return err
 	}
-
-	plaintextWriter, err := openpgp.SymmetricallyEncrypt(armoredWriter, passphrase, nil, nil)
+	var plaintextWriter io.WriteCloser
+	if len(passphrase) < 1 {
+		plaintextWriter, err = os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY,
+			0600)
+	} else {
+		plaintextWriter, err = openpgp.SymmetricallyEncrypt(armoredWriter,
+			passphrase, nil, nil)
+	}
 	if err != nil {
 		return err
 	}
-
-	privateKeyPEM := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)}
+	privateKeyPEM := &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
+	}
 	if err := pem.Encode(plaintextWriter, privateKeyPEM); err != nil {
 		return err
 	}
-	plaintextWriter.Close()
-	armoredWriter.Close()
-
-	//os.Remove(filepath)
-	return ioutil.WriteFile(filepath, armoredBuf.Bytes(), 0600)
+	if err := plaintextWriter.Close(); err != nil {
+		return err
+	}
+	if len(passphrase) < 1 {
+		return nil
+	} else {
+		armoredWriter.Close()
+		return ioutil.WriteFile(filepath, armoredBuf.Bytes(), 0600)
+	}
 }
 
 func getPassphrase() ([]byte, error) {
@@ -518,7 +530,8 @@ func generateCertAndWriteToFile(filename string, template, parent *x509.Certific
 	return derBytes, nil
 }
 
-func generateCerts(configDir string, config *baseConfig, rsaKeySize int) error {
+func generateCerts(configDir string, config *baseConfig, rsaKeySize int,
+	needAdminCA bool) error {
 	//First generate a self signeed cert for itelf
 	serverKeyFilename := configDir + "/server.key"
 	serverKey, err := generateRSAKeyAndSaveInFile(serverKeyFilename, rsaKeySize)
@@ -540,27 +553,21 @@ func generateCerts(configDir string, config *baseConfig, rsaKeySize int) error {
 		Subject: pkix.Name{
 			Organization: []string{"Acme Co"},
 		},
-		NotBefore:             notBefore,
-		NotAfter:              notAfter,
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		NotBefore: notBefore,
+		NotAfter:  notAfter,
+		KeyUsage: x509.KeyUsageKeyEncipherment |
+			x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 	}
 	template.DNSNames = append(template.DNSNames, "localhost")
 	serverCertFilename := configDir + "/server.pem"
-	_, err = generateCertAndWriteToFile(serverCertFilename, &template, &template, &serverKey.PublicKey, serverKey)
+	_, err = generateCertAndWriteToFile(serverCertFilename, &template, &template,
+		&serverKey.PublicKey, serverKey)
 	if err != nil {
 		logger.Printf("Failed to create certificate: %s", err)
 		return err
 	}
-
-	//now the admin CA
-	adminCAKeyFilename := configDir + "/adminCA.key"
-	adminCAKey, err := generateRSAKeyAndSaveInFile(adminCAKeyFilename, rsaKeySize)
-	if err != nil {
-		return err
-	}
-	//
 	caTemplate := template
 	serialNumber, err = rand.Int(rand.Reader, serialNumberLimit)
 	if err != nil {
@@ -571,10 +578,32 @@ func generateCerts(configDir string, config *baseConfig, rsaKeySize int) error {
 	caTemplate.SerialNumber = serialNumber
 	caTemplate.IsCA = true
 	caTemplate.KeyUsage |= x509.KeyUsageCertSign
-	caTemplate.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth}
+	caTemplate.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth,
+		x509.ExtKeyUsageServerAuth}
 	caTemplate.Subject = pkix.Name{Organization: []string{"Acme Co CA"}}
+	if needAdminCA {
+		err := config.createAdminCA(configDir, rsaKeySize, template, caTemplate)
+		if err != nil {
+			return err
+		}
+	}
+	config.TLSKeyFilename = serverKeyFilename
+	config.TLSCertFilename = serverCertFilename
+	return nil
+}
+
+func (config *baseConfig) createAdminCA(configDir string,
+	rsaKeySize int, template, caTemplate x509.Certificate) error {
+	adminCAKeyFilename := configDir + "/adminCA.key"
+	adminCAKey, err := generateRSAKeyAndSaveInFile(adminCAKeyFilename,
+		rsaKeySize)
+	if err != nil {
+		return err
+	}
 	adminCACertFilename := configDir + "/adminCA.pem"
-	caDer, err := generateCertAndWriteToFile(adminCACertFilename, &caTemplate, &caTemplate, &adminCAKey.PublicKey, adminCAKey)
+	config.ClientCAFilename = adminCACertFilename
+	caDer, err := generateCertAndWriteToFile(adminCACertFilename,
+		&caTemplate, &caTemplate, &adminCAKey.PublicKey, adminCAKey)
 	if err != nil {
 		logger.Printf("Failed to create certificate: %s", err)
 		return err
@@ -586,7 +615,8 @@ func generateCerts(configDir string, config *baseConfig, rsaKeySize int) error {
 		return err
 	}
 	clientKeyFilename := configDir + "/adminClient.key"
-	clientKey, err := generateRSAKeyAndSaveInFile(clientKeyFilename, rsaKeySize)
+	clientKey, err := generateRSAKeyAndSaveInFile(clientKeyFilename,
+		rsaKeySize)
 	if err != nil {
 		logger.Printf("Failed to generate file for key: %s", err)
 		return err
@@ -594,17 +624,15 @@ func generateCerts(configDir string, config *baseConfig, rsaKeySize int) error {
 	//Fix template!
 	clientTemplate := template
 	//client.KeyUsage |= ExtKeyUsageClientAuth
-	clientTemplate.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth}
+	clientTemplate.ExtKeyUsage = []x509.ExtKeyUsage{
+		x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth}
 	clientCertFilename := configDir + "/adminClient.pem"
-	_, err = generateCertAndWriteToFile(clientCertFilename, &clientTemplate, caCert, &clientKey.PublicKey, adminCAKey)
+	_, err = generateCertAndWriteToFile(clientCertFilename, &clientTemplate,
+		caCert, &clientKey.PublicKey, adminCAKey)
 	if err != nil {
 		logger.Printf("Failed to create certificate: %s", err)
 		return err
 	}
-
-	config.TLSKeyFilename = serverKeyFilename
-	config.TLSCertFilename = serverCertFilename
-	config.ClientCAFilename = adminCACertFilename
 	return nil
 }
 
@@ -620,7 +648,8 @@ func generateNewConfig(configFilename string) error {
 }
 
 // Generates a simple base config via an interview like process
-func generateNewConfigInternal(reader *bufio.Reader, configFilename string, rsaKeySize int, passphrase []byte) error {
+func generateNewConfigInternal(reader *bufio.Reader, configFilename string,
+	rsaKeySize int, passphrase []byte) error {
 	var config AppConfigFile
 	//Get base dir
 	baseDir, err := getUserString(reader, "Default base Dir", "/tmp")
@@ -635,9 +664,8 @@ func generateNewConfigInternal(reader *bufio.Reader, configFilename string, rsaK
 	if err != nil {
 		return err
 	}
-
-	//fmt.Println(baseDir)
-	config.Base.DataDirectory, err = getUserString(reader, "Data Directory", baseDir+"/var/lib/keymaster")
+	config.Base.DataDirectory, err = getUserString(reader, "Data Directory",
+		baseDir+"/var/lib/keymaster")
 	if err != nil {
 		return err
 	}
@@ -647,25 +675,29 @@ func generateNewConfigInternal(reader *bufio.Reader, configFilename string, rsaK
 	}
 	// TODO: Add check that directory exists.
 	defaultHttpAddress := ":443"
-	config.Base.HttpAddress, err = getUserString(reader, "HttpAddress", defaultHttpAddress)
+	config.Base.HttpAddress, err = getUserString(reader, "HttpAddress",
+		defaultHttpAddress)
 	if err != nil {
 		return err
 	}
 	// Todo check if valid
 	defaultAdminAddress := ":6920"
-	config.Base.AdminAddress, err = getUserString(reader, "AdminAddress", defaultAdminAddress)
+	config.Base.AdminAddress, err = getUserString(reader, "AdminAddress",
+		defaultAdminAddress)
 	if err != nil {
 		return err
 	}
-
 	config.Base.SSHCAFilename = filepath.Join(configDir, "masterKey.asc")
-	err = generateArmoredEncryptedCAPritaveKey(passphrase, config.Base.SSHCAFilename)
+	err = generateArmoredEncryptedCAPrivateKey(passphrase,
+		config.Base.SSHCAFilename)
 	if err != nil {
 		return err
 	}
-
-	//generatecerts
-	err = generateCerts(configDir, &config.Base, rsaKeySize)
+	needAdminCA := false
+	if len(passphrase) > 0 {
+		needAdminCA = true
+	}
+	err = generateCerts(configDir, &config.Base, rsaKeySize, needAdminCA)
 	if err != nil {
 		return err
 	}
@@ -678,13 +710,11 @@ func generateNewConfigInternal(reader *bufio.Reader, configFilename string, rsaK
 		return err
 	}
 	config.Base.HtpasswdFilename = httpPassFilename
-
 	logger.Debugf(1, "%+v", config)
 	configText, err := yaml.Marshal(&config)
 	if err != nil {
 		return err
 	}
-
 	err = ioutil.WriteFile(configFilename, configText, 0640)
 	if err != nil {
 		return err
