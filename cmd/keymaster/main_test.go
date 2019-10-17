@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/Symantec/Dominator/lib/log/testlogger"
 	"github.com/Symantec/keymaster/lib/client/config"
@@ -139,7 +140,10 @@ func init() {
 	}
 	http.HandleFunc("/", handler)
 	go srv.ListenAndServeTLS("", "")
-	//http.Serve(ln, nil)
+	// On single core systems we needed to ensure that the server is started before
+	// we create other testing goroutines. By sleeping we yield the cpu and allow
+	// ListenAndServe to progress
+	time.Sleep(20 * time.Millisecond)
 }
 
 func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
