@@ -79,7 +79,6 @@ func maybeGetRootCas(rootCAFilename string, logger log.Logger) (*x509.CertPool, 
 		}
 		rootCAs = x509.NewCertPool()
 		if !rootCAs.AppendCertsFromPEM(caData) {
-			//logger.Fatal("cannot append file data")
 			return nil, fmt.Errorf("cannot append file data")
 		}
 
