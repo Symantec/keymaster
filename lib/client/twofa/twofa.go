@@ -3,7 +3,6 @@ package twofa
 import (
 	"bytes"
 	"crypto"
-	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -20,10 +19,8 @@ import (
 	"strings"
 
 	"github.com/Symantec/Dominator/lib/log"
-	"github.com/Symantec/keymaster/lib/client/net"
 	"github.com/Symantec/keymaster/lib/client/twofa/u2f"
 	"github.com/Symantec/keymaster/lib/client/twofa/vip"
-	"github.com/Symantec/keymaster/lib/client/util"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"github.com/flynn/u2f/u2fhid" // client side (interface with hardware)
 	"golang.org/x/crypto/ssh"
@@ -99,18 +96,11 @@ func getCertsFromServer(
 	userName string,
 	password []byte,
 	baseUrl string,
-	tlsConfig *tls.Config,
 	skip2fa bool,
 	addGroups bool,
-	dialer net.Dialer,
+	client *http.Client,
 	userAgentString string,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
-
-	//First Do Login
-	client, err := util.GetHttpClient(tlsConfig, dialer)
-	if err != nil {
-		return nil, nil, nil, err
-	}
 
 	loginUrl := baseUrl + proto.LoginPath
 	form := url.Values{}
@@ -292,20 +282,18 @@ func getCertFromTargetUrls(
 	userName string,
 	password []byte,
 	targetUrls []string,
-	rootCAs *x509.CertPool,
 	skipu2f bool,
 	addGroups bool,
-	dialer net.Dialer,
+	client *http.Client,
 	userAgentString string,
 	logger log.DebugLogger) (sshCert []byte, x509Cert []byte, kubernetesCert []byte, err error) {
 	success := false
-	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
 
 	for _, baseUrl := range targetUrls {
 		logger.Printf("attempting to target '%s' for '%s'\n", baseUrl, userName)
 		sshCert, x509Cert, kubernetesCert, err = getCertsFromServer(
-			signer, userName, password, baseUrl, tlsConfig, skipu2f, addGroups,
-			dialer, userAgentString, logger)
+			signer, userName, password, baseUrl, skipu2f, addGroups,
+			client, userAgentString, logger)
 		if err != nil {
 			logger.Println(err)
 			continue

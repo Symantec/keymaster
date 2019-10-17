@@ -149,6 +149,11 @@ func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
 	if !ok {
 		t.Fatal("cannot add certs to certpool")
 	}
+	tlsConfig := &tls.Config{RootCAs: certPool, MinVersion: tls.VersionTLS12}
+	client, err := util.GetHttpClient(tlsConfig, &net.Dialer{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	privateKey, err := util.GenerateKey()
 	if err != nil {
 		t.Fatal(err)
@@ -159,10 +164,9 @@ func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
 		"username",
 		[]byte("password"),
 		[]string{localHttpsTarget},
-		certPool,
 		skipu2f,
 		false,
-		&net.Dialer{},
+		client,
 		"someUserAgent",
 		testlogger.New(t)) //(cert []byte, err error)
 	if err != nil {
@@ -175,16 +179,20 @@ func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+	client, err := util.GetHttpClient(tlsConfig, &net.Dialer{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	skipu2f := true
 	_, _, _, err = GetCertFromTargetUrls(
 		privateKey,
 		"username",
 		[]byte("password"),
 		[]string{localHttpsTarget},
-		nil,
 		skipu2f,
 		false,
-		&net.Dialer{},
+		client,
 		"someUserAgent",
 		testlogger.New(t))
 	if err == nil {
