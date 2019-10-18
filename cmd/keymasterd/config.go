@@ -368,6 +368,9 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 		return nil, err
 	}
 
+	// TODO(rgooch): We should probably support a priority list of
+	// authentication backends which are tried in turn. The current scheme is
+	// hacky and is limited to only one authentication backend.
 	// ExtAuthCommand
 	if len(runtimeState.Config.Base.ExternalAuthCmd) > 0 {
 		runtimeState.passwordChecker, err = command.New(runtimeState.Config.Base.ExternalAuthCmd, nil, logger)
