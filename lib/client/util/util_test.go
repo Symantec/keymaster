@@ -1,8 +1,10 @@
 package util
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"os/user"
 	"testing"
@@ -119,4 +121,13 @@ func pipeToStdin(s string) (int, error) {
 	w, err := pipeWriter.WriteString(s)
 	pipeWriter.Close()
 	return w, err
+}
+
+func TestGetHttpClientMinimal(t *testing.T) {
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+	_, err := GetHttpClient(tlsConfig, &net.Dialer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 }

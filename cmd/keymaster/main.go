@@ -69,28 +69,28 @@ func getUserHomeDir() (homeDir string) {
 	return
 }
 
-func maybeGetRootCas(logger log.Logger) *x509.CertPool {
+func maybeGetRootCas(rootCAFilename string, logger log.Logger) (*x509.CertPool, error) {
 	var rootCAs *x509.CertPool
-	if len(*rootCAFilename) > 1 {
-		caData, err := ioutil.ReadFile(*rootCAFilename)
+	if len(rootCAFilename) > 1 {
+		caData, err := ioutil.ReadFile(rootCAFilename)
 		if err != nil {
 			logger.Printf("Failed to read caFilename")
-			logger.Fatal(err)
+			return nil, err
 		}
 		rootCAs = x509.NewCertPool()
 		if !rootCAs.AppendCertsFromPEM(caData) {
-			logger.Fatal("cannot append file data")
+			return nil, fmt.Errorf("cannot append file data")
 		}
 
 	}
-	return rootCAs
+	return rootCAs, nil
 }
 
-func getUserNameAndHomeDir(logger log.Logger) (userName, homeDir string) {
+func getUserNameAndHomeDir(logger log.Logger) (userName, homeDir string, err error) {
 	usr, err := user.Current()
 	if err != nil {
 		logger.Printf("cannot get current user info")
-		logger.Fatal(err)
+		return "", "", err
 	}
 	userName = usr.Username
 
@@ -103,7 +103,7 @@ func getUserNameAndHomeDir(logger log.Logger) (userName, homeDir string) {
 
 	homeDir, err = util.GetUserHomeDir(usr)
 	if err != nil {
-		logger.Fatal(err)
+		return "", "", err
 	}
 	return
 }
@@ -140,16 +140,66 @@ func loadConfigFile(client *http.Client, logger log.Logger) (
 	return
 }
 
+func preConnectToHost(baseUrl string, client *http.Client, logger log.DebugLogger) error {
+	response, err := client.Get(baseUrl)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	//we have to consume the contents of the body in order to keep the connection open
+	_, err = ioutil.ReadAll(response.Body)
+	if err != nil {
+		logger.Debugf(1, "Error reading http responseBody err: %s\n", err)
+		return err
+	}
+	if response.StatusCode >= 300 {
+		logger.Debugf(1, "bad response code on pre-connect status=%d", response.StatusCode)
+		return err
+	}
+	return nil
+}
+
+func backgroundConnectToAnyKeymasterServer(targetUrls []string, client *http.Client, logger log.DebugLogger) error {
+	c := make(chan error, len(targetUrls))
+	for _, baseUrl := range targetUrls {
+		go func(c chan error, baseUrl string, client *http.Client, logger log.DebugLogger) {
+			c <- preConnectToHost(baseUrl, client, logger)
+		}(c, baseUrl, client, logger)
+
+	}
+	var errorList []error
+	for i := 0; i < len(targetUrls); i++ {
+		err := <-c
+		if err != nil {
+			logger.Debugf(1, "Debug: Error connecting err=%s", err)
+			errorList = append(errorList, err)
+			continue
+		}
+		return nil
+	}
+	for _, capturedErr := range errorList {
+		logger.Printf("Error connecting err=%s", capturedErr)
+	}
+	return fmt.Errorf("Cannot connect to any keymaster Server")
+}
+
 func setupCerts(
 	userName string,
 	homeDir string,
 	configContents config.AppConfigFile,
 	client *http.Client,
 	logger log.DebugLogger) {
+	//initialize the client connection
+	targetURLs := strings.Split(configContents.Base.Gen_Cert_URLS, ",")
+	err := backgroundConnectToAnyKeymasterServer(targetURLs, client, logger)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
 	// create dirs
 	sshKeyPath := filepath.Join(homeDir, DefaultSSHKeysLocation, FilePrefix)
 	sshConfigPath, _ := filepath.Split(sshKeyPath)
-	err := os.MkdirAll(sshConfigPath, 0700)
+	err = os.MkdirAll(sshConfigPath, 0700)
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -307,7 +357,10 @@ func main() {
 	flag.Usage = Usage
 	flag.Parse()
 	logger := cmdlogger.New()
-	rootCAs := maybeGetRootCas(logger)
+	rootCAs, err := maybeGetRootCas(*rootCAFilename, logger)
+	if err != nil {
+		logger.Fatal(err)
+	}
 	client, err := getHttpClient(rootCAs, logger)
 	if err != nil {
 		logger.Fatal(err)
@@ -319,7 +372,10 @@ func main() {
 	}
 	computeUserAgent()
 
-	userName, homeDir := getUserNameAndHomeDir(logger)
+	userName, homeDir, err := getUserNameAndHomeDir(logger)
+	if err != nil {
+		logger.Fatal(err)
+	}
 	config := loadConfigFile(client, logger)
 
 	// Adjust user name
