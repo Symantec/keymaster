@@ -39,29 +39,31 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 	if err := encoder.Encode(loginData); err != nil {
 		return false, err
 	}
-	if req, err := http.NewRequest("POST", pa.authnURL, body); err != nil {
+	req, err := http.NewRequest("POST", pa.authnURL, body)
+	if err != nil {
 		return false, err
+	}
+	req.Header.Add("Accept", "application/json")
+	req.Header.Add("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		return false, nil
+	} else if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("bad status: %s", resp.Status)
 	} else {
-		req.Header.Add("Accept", "application/json")
-		req.Header.Add("Content-Type", "application/json")
-		if resp, err := http.DefaultClient.Do(req); err != nil {
+		decoder := json.NewDecoder(resp.Body)
+		var response responseType
+		if err := decoder.Decode(&response); err != nil {
 			return false, err
-		} else if resp.StatusCode == http.StatusUnauthorized {
-			return false, nil
-		} else if resp.StatusCode != http.StatusOK {
-			return false, fmt.Errorf("bad status: %s", resp.Status)
 		} else {
-			decoder := json.NewDecoder(resp.Body)
-			var response responseType
-			if err := decoder.Decode(&response); err != nil {
-				return false, err
-			} else {
-				switch response.Status {
-				case "SUCCESS", "MFA_REQUIRED":
-					return true, nil
-				default:
-					return false, nil
-				}
+			switch response.Status {
+			case "SUCCESS", "MFA_REQUIRED":
+				return true, nil
+			default:
+				return false, nil
 			}
 		}
 	}
