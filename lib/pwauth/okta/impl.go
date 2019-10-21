@@ -51,20 +51,19 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 	}
 	if resp.StatusCode == http.StatusUnauthorized {
 		return false, nil
-	} else if resp.StatusCode != http.StatusOK {
+	}
+	if resp.StatusCode != http.StatusOK {
 		return false, fmt.Errorf("bad status: %s", resp.Status)
-	} else {
-		decoder := json.NewDecoder(resp.Body)
-		var response responseType
-		if err := decoder.Decode(&response); err != nil {
-			return false, err
-		} else {
-			switch response.Status {
-			case "SUCCESS", "MFA_REQUIRED":
-				return true, nil
-			default:
-				return false, nil
-			}
-		}
+	}
+	decoder := json.NewDecoder(resp.Body)
+	var response responseType
+	if err := decoder.Decode(&response); err != nil {
+		return false, err
+	}
+	switch response.Status {
+	case "SUCCESS", "MFA_REQUIRED":
+		return true, nil
+	default:
+		return false, nil
 	}
 }
