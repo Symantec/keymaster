@@ -22,6 +22,7 @@ import (
 	"github.com/Symantec/keymaster/keymasterd/admincache"
 	"github.com/Symantec/keymaster/lib/pwauth/command"
 	"github.com/Symantec/keymaster/lib/pwauth/ldap"
+	"github.com/Symantec/keymaster/lib/pwauth/okta"
 	"github.com/Symantec/keymaster/lib/vip"
 	"github.com/howeyc/gopass"
 	"golang.org/x/crypto/openpgp"
@@ -62,6 +63,10 @@ type LdapConfig struct {
 	BindPattern          string `yaml:"bind_pattern"`
 	LDAPTargetURLs       string `yaml:"ldap_target_urls"`
 	DisablePasswordCache bool   `yaml:"disable_password_cache"`
+}
+
+type OktaConfig struct {
+	Domain string `yaml:"domain"`
 }
 
 type UserInfoLDAPSource struct {
@@ -117,6 +122,7 @@ type SymantecVIPConfig struct {
 type AppConfigFile struct {
 	Base             baseConfig
 	Ldap             LdapConfig
+	Okta             OktaConfig
 	UserInfo         UserInfoSouces `yaml:"userinfo_sources"`
 	Oauth2           Oauth2Config
 	OpenIDConnectIDP OpenIDConnectIDPConfig `yaml:"openid_connect_idp"`
@@ -185,13 +191,11 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 	}
 	source, err := ioutil.ReadFile(configFilename)
 	if err != nil {
-		err = errors.New("cannot read config file")
-		return nil, err
+		return nil, fmt.Errorf("cannot read config file: %s", err)
 	}
 	err = yaml.Unmarshal(source, &runtimeState.Config)
 	if err != nil {
-		err = errors.New("Cannot parse config file")
-		return nil, err
+		return nil, fmt.Errorf("cannot parse config file: %s", err)
 	}
 
 	//share config
@@ -365,12 +369,23 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 		return nil, err
 	}
 
+	// TODO(rgooch): We should probably support a priority list of
+	// authentication backends which are tried in turn. The current scheme is
+	// hacky and is limited to only one authentication backend.
 	// ExtAuthCommand
 	if len(runtimeState.Config.Base.ExternalAuthCmd) > 0 {
 		runtimeState.passwordChecker, err = command.New(runtimeState.Config.Base.ExternalAuthCmd, nil, logger)
 		if err != nil {
 			return nil, err
 		}
+	}
+	if runtimeState.Config.Okta.Domain != "" {
+		runtimeState.passwordChecker, err = okta.NewPublic(
+			runtimeState.Config.Okta.Domain, logger)
+		if err != nil {
+			return nil, err
+		}
+		logger.Debugf(1, "passwordChecker= %+v", runtimeState.passwordChecker)
 	}
 	if len(runtimeState.Config.Ldap.LDAPTargetURLs) > 0 {
 		const timeoutSecs = 3
