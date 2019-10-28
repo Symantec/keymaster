@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/Symantec/keymaster/eventmon/eventrecorder"
 	"github.com/Symantec/keymaster/eventmon/monitord"
@@ -27,14 +28,29 @@ func StartServer(portNum uint, eventRecorder *eventrecorder.EventRecorder,
 	if err != nil {
 		return err
 	}
-	myState := state{eventRecorder, monitor}
-	http.HandleFunc("/", myState.statusHandler)
-	http.HandleFunc("/showActivity", myState.showActivityHandler)
-	if daemon {
-		go http.Serve(listener, nil)
-	} else {
-		http.Serve(listener, nil)
+	serviceSrv := &http.Server{
+		Handler:      http.DefaultServeMux,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  120 * time.Second,
 	}
+	err = AttachHandlersToHttpServerMux(http.DefaultServeMux, eventRecorder, monitor)
+	if err != nil {
+		return err
+	}
+	if daemon {
+		go serviceSrv.Serve(listener)
+		return nil
+	} else {
+		return serviceSrv.Serve(listener)
+	}
+}
+
+func AttachHandlersToHttpServerMux(serviceMux *http.ServeMux, eventRecorder *eventrecorder.EventRecorder,
+	monitor *monitord.Monitor) error {
+	myState := state{eventRecorder, monitor}
+	serviceMux.HandleFunc("/", myState.statusHandler)
+	serviceMux.HandleFunc("/showActivity", myState.showActivityHandler)
 	return nil
 }
 
