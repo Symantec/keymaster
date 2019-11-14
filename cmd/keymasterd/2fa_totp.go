@@ -99,7 +99,7 @@ func (state *RuntimeState) GenerateNewTOTP(w http.ResponseWriter, r *http.Reques
 	logger.Debugf(2, "%v", profile)
 
 	key, err := totp.Generate(totp.GenerateOpts{
-		Issuer:      "keymaster-totp", //TODO: get the actual name
+		Issuer:      state.HostIdentity,
 		AccountName: authUser,
 	})
 	if err != nil {
@@ -237,8 +237,6 @@ func (state *RuntimeState) totpTokenManagerHandler(w http.ResponseWriter, r *htt
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
-	/*
-	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, loginLevel, err := state.checkAuth(w, r, state.getRequiredWebUIAuthLevel())
 	if err != nil {
@@ -345,13 +343,16 @@ const minSecsBetweenTOTPValidations = 2
 const numHoursForLocalTOTPRateLimitReset = 24
 const numFailedTOTPChecksForTimeoutIncrease = 5
 
+// This function is the one actually validating the TOTP values, returns err non nil
+// if there is a problem with the internal state. Returns true if the previous OTP success
+// for this user is NOT on this period AND one of the otp values matches the one of the user's
+// registered keys.
 func (state *RuntimeState) validateUserTOTP(username string, OTPValue int, t time.Time) (bool, error) {
 	//Do a redirect
 	profile, _, fromCache, err := state.LoadUserProfile(username)
 	if err != nil {
 		logger.Printf("validateUserTOTP: loading profile error: %v", err)
 		return false, err
-
 	}
 
 	state.totpLocalTateLimitMutex.Lock()
@@ -382,13 +383,12 @@ func (state *RuntimeState) validateUserTOTP(username string, OTPValue int, t tim
 		//http.Error(w, "db backend is offline for writes", http.StatusServiceUnavailable)
 		//return
 	}
-
 	//Check if value is on blacklist for that user?
 	// Check if there is a value successfully accepted for that counter value
 	const defaultPeriod = 30
 	counter := int64(math.Floor(float64(t.Unix()) / float64(defaultPeriod)))
 	if profile.LastSuccessfullTOTPCounter == counter {
-		logger.Printf("validateUserTOTP: alredy done TOTP for time period")
+		logger.Printf("validateUserTOTP: already done TOTP within time period")
 		return false, nil
 	}
 	OTPString := fmt.Sprintf("%06d", OTPValue)
@@ -435,15 +435,11 @@ func (state *RuntimeState) validateUserTOTP(username string, OTPValue int, t tim
 	return false, nil
 }
 
-///
-
 func (state *RuntimeState) commonTOTPPostHandler(w http.ResponseWriter, r *http.Request, requiredAuthLevel int) (string, int, int, error) {
 	// User must be logged in
 	if state.sendFailureToClientIfLocked(w, r) {
 		return "", 0, 0, errors.New("server still sealed")
 	}
-	/*
-	 */
 	// TODO(camilo_viecco1): reorder checks so that simple checks are done before checking user creds
 	authUser, loginLevel, err := state.checkAuth(w, r, requiredAuthLevel)
 	if err != nil {
@@ -465,7 +461,6 @@ func (state *RuntimeState) commonTOTPPostHandler(w http.ResponseWriter, r *http.
 		return "", 0, 0, err
 	}
 	logger.Debugf(3, "Form: %+v", r.Form)
-
 	var OTPString string
 	if val, ok := r.Form["OTP"]; ok {
 		if len(val) > 1 {

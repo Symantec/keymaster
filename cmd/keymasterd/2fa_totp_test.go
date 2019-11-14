@@ -59,8 +59,9 @@ func TestGenerateNewTOTPSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	state.HostIdentity = "testHost"
 
-	/// End of setup
+	// End of setup
 
 	req, err := http.NewRequest("GET", totpGeneratNewPath, nil)
 	if err != nil {
@@ -190,7 +191,7 @@ func TestVerifyTOTPHandlerSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	/// End of setup
+	// End of setup
 	authCookie, totpSecret, err := setupTestStateWithTOTPSecret(t, state, AuthTypeU2F)
 	if err != nil {
 		t.Fatal(err)
@@ -235,7 +236,7 @@ func TestAuthTOTPHandlerSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	/// End of setup
+	// End of setup
 	authCookie, totpSecret, err := setupTestStateWithTOTPSecret(t, state, AuthTypePassword)
 	if err != nil {
 		t.Fatal(err)
