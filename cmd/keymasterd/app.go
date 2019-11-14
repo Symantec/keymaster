@@ -58,6 +58,7 @@ const (
 	AuthTypeU2F
 	AuthTypeSymantecVIP
 	AuthTypeIPCertificate
+	AuthTypeOkta2FA
 )
 
 const AuthTypeAny = 0xFFFF
