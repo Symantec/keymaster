@@ -88,8 +88,9 @@ type secondFactorAuthTemplateData struct {
 	Title            string
 	AuthUsername     string
 	JSSources        []string
-	ShowOTP          bool
+	ShowVIP          bool
 	ShowU2F          bool
+	ShowTOTP         bool
 	LoginDestination string
 }
 
@@ -114,7 +115,8 @@ const secondFactorAuthFormText = `
 	{{template "header" .}}
 	<div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
         <h2> Keymaster second factor Authentication </h2>
-	{{if .ShowOTP}}
+
+	{{if .ShowVIP}}
 	<div id="vip_login_destination" style="display: none;">{{.LoginDestination}}</div>
         <form enctype="application/x-www-form-urlencoded" action="/api/v0/vipAuth" method="post">
             <p>
@@ -133,12 +135,13 @@ const secondFactorAuthFormText = `
 	<p> Or wait for a VIP push</p>
 	{{end}}
 	{{end}}
+
 	{{if .ShowU2F}}
 	<p>
 	       <div id="u2f_login_destination" style="display: none;">{{.LoginDestination}}</div>
                <div id="auth_action_text" > Authenticate by touching a blinking registered U2F device (insert if not inserted yet)</div>
         </p>
-        {{if .ShowOTP}}
+        {{if .ShowVIP}}
 	<div id="manual_start_vip_div">
 	<p>
 	<h4>Or</h4>
@@ -146,8 +149,18 @@ const secondFactorAuthFormText = `
 	<p> <button id="start_vip_push_button" >Start VIP Push</button>(VIP push will autostart in a few seconds)</p>
         </div>
 	{{end}}
-
 	{{end}}
+
+        {{if .ShowTOTP}}
+        <form enctype="application/x-www-form-urlencoded" action="/api/v0/TOTPAuth" method="post">
+            <p>
+            Enter TOTP token value: <INPUT TYPE="text" NAME="OTP" SIZE=18  autocomplete="off">
+            <INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
+            <input type="submit" value="Submit" />
+            </p>
+        </form>
+	{{end}}
+
 	</div>
 	{{template "footer" . }}
 	</div>
@@ -207,15 +220,23 @@ type registeredU2FTokenDisplayInfo struct {
 	Index            int64
 	Enabled          bool
 }
+type registeredTOTPTDeviceDisplayInfo struct {
+	RegistrationDate time.Time
+	Name             string
+	Index            int64
+	Enabled          bool
+}
 type profilePageTemplateData struct {
-	Title           string
-	AuthUsername    string
-	Username        string
-	JSSources       []string
-	ShowU2F         bool
-	ReadOnlyMsg     string
-	UsersLink       bool
-	RegisteredToken []registeredU2FTokenDisplayInfo
+	Title                string
+	AuthUsername         string
+	Username             string
+	JSSources            []string
+	ShowU2F              bool
+	ShowTOTP             bool
+	ReadOnlyMsg          string
+	UsersLink            bool
+	RegisteredU2FToken   []registeredU2FTokenDisplayInfo
+	RegisteredTOTPDevice []registeredTOTPTDeviceDisplayInfo
 }
 
 //{{ .Date | formatAsDate}} {{ printf "%-20s" .Description }} {{.AmountInCents | formatAsDollars -}}
@@ -248,6 +269,13 @@ const profileHTML = `
     {{.ReadOnlyMsg}}
     <ul>
       <li><a href="/api/v0/logout" >Logout </a></li>
+    {{if .UsersLink}}
+      <li><a href="/users/">Users</a></li>
+    {{end}}
+    </ul>
+    <div id="u2f-tokens">
+    <h3>U2F</h3>
+    <ul>
        {{if .ShowU2F}}
        {{if not .ReadOnlyMsg}}
       <li>
@@ -261,19 +289,17 @@ const profileHTML = `
       {{else}}
       <div id="auth_action_text" style="color: blue;background-color: yellow;"> Your browser does not support U2F. However you can still Enable/Disable/Delete U2F tokens </div>
       {{end}}
-    {{if .UsersLink}}
-      <li><a href="/users/">Users</a></li>
-    {{end}}
     </ul>
-    {{if .RegisteredToken -}}
-        Your U2F Token(s):
+    <div style="margin-left: 40px">
+    {{if .RegisteredU2FToken -}}
+        <p>Your U2F Token(s):</p>
         <table>
 	    <tr>
 	    <th>Name</th>
 	    <th>Device Data</th>
 	    <th>Actions</th>
 	    </tr>
-	    {{- range .RegisteredToken }}
+	    {{- range .RegisteredU2FToken }}
             <tr>
 	     <form enctype="application/x-www-form-urlencoded" action="/api/v0/manageU2FToken" method="post">
 	     <input type="hidden" name="index" value="{{.Index}}">
@@ -298,6 +324,56 @@ const profileHTML = `
     {{- else}}
 	You Dont have any registered tokens.
     {{- end}}
+    </div>
+    </div> <!-- end of u2f div -->
+    <div id="totp-tokens">
+    {{if .ShowTOTP}}
+       <h3>TOTP</h3>
+       <ul>
+          <li><a href="/totp/GenerateNew/">Generate New TOTP</a></li>
+	  <li>
+              <form enctype="application/x-www-form-urlencoded" action="/api/v0/VerifyTOTP" method="post">
+                  <p>
+                  Authenticate TOTP: <INPUT TYPE="text" NAME="OTP" SIZE=8  autocomplete="off">
+                  <INPUT TYPE="hidden" NAME="login_destination" VALUE="/">
+                  <input type="submit" value="Submit" />
+                  </p>
+              </form>
+	  </li>
+       </ul>
+       {{if .RegisteredTOTPDevice -}}
+       <div style="margin-left: 40px">
+       <p> Your registered totp device(s) </p>
+       <table>
+            <tr>
+               <th>Name</th>
+               <th>Actions</th>
+            </tr>
+	    {{- range .RegisteredTOTPDevice }}
+	    <tr>
+	       <form enctype="application/x-www-form-urlencoded" action="/api/v0/manageTOTPToken" method="post">
+                  <input type="hidden" name="index" value="{{.Index}}">
+                  <input type="hidden" name="username" value="{{$top.Username}}">
+                  <td> <input type="text" name="name" value="{{ .Name}}" SIZE=18  {{if $top.ReadOnlyMsg}} readonly{{end}} > </td>
+                  <td>
+                  {{if not $top.ReadOnlyMsg}}
+                     <input type="submit" name="action" value="Update" {{if not .Enabled}} disabled {{end}}/>
+                  {{if .Enabled}}
+                     <input type="submit" name="action" value="Disable"/>
+                  {{ else }}
+                     <input type="submit" name="action" value="Enable"/>
+                     <input type="submit" name="action" value="Delete" {{if .Enabled}} disabled {{end}}/>
+                  {{ end }}
+                  {{end}}
+                  </td>
+               </form>
+	    </tr>
+	    {{- end}}
+       </table>
+       </div><!-- end of RegisteredTOTPDevice div-->
+       {{end}}
+    {{end}}
+    </div> <!-- end of totp div -->
     {{end}}
     </div>
     {{template "footer" . }}

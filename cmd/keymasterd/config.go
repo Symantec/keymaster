@@ -54,6 +54,7 @@ type baseConfig struct {
 	SecsBetweenDependencyChecks int      `yaml:"secs_between_dependency_checks"`
 	AutomationUserGroups        []string `yaml:"automation_user_groups"`
 	AutomationUsers             []string `yaml:"automation_users"`
+	EnableLocalTOTP             bool     `yaml:"enable_local_totp"`
 }
 
 type LdapConfig struct {
