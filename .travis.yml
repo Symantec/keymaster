@@ -2,7 +2,7 @@ language: go
 
 # github.com/flynn/hid is broken on go1.12 on MacOS X, so pin to go1.11.x
 go:
-    - 1.11.x
+    - 1.13.x
 
 os:
     - linux

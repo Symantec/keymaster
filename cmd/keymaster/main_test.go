@@ -1,16 +1,18 @@
-package twofa
+package main
 
 import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"net"
+	"io/ioutil"
 	"net/http"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/Symantec/Dominator/lib/log/testlogger"
-	"github.com/Symantec/keymaster/lib/client/util"
+	"github.com/Symantec/keymaster/lib/client/config"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 )
 
@@ -96,8 +98,6 @@ GuCdIOQpn0IWClccTMjwc0AhJStSckNdSUQcsRl6LRnRHa3oCIs3hxnkiEHYch6e
 dcxWzhBDbzeIV9SvcTwLx/ghQg==
 -----END PRIVATE KEY-----`
 
-const testUserPublicKey = `ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDI09fpMWTeYw7/EO/+FywS/sghNXdTeTWxX7K2N17owsQJX8s76LGVIdVeYrWg4QSmYlpf6EVSCpx/fbCazrsG7FJVTRhExzFbRT9asmvzS+viXSbSvnavhOz/paihyaMsVPKVv24vF6MOs8DgfwehcKCPjKoIPnlYXZaZcy05KOcZmsvYu2kNOP6sSjDFF+ru+T+DLp3DUGw+MPr45IuR7iDnhXhklqyUn0d7ou0rOHXz9GdHIzpr+DAoQGmTDkpbQEo067Rjfu406gYL8pVFD1F7asCjU39llQCcU/HGyPym5fa29Nubw0dzZZXGZUVFalxo02YMM7P9I6ZjeCsv cviecco@example.com`
-
 func getTLSconfig() (*tls.Config, error) {
 	cert, err := tls.X509KeyPair([]byte(localhostCertPem), []byte(localhostKeyPem))
 	if err != nil {
@@ -112,7 +112,7 @@ func getTLSconfig() (*tls.Config, error) {
 	}, nil
 }
 
-const localHttpsTarget = "https://localhost:22443/"
+const localHttpsTarget = "https://localhost:19443/"
 
 var testAllowedCertBackends = []string{proto.AuthTypePassword, proto.AuthTypeU2F}
 
@@ -135,67 +135,142 @@ func init() {
 	tlsConfig, _ := getTLSconfig()
 	//_, _ = tls.Listen("tcp", ":11443", config)
 	srv := &http.Server{
-		Addr:      ":22443",
+		Addr:      ":19443",
 		TLSConfig: tlsConfig,
 	}
 	http.HandleFunc("/", handler)
 	go srv.ListenAndServeTLS("", "")
-	//http.Serve(ln, nil)
+	// On single core systems we needed to ensure that the server is started before
+	// we create other testing goroutines. By sleeping we yield the cpu and allow
+	// ListenAndServe to progress
+	time.Sleep(20 * time.Millisecond)
 }
 
 func TestGetCertFromTargetUrlsSuccessOneURL(t *testing.T) {
+	_, _, err := getUserNameAndHomeDir(testlogger.New(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGetHttpClient(t *testing.T) {
+	client, err := getHttpClient(nil, testlogger.New(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client == nil {
+		t.Fatal(err)
+	}
+
+	//now with
+}
+
+func TestBackgroundConnectToAnyKeymasterServer(t *testing.T) {
 	certPool := x509.NewCertPool()
 	ok := certPool.AppendCertsFromPEM([]byte(rootCAPem))
 	if !ok {
 		t.Fatal("cannot add certs to certpool")
 	}
-	tlsConfig := &tls.Config{RootCAs: certPool, MinVersion: tls.VersionTLS12}
-	client, err := util.GetHttpClient(tlsConfig, &net.Dialer{})
-	if err != nil {
-		t.Fatal(err)
+	logger := testlogger.New(t)
+
+	*roundRobinDialer = false
+	for i := 0; i < 2; i++ {
+		client, err := getHttpClient(certPool, logger)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = backgroundConnectToAnyKeymasterServer([]string{localHttpsTarget}, client, logger)
+		if err != nil {
+			t.Fatal(err)
+		}
+		//now with fail:
+		client2, err := getHttpClient(nil, logger)
+		err = backgroundConnectToAnyKeymasterServer([]string{localHttpsTarget}, client2, logger)
+		if err == nil {
+			t.Fatal("should have failed")
+		}
+		*roundRobinDialer = true
 	}
-	privateKey, err := util.GenerateKey()
-	if err != nil {
-		t.Fatal(err)
-	}
-	skipu2f := true
-	_, _, _, err = GetCertFromTargetUrls(
-		privateKey,
-		"username",
-		[]byte("password"),
-		[]string{localHttpsTarget},
-		skipu2f,
-		false,
-		client,
-		"someUserAgent",
-		testlogger.New(t)) //(cert []byte, err error)
-	if err != nil {
-		t.Fatal(err)
-	}
+
 }
 
-func TestGetCertFromTargetUrlsFailUntrustedCA(t *testing.T) {
-	privateKey, err := util.GenerateKey()
+func pipeToStdin(s string) (int, error) {
+	pipeReader, pipeWriter, err := os.Pipe()
+	if err != nil {
+		fmt.Println("Error getting os pipes:", err)
+		os.Exit(1)
+	}
+	os.Stdin = pipeReader
+	w, err := pipeWriter.WriteString(s)
+	pipeWriter.Close()
+	return w, err
+}
+
+func TestMaybeGetRootCas(t *testing.T) {
+	logger := testlogger.New(t)
+	shouldbeNil, err := maybeGetRootCas("", logger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
-	client, err := util.GetHttpClient(tlsConfig, &net.Dialer{})
+	if shouldbeNil != nil {
+		t.Fatal("should be nil and it is not")
+	}
+
+	tmpfile, err := ioutil.TempFile("", "userdb_test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	skipu2f := true
-	_, _, _, err = GetCertFromTargetUrls(
-		privateKey,
-		"username",
-		[]byte("password"),
-		[]string{localHttpsTarget},
-		skipu2f,
-		false,
+	defer os.Remove(tmpfile.Name())
+	if _, err = tmpfile.Write([]byte(rootCAPem)); err != nil {
+		t.Fatal(err)
+	}
+	if err = tmpfile.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, err = maybeGetRootCas(tmpfile.Name(), logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+}
+
+func TestMost(t *testing.T) {
+
+	certPool := x509.NewCertPool()
+	ok := certPool.AppendCertsFromPEM([]byte(rootCAPem))
+	if !ok {
+		t.Fatal("cannot add certs to certpool")
+	}
+	logger := testlogger.New(t)
+	client, err := getHttpClient(certPool, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userName, homeDir, err := getUserNameAndHomeDir(logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appConfig := config.AppConfigFile{
+		Base: config.BaseConfig{
+			Gen_Cert_URLS: localHttpsTarget,
+			FilePrefix:    "test"}}
+
+	_, err = pipeToStdin("password\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	FilePrefix = "test"
+	oldSSHSock, ok := os.LookupEnv("SSH_AUTH_SOCK")
+	if ok {
+		os.Unsetenv("SSH_AUTH_SOCK")
+		defer os.Setenv("SSH_AUTH_SOCK", oldSSHSock)
+	}
+	setupCerts(
+		userName,
+		homeDir,
+		appConfig,
 		client,
-		"someUserAgent",
-		testlogger.New(t))
-	if err == nil {
-		t.Fatal("Should have failed to connect untrusted CA")
-	}
+		logger)
+
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"flag"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/user"
@@ -51,7 +53,6 @@ var (
 		"If true, use the smart round-robin dialer")
 
 	FilePrefix = "keymaster"
-	dialer     libnet.Dialer
 )
 
 func getUserHomeDir() (homeDir string) {
@@ -68,28 +69,28 @@ func getUserHomeDir() (homeDir string) {
 	return
 }
 
-func maybeGetRootCas(logger log.Logger) *x509.CertPool {
+func maybeGetRootCas(rootCAFilename string, logger log.Logger) (*x509.CertPool, error) {
 	var rootCAs *x509.CertPool
-	if len(*rootCAFilename) > 1 {
-		caData, err := ioutil.ReadFile(*rootCAFilename)
+	if len(rootCAFilename) > 1 {
+		caData, err := ioutil.ReadFile(rootCAFilename)
 		if err != nil {
 			logger.Printf("Failed to read caFilename")
-			logger.Fatal(err)
+			return nil, err
 		}
 		rootCAs = x509.NewCertPool()
 		if !rootCAs.AppendCertsFromPEM(caData) {
-			logger.Fatal("cannot append file data")
+			return nil, fmt.Errorf("cannot append file data")
 		}
 
 	}
-	return rootCAs
+	return rootCAs, nil
 }
 
-func getUserNameAndHomeDir(logger log.Logger) (userName, homeDir string) {
+func getUserNameAndHomeDir(logger log.Logger) (userName, homeDir string, err error) {
 	usr, err := user.Current()
 	if err != nil {
 		logger.Printf("cannot get current user info")
-		logger.Fatal(err)
+		return "", "", err
 	}
 	userName = usr.Username
 
@@ -102,12 +103,12 @@ func getUserNameAndHomeDir(logger log.Logger) (userName, homeDir string) {
 
 	homeDir, err = util.GetUserHomeDir(usr)
 	if err != nil {
-		logger.Fatal(err)
+		return "", "", err
 	}
 	return
 }
 
-func loadConfigFile(rootCAs *x509.CertPool, logger log.Logger) (
+func loadConfigFile(client *http.Client, logger log.Logger) (
 	configContents config.AppConfigFile) {
 	configPath, _ := filepath.Split(*configFilename)
 
@@ -117,15 +118,15 @@ func loadConfigFile(rootCAs *x509.CertPool, logger log.Logger) (
 	}
 
 	if len(*configHost) > 1 {
-		err = config.GetConfigFromHost(*configFilename, *configHost, rootCAs,
-			dialer, logger)
+		err = config.GetConfigFromHost(*configFilename, *configHost,
+			client, logger)
 		if err != nil {
 			logger.Fatal(err)
 		}
 	} else if len(defaultConfigHost) > 1 { // if there is a configHost AND there is NO config file, create one
 		if _, err := os.Stat(*configFilename); os.IsNotExist(err) {
 			err = config.GetConfigFromHost(
-				*configFilename, defaultConfigHost, rootCAs, dialer, logger)
+				*configFilename, defaultConfigHost, client, logger)
 			if err != nil {
 				logger.Fatal(err)
 			}
@@ -139,16 +140,66 @@ func loadConfigFile(rootCAs *x509.CertPool, logger log.Logger) (
 	return
 }
 
+func preConnectToHost(baseUrl string, client *http.Client, logger log.DebugLogger) error {
+	response, err := client.Get(baseUrl)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	//we have to consume the contents of the body in order to keep the connection open
+	_, err = ioutil.ReadAll(response.Body)
+	if err != nil {
+		logger.Debugf(1, "Error reading http responseBody err: %s\n", err)
+		return err
+	}
+	if response.StatusCode >= 300 {
+		logger.Debugf(1, "bad response code on pre-connect status=%d", response.StatusCode)
+		return err
+	}
+	return nil
+}
+
+func backgroundConnectToAnyKeymasterServer(targetUrls []string, client *http.Client, logger log.DebugLogger) error {
+	c := make(chan error, len(targetUrls))
+	for _, baseUrl := range targetUrls {
+		go func(c chan error, baseUrl string, client *http.Client, logger log.DebugLogger) {
+			c <- preConnectToHost(baseUrl, client, logger)
+		}(c, baseUrl, client, logger)
+
+	}
+	var errorList []error
+	for i := 0; i < len(targetUrls); i++ {
+		err := <-c
+		if err != nil {
+			logger.Debugf(1, "Debug: Error connecting err=%s", err)
+			errorList = append(errorList, err)
+			continue
+		}
+		return nil
+	}
+	for _, capturedErr := range errorList {
+		logger.Printf("Error connecting err=%s", capturedErr)
+	}
+	return fmt.Errorf("Cannot connect to any keymaster Server")
+}
+
 func setupCerts(
-	rootCAs *x509.CertPool,
 	userName string,
 	homeDir string,
 	configContents config.AppConfigFile,
+	client *http.Client,
 	logger log.DebugLogger) {
+	//initialize the client connection
+	targetURLs := strings.Split(configContents.Base.Gen_Cert_URLS, ",")
+	err := backgroundConnectToAnyKeymasterServer(targetURLs, client, logger)
+	if err != nil {
+		logger.Fatal(err)
+	}
+
 	// create dirs
 	sshKeyPath := filepath.Join(homeDir, DefaultSSHKeysLocation, FilePrefix)
 	sshConfigPath, _ := filepath.Split(sshKeyPath)
-	err := os.MkdirAll(sshConfigPath, 0700)
+	err = os.MkdirAll(sshConfigPath, 0700)
 	if err != nil {
 		logger.Fatal(err)
 	}
@@ -180,10 +231,9 @@ func setupCerts(
 		userName,
 		password,
 		strings.Split(configContents.Base.Gen_Cert_URLS, ","),
-		rootCAs,
 		false,
 		configContents.Base.AddGroups,
-		dialer,
+		client,
 		userAgentString,
 		logger)
 	if err != nil {
@@ -276,16 +326,8 @@ func computeUserAgent() {
 	userAgentString = fmt.Sprintf("%s/%s (%s %s)", userAgentAppName, uaVersion, runtime.GOOS, runtime.GOARCH)
 }
 
-func Usage() {
-	fmt.Fprintf(
-		os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
-	flag.PrintDefaults()
-}
-
-func main() {
-	flag.Usage = Usage
-	flag.Parse()
-	logger := cmdlogger.New()
+func getHttpClient(rootCAs *x509.CertPool, logger log.DebugLogger) (*http.Client, error) {
+	var dialer libnet.Dialer
 	rawDialer := &net.Dialer{
 		Timeout:   10 * time.Second,
 		KeepAlive: 30 * time.Second,
@@ -301,6 +343,28 @@ func main() {
 	} else {
 		dialer = rawDialer
 	}
+	tlsConfig := &tls.Config{RootCAs: rootCAs, MinVersion: tls.VersionTLS12}
+	return util.GetHttpClient(tlsConfig, dialer)
+}
+
+func Usage() {
+	fmt.Fprintf(
+		os.Stderr, "Usage of %s (version %s):\n", os.Args[0], Version)
+	flag.PrintDefaults()
+}
+
+func main() {
+	flag.Usage = Usage
+	flag.Parse()
+	logger := cmdlogger.New()
+	rootCAs, err := maybeGetRootCas(*rootCAFilename, logger)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	client, err := getHttpClient(rootCAs, logger)
+	if err != nil {
+		logger.Fatal(err)
+	}
 
 	if *checkDevices {
 		u2f.CheckU2FDevices(logger)
@@ -308,9 +372,11 @@ func main() {
 	}
 	computeUserAgent()
 
-	rootCAs := maybeGetRootCas(logger)
-	userName, homeDir := getUserNameAndHomeDir(logger)
-	config := loadConfigFile(rootCAs, logger)
+	userName, homeDir, err := getUserNameAndHomeDir(logger)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	config := loadConfigFile(client, logger)
 
 	// Adjust user name
 	if len(config.Base.Username) > 0 {
@@ -328,5 +394,5 @@ func main() {
 		FilePrefix = *cliFilePrefix
 	}
 
-	setupCerts(rootCAs, userName, homeDir, config, logger)
+	setupCerts(userName, homeDir, config, client, logger)
 }
