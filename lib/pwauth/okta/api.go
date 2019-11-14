@@ -1,13 +1,21 @@
 package okta
 
 import (
+	"time"
+
 	"github.com/Symantec/Dominator/lib/log"
 	"github.com/Symantec/keymaster/lib/simplestorage"
 )
 
+type authCacheData struct {
+	Response PrimaryResponseType
+	Expires  time.Time
+}
+
 type PasswordAuthenticator struct {
-	authnURL string
-	logger   log.Logger
+	authnURL   string
+	logger     log.Logger
+	recentAuth map[string]authCacheData
 }
 
 // New creates a new PasswordAuthenticator using Okta as the backend. The Okta
@@ -30,4 +38,9 @@ func (pa *PasswordAuthenticator) PasswordAuthenticate(username string,
 
 func (pa *PasswordAuthenticator) UpdateStorage(storage simplestorage.SimpleStore) error {
 	return nil
+}
+
+// VerifyOTP
+func (pa *PasswordAuthenticator) ValidateUserOTP(authUser string, otpValue int) (bool, error) {
+	return pa.validateUserOTP(authUser, otpValue)
 }
