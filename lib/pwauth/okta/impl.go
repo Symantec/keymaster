@@ -16,6 +16,11 @@ const (
 	factorsVerifyPathExtra = "/factors/%s/verify"
 )
 
+type verifyTOTPFactorDataType struct {
+	StateToken string `json:"stateToken,omitempty"`
+	PassCode   string `json:"passCode,omitempty"`
+}
+
 type loginDataType struct {
 	Password string `json:"password,omitempty"`
 	Username string `json:"username,omitempty"`
@@ -41,8 +46,8 @@ type EmbeddedDataResponseType struct {
 }
 
 type PrimaryResponseType struct {
-	StateToken      string                   `json:"stateToken,omitEmpty"`
-	ExpiresAtString string                   `json:"expiresAt,omitEmpty"`
+	StateToken      string                   `json:"stateToken,omitempty"`
+	ExpiresAtString string                   `json:"expiresAt,omitempty"`
 	Status          string                   `json:"status,omitempty"`
 	Embedded        EmbeddedDataResponseType `json:"_embedded,omitempty"`
 }
@@ -75,20 +80,13 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 	if err != nil {
 		return false, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusUnauthorized {
 		return false, nil
 	}
 	if resp.StatusCode != http.StatusOK {
 		return false, fmt.Errorf("bad status: %s", resp.Status)
 	}
-	/*
-		robots, err := ioutil.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			pa.logger.Fatal(err)
-		}
-		pa.logger.Printf("raw=%s", robots)
-	*/
 	decoder := json.NewDecoder(resp.Body)
 	var response PrimaryResponseType
 	if err := decoder.Decode(&response); err != nil {
@@ -110,12 +108,65 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 	}
 }
 
+/*
+type verifyTOTPFactorDataType struct {
+        StateToken string `json:"stateToken,omitempty"`
+        PassCode   string `json:"passCode,omitempty"`
+}
+*/
+
 func (pa *PasswordAuthenticator) validateUserOTP(authUser string, otpValue int) (bool, error) {
-	_, ok := pa.recentAuth[authUser]
+	userData, ok := pa.recentAuth[authUser]
 	if !ok {
 		return false, nil
 	}
 	//TODO: check for expiration
+
+	for _, factor := range userData.Response.Embedded.Factor {
+		if factor.FactorType != "token:software:totp" {
+			continue
+		}
+		authURL := fmt.Sprintf(pa.authnURL+factorsVerifyPathExtra, factor.Id)
+		verifyStruct := verifyTOTPFactorDataType{
+			StateToken: userData.Response.StateToken,
+			PassCode:   fmt.Sprintf("%06d", otpValue),
+		}
+		pa.logger.Printf("AuthURL=%s", authURL)
+		pa.logger.Printf("totpVerifyStruct=%+v", verifyStruct)
+		body := &bytes.Buffer{}
+		encoder := json.NewEncoder(body)
+		encoder.SetIndent("", "    ") // Make life easier for debugging.
+		if err := encoder.Encode(verifyStruct); err != nil {
+			return false, err
+		}
+		req, err := http.NewRequest("POST", authURL, body)
+		if err != nil {
+			return false, err
+		}
+		req.Header.Add("Accept", "application/json")
+		req.Header.Add("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return false, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusForbidden {
+			return false, nil
+		}
+		if resp.StatusCode != http.StatusOK {
+			return false, fmt.Errorf("bad status: %s", resp.Status)
+		}
+		decoder := json.NewDecoder(resp.Body)
+		var response PrimaryResponseType
+		if err := decoder.Decode(&response); err != nil {
+			return false, err
+		}
+		pa.logger.Printf("oktaresponse=%+v", response)
+		if response.Status != "SUCCESS" {
+			return false, nil
+		}
+		return true, nil
+	}
 
 	return false, nil
 }
