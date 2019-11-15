@@ -108,19 +108,16 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 	}
 }
 
-/*
-type verifyTOTPFactorDataType struct {
-        StateToken string `json:"stateToken,omitempty"`
-        PassCode   string `json:"passCode,omitempty"`
-}
-*/
-
 func (pa *PasswordAuthenticator) validateUserOTP(authUser string, otpValue int) (bool, error) {
 	userData, ok := pa.recentAuth[authUser]
 	if !ok {
 		return false, nil
 	}
 	//TODO: check for expiration
+	if userData.Expires.After(time.Now()) {
+		delete(pa.recentAuth, authUser)
+		return false, nil
+	}
 
 	for _, factor := range userData.Response.Embedded.Factor {
 		if factor.FactorType != "token:software:totp" {

@@ -227,6 +227,7 @@ func setupValidRuntimeStateSigner() (*RuntimeState, *os.File, error) {
 	}
 	state.Config.Base.HtpasswdFilename = passwdFile.Name()
 
+	state.totpLocalRateLimit = make(map[string]totpRateLimitInfo)
 	return &state, passwdFile, nil
 }
 

@@ -58,6 +58,7 @@ const (
 	AuthTypeU2F
 	AuthTypeSymantecVIP
 	AuthTypeIPCertificate
+	AuthTypeTOTP
 	AuthTypeOkta2FA
 )
 
@@ -101,10 +102,22 @@ type u2fAuthData struct {
 	Registration *u2f.Registration
 }
 
+type totpAuthData struct {
+	Enabled         bool
+	CreatedAt       time.Time
+	Name            string
+	EncryptedSecret [][]byte
+	TOTPType        int
+	ValidatorAddr   string
+}
+
 type userProfile struct {
 	U2fAuthData           map[int64]*u2fAuthData
 	RegistrationChallenge *u2f.Challenge
 	//U2fAuthChallenge      *u2f.Challenge
+	PendingTOTPSecret          *[][]byte
+	LastSuccessfullTOTPCounter int64
+	TOTPAuthData               map[int64]*totpAuthData
 }
 
 type localUserData struct {
@@ -122,6 +135,13 @@ type pushPollTransaction struct {
 	ExpiresAt     time.Time
 	Username      string
 	TransactionID string
+}
+
+type totpRateLimitInfo struct {
+	lastCheckTime         time.Time
+	failCount             uint32
+	lastFailTime          time.Time
+	lockoutExpirationTime time.Time
 }
 
 type RuntimeState struct {
@@ -148,6 +168,9 @@ type RuntimeState struct {
 	passwordChecker      pwauth.PasswordAuthenticator
 	KeymasterPublicKeys  []crypto.PublicKey
 	isAdminCache         *admincache.Cache
+
+	totpLocalRateLimit      map[string]totpRateLimitInfo
+	totpLocalTateLimitMutex sync.Mutex
 }
 
 const redirectPath = "/auth/oauth2/callback"
@@ -400,16 +423,22 @@ func getClientType(r *http.Request) string {
 
 func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.Request,
 	loginDestination string, tryShowU2f bool) error {
-	JSSources := []string{"/static/jquery-3.4.1.min.js", "/static/u2f-api.js", "/static/webui-2fa-symc-vip.js"}
+	JSSources := []string{"/static/jquery-3.4.1.min.js", "/static/u2f-api.js"}
 	showU2F := browserSupportsU2F(r) && tryShowU2f
 	if showU2F {
+
 		JSSources = append(JSSources, "/static/webui-2fa-u2f.js")
+	}
+	if state.Config.SymantecVIP.Enabled {
+		JSSources = append(JSSources, "/static/webui-2fa-symc-vip.js")
 	}
 	displayData := secondFactorAuthTemplateData{
 		Title:            "Keymaster 2FA Auth",
 		JSSources:        JSSources,
-		ShowOTP:          state.Config.SymantecVIP.Enabled,
+		ShowVIP:          state.Config.SymantecVIP.Enabled,
 		ShowU2F:          showU2F,
+		ShowTOTP:         state.Config.Base.EnableLocalTOTP,
+		ShowOktaOTP:      state.Config.Okta.Enable2FA,
 		LoginDestination: loginDestination}
 	err := state.htmlTemplate.ExecuteTemplate(w, "secondFactorLoginPage", displayData)
 	if err != nil {
@@ -733,6 +762,12 @@ func (state *RuntimeState) getRequiredWebUIAuthLevel() int {
 		if webUIPref == proto.AuthTypeSymantecVIP {
 			AuthLevel |= AuthTypeSymantecVIP
 		}
+		if webUIPref == proto.AuthTypeTOTP {
+			AuthLevel |= AuthTypeTOTP
+		}
+		if webUIPref == proto.AuthTypeOkta2FA {
+			AuthLevel |= AuthTypeOkta2FA
+		}
 	}
 	return AuthLevel
 }
@@ -1038,6 +1073,12 @@ func (state *RuntimeState) loginHandler(w http.ResponseWriter, r *http.Request) 
 		if certPref == proto.AuthTypeSymantecVIP && state.Config.SymantecVIP.Enabled {
 			certBackends = append(certBackends, proto.AuthTypeSymantecVIP)
 		}
+		if certPref == proto.AuthTypeTOTP && state.Config.Base.EnableLocalTOTP {
+			certBackends = append(certBackends, proto.AuthTypeTOTP)
+		}
+		if certPref == proto.AuthTypeOkta2FA && state.Config.Okta.Enable2FA {
+			certBackends = append(certBackends, proto.AuthTypeOkta2FA)
+		}
 	}
 	// logger.Printf("current backends=%+v", certBackends)
 	if len(certBackends) == 0 {
@@ -1278,34 +1319,48 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		JSSources = append(JSSources, "/static/u2f-api.js", "/static/keymaster-u2f.js")
 	}
 
-	var devices []registeredU2FTokenDisplayInfo
+	// TODO: move deviceinfo mapping/sorting to its own function
+	var u2fdevices []registeredU2FTokenDisplayInfo
 	for i, tokenInfo := range profile.U2fAuthData {
-
 		deviceData := registeredU2FTokenDisplayInfo{
 			DeviceData: fmt.Sprintf("%+v", tokenInfo.Registration.AttestationCert.Subject.CommonName),
 			Enabled:    tokenInfo.Enabled,
 			Name:       tokenInfo.Name,
 			Index:      i}
-		devices = append(devices, deviceData)
+		u2fdevices = append(u2fdevices, deviceData)
 	}
-	sort.Slice(devices, func(i, j int) bool {
-		if devices[i].Name < devices[j].Name {
+	sort.Slice(u2fdevices, func(i, j int) bool {
+		if u2fdevices[i].Name < u2fdevices[j].Name {
 			return true
 		}
-		if devices[i].Name > devices[j].Name {
+		if u2fdevices[i].Name > u2fdevices[j].Name {
 			return false
 		}
-		return devices[i].DeviceData < devices[j].DeviceData
+		return u2fdevices[i].DeviceData < u2fdevices[j].DeviceData
 	})
+	var totpdevices []registeredTOTPTDeviceDisplayInfo
+	for i, deviceInfo := range profile.TOTPAuthData {
+		deviceData := registeredTOTPTDeviceDisplayInfo{
+			Enabled: deviceInfo.Enabled,
+			Name:    deviceInfo.Name,
+			Index:   i,
+		}
+		totpdevices = append(totpdevices, deviceData)
+	}
+	showTOTP := len(totpdevices) > 0 || state.Config.Base.EnableLocalTOTP
+
 	displayData := profilePageTemplateData{
-		Username:        assumedUser,
-		AuthUsername:    authUser,
-		Title:           "Keymaster User Profile",
-		ShowU2F:         showU2F,
-		JSSources:       JSSources,
-		ReadOnlyMsg:     readOnlyMsg,
-		UsersLink:       state.IsAdminUser(authUser),
-		RegisteredToken: devices}
+		Username:             assumedUser,
+		AuthUsername:         authUser,
+		Title:                "Keymaster User Profile",
+		ShowU2F:              showU2F,
+		JSSources:            JSSources,
+		ReadOnlyMsg:          readOnlyMsg,
+		UsersLink:            state.IsAdminUser(authUser),
+		RegisteredU2FToken:   u2fdevices,
+		ShowTOTP:             showTOTP,
+		RegisteredTOTPDevice: totpdevices,
+	}
 	logger.Debugf(1, "%v", displayData)
 
 	err = state.htmlTemplate.ExecuteTemplate(w, "userProfilePage", displayData)
@@ -1583,6 +1638,15 @@ func main() {
 	serviceMux.HandleFunc(clientConfHandlerPath, runtimeState.serveClientConfHandler)
 	serviceMux.HandleFunc(vipPushStartPath, runtimeState.vipPushStartHandler)
 	serviceMux.HandleFunc(vipPollCheckPath, runtimeState.VIPPollCheckHandler)
+	serviceMux.HandleFunc(totpGeneratNewPath, runtimeState.GenerateNewTOTP)
+	serviceMux.HandleFunc(totpValidateNewPath, runtimeState.validateNewTOTP)
+	serviceMux.HandleFunc(totpTokenManagementPath, runtimeState.totpTokenManagerHandler)
+	serviceMux.HandleFunc(totpVerifyHandlerPath, runtimeState.verifyTOTPHandler)
+	serviceMux.HandleFunc(totpAuthPath, runtimeState.TOTPAuthHandler)
+
+	if runtimeState.Config.Okta.Domain != "" {
+		serviceMux.HandleFunc(okta2FAauthPath, runtimeState.Okta2FAuthHandler)
+	}
 
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)
 
