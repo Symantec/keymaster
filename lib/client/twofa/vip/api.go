@@ -13,5 +13,13 @@ func DoVIPAuthenticate(
 	baseURL string,
 	userAgentString string,
 	logger log.DebugLogger) error {
-	return doVIPAuthenticate(client, baseURL, userAgentString, logger)
+	return doVIPAuthenticate(client, baseURL, "vip", userAgentString, logger)
+}
+
+func DoOktaAuthenticate(
+	client *http.Client,
+	baseURL string,
+	userAgentString string,
+	logger log.DebugLogger) error {
+	return doVIPAuthenticate(client, baseURL, "okta", userAgentString, logger)
 }
