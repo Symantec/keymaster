@@ -432,6 +432,9 @@ func (state *RuntimeState) writeHTML2FAAuthPage(w http.ResponseWriter, r *http.R
 	if state.Config.SymantecVIP.Enabled {
 		JSSources = append(JSSources, "/static/webui-2fa-symc-vip.js")
 	}
+	if state.Config.Okta.Enable2FA {
+		JSSources = append(JSSources, "/static/webui-2fa-okta-push.js")
+	}
 	displayData := secondFactorAuthTemplateData{
 		Title:            "Keymaster 2FA Auth",
 		JSSources:        JSSources,
@@ -1646,6 +1649,8 @@ func main() {
 
 	if runtimeState.Config.Okta.Domain != "" {
 		serviceMux.HandleFunc(okta2FAauthPath, runtimeState.Okta2FAuthHandler)
+		serviceMux.HandleFunc(oktaPushStartPath, runtimeState.oktaPushStartHandler)
+		serviceMux.HandleFunc(oktaPollCheckPath, runtimeState.oktaPollCheckHandler)
 	}
 
 	serviceMux.HandleFunc("/", runtimeState.defaultPathHandler)

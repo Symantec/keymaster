@@ -109,5 +109,103 @@ func (state *RuntimeState) Okta2FAuthHandler(w http.ResponseWriter, r *http.Requ
 		//fmt.Fprintf(w, "Success!")
 	}
 	return
+}
+
+///////////////////////////
+const oktaPushStartPath = "/api/v0/oktaPushStart"
+
+func (state *RuntimeState) oktaPushStartHandler(w http.ResponseWriter, r *http.Request) {
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
+	if !(r.Method == "POST" || r.Method == "GET") {
+		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		return
+	}
+	authUser, _, err := state.checkAuth(w, r, AuthTypeAny)
+	if err != nil {
+		logger.Debugf(1, "%v", err)
+		return
+	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+
+	// TODO: check if okta 2fa is enabled
+
+	oktaAuth, ok := state.passwordChecker.(*okta.PasswordAuthenticator)
+	if !ok {
+		logger.Println("password authenticator is not okta")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Apperent Misconfiguration")
+		return
+	}
+	pushResponse, err := oktaAuth.ValidateUserPush(authUser)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating OKTA push")
+		return
+	}
+	switch pushResponse {
+	case okta.PushResponseWaiting:
+		w.WriteHeader(http.StatusOK)
+		return
+	default:
+		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "Push already sent")
+		return
+	}
+}
+
+////////////////////////////
+const oktaPollCheckPath = "/api/v0/oktaPollCheck"
+
+func (state *RuntimeState) oktaPollCheckHandler(w http.ResponseWriter, r *http.Request) {
+	if state.sendFailureToClientIfLocked(w, r) {
+		return
+	}
+	if !(r.Method == "POST" || r.Method == "GET") {
+		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
+		return
+	}
+	authUser, currentAuthLevel, err := state.checkAuth(w, r, AuthTypeAny)
+	if err != nil {
+		logger.Debugf(1, "%v", err)
+		return
+	}
+	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
+
+	// TODO: check if okta 2fa is enabled
+
+	oktaAuth, ok := state.passwordChecker.(*okta.PasswordAuthenticator)
+	if !ok {
+		logger.Println("password authenticator is not okta")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Apperent Misconfiguration")
+		return
+	}
+	pushResponse, err := oktaAuth.ValidateUserPush(authUser)
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating OKTA push")
+		return
+	}
+	switch pushResponse {
+	case okta.PushResponseApproved:
+		// TODO: add notification
+		_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeOkta2FA)
+		if err != nil {
+			logger.Printf("Auth Cookie NOT found ? %s", err)
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	case okta.PushResponseWaiting:
+		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "Push already sent")
+		return
+	case okta.PushResponseRejected:
+		state.writeFailureResponse(w, r, http.StatusForbidden, "Failure when validating OKTA push")
+		return
+	default:
+		// TODO better message here!
+		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "Push already sent")
+		return
+	}
 
 }
