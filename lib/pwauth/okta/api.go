@@ -1,6 +1,7 @@
 package okta
 
 import (
+	"sync"
 	"time"
 
 	"github.com/Symantec/Dominator/lib/log"
@@ -15,6 +16,7 @@ type authCacheData struct {
 type PasswordAuthenticator struct {
 	authnURL   string
 	logger     log.Logger
+	Mutex      sync.Mutex
 	recentAuth map[string]authCacheData
 }
 

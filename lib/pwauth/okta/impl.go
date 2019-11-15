@@ -101,7 +101,9 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 		}
 		toCache := authCacheData{Response: response, Expires: expires}
 		//TODO add locking
+		pa.Mutex.Lock()
 		pa.recentAuth[username] = toCache
+		pa.Mutex.Unlock()
 		return true, nil
 	default:
 		return false, nil
@@ -109,14 +111,20 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 }
 
 func (pa *PasswordAuthenticator) validateUserOTP(authUser string, otpValue int) (bool, error) {
+	pa.Mutex.Lock()
 	userData, ok := pa.recentAuth[authUser]
+	pa.Mutex.Unlock()
 	if !ok {
 		return false, nil
 	}
 	//TODO: check for expiration
-	if userData.Expires.After(time.Now()) {
+	if userData.Expires.Before(time.Now()) {
+		pa.logger.Printf("expired Value!!! expires=%s", userData.Expires)
+		pa.Mutex.Lock()
 		delete(pa.recentAuth, authUser)
+		pa.Mutex.Unlock()
 		return false, nil
+
 	}
 
 	for _, factor := range userData.Response.Embedded.Factor {
