@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
+	//"strings"
 	"time"
 
 	"github.com/Symantec/keymaster/lib/instrumentedwriter"
@@ -15,6 +15,7 @@ import (
 const okta2FAauthPath = "/api/v0/okta2FAAuth"
 
 func (state *RuntimeState) Okta2FAuthHandler(w http.ResponseWriter, r *http.Request) {
+	logger.Printf("Top of Okta2FAuthHandler")
 	if state.sendFailureToClientIfLocked(w, r) {
 		return
 	}
@@ -30,6 +31,13 @@ func (state *RuntimeState) Okta2FAuthHandler(w http.ResponseWriter, r *http.Requ
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 
+	err = r.ParseForm()
+	if err != nil {
+		logger.Println(err)
+		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
+		return
+	}
+
 	var OTPString string
 	if val, ok := r.Form["OTP"]; ok {
 		if len(val) > 1 {
@@ -37,6 +45,7 @@ func (state *RuntimeState) Okta2FAuthHandler(w http.ResponseWriter, r *http.Requ
 			logger.Printf("Login with multiple OTP Values")
 			return
 		}
+		logger.Debugf(1, "okta handler otp Val=%+v", val)
 		OTPString = val[0]
 	}
 	otpValue, err := strconv.Atoi(OTPString)
@@ -85,16 +94,7 @@ func (state *RuntimeState) Okta2FAuthHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Now we send to the appropiate place
-	returnAcceptType := "application/json"
-	acceptHeader, ok := r.Header["Accept"]
-	if ok {
-		for _, acceptValue := range acceptHeader {
-			if strings.Contains(acceptValue, "text/html") {
-				logger.Debugf(1, "Got it  %+v", acceptValue)
-				returnAcceptType = "text/html"
-			}
-		}
-	}
+	returnAcceptType := getPreferredAcceptType(r)
 
 	// TODO: The cert backend should depend also on per user preferences.
 	loginResponse := proto.LoginResponse{Message: "success"} //CertAuthBackend: certBackends

@@ -67,7 +67,8 @@ type LdapConfig struct {
 }
 
 type OktaConfig struct {
-	Domain string `yaml:"domain"`
+	Domain    string `yaml:"domain"`
+	Enable2FA bool   `yaml:"enable_2fa"`
 }
 
 type UserInfoLDAPSource struct {
