@@ -21,7 +21,7 @@ In general, the relationship between components is shown here:
 ![keymaster-keymasterd interaction image](docs/keymaster-overview.png)
 
 Please see the
-[design document](https://docs.google.com/document/d/1AW3UROCJqTc3R4MLJXxmPUNS0OFNcsiQJ_Q4j--5tQE/pub) for more information.
+[design document](docs/Keymaster-DesignDoc.md) for more information.
 
 ## Getting Started
 Pre-build binaries (both RPM and DEB) can be found here: [releases page](https://github.com/Symantec/keymaster/releases) or you can build it from source (please see instructions below). The RPM and DEB packages contain both server and client binaries. The tarballs only contain the client binaries.

@@ -338,6 +338,11 @@ func (state *RuntimeState) totpTokenManagerHandler(w http.ResponseWriter, r *htt
 	return
 }
 
+// TODO: these consts need to be eventually turned into config settings
+const minSecsBetweenTOTPValidations = 2
+const numHoursForLocalTOTPRateLimitReset = 24
+const numFailedTOTPChecksForTimeoutIncrease = 5
+
 // This function is the one actually validating the TOTP values, returns err non nil
 // if there is a problem with the internal state. Returns true if the previous OTP success
 // for this user is NOT on this period AND one of the otp values matches the one of the user's
@@ -349,6 +354,28 @@ func (state *RuntimeState) validateUserTOTP(username string, OTPValue int, t tim
 		logger.Printf("validateUserTOTP: loading profile error: %v", err)
 		return false, err
 	}
+
+	state.totpLocalTateLimitMutex.Lock()
+	userRateLimit := state.totpLocalRateLimit[username]
+	if userRateLimit.lastCheckTime.
+		Add(time.Second * time.Duration(minSecsBetweenTOTPValidations)).
+		After(time.Now()) {
+		state.totpLocalTateLimitMutex.Unlock()
+		return false, err
+	}
+	userRateLimit.lastCheckTime = time.Now()
+	state.totpLocalRateLimit[username] = userRateLimit
+	state.totpLocalTateLimitMutex.Unlock()
+
+	if userRateLimit.lockoutExpirationTime.After(time.Now()) {
+		return false, err
+	}
+	if userRateLimit.lastFailTime.
+		Add(time.Duration(numHoursForLocalTOTPRateLimitReset) * time.Hour).Before(time.Now()) {
+		userRateLimit.failCount = 0
+		userRateLimit.lockoutExpirationTime = time.Now()
+	}
+
 	if fromCache {
 		//TODO we what do do on disconnected? I think we should allow it to proceed, but
 		// enable a blacklist so that ip addresses/users have a limit of say 5/min?
@@ -388,9 +415,22 @@ func (state *RuntimeState) validateUserTOTP(username string, OTPValue int, t tim
 				return false, err
 			}
 		}
-
+		userRateLimit.failCount = 0
+		userRateLimit.lockoutExpirationTime = time.Now()
+		state.totpLocalTateLimitMutex.Lock()
+		state.totpLocalRateLimit[username] = userRateLimit
+		state.totpLocalTateLimitMutex.Unlock()
 		return true, nil
 	}
+	userRateLimit.failCount++
+	//every 5th bad try, make it wait an extra hour
+	if userRateLimit.failCount%numFailedTOTPChecksForTimeoutIncrease == 0 {
+		userRateLimit.lockoutExpirationTime.Add(time.Duration(3600) * time.Second)
+	}
+	userRateLimit.lastFailTime = time.Now()
+	state.totpLocalTateLimitMutex.Lock()
+	state.totpLocalRateLimit[username] = userRateLimit
+	state.totpLocalTateLimitMutex.Unlock()
 
 	return false, nil
 }
