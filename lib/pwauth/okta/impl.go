@@ -228,11 +228,6 @@ func (pa *PasswordAuthenticator) validateUserPush(authUser string) (PushResponse
 			return PushResponseRejected, err
 		}
 		defer resp.Body.Close()
-		/*
-			if resp.StatusCode == http.StatusForbidden {
-				return false, nil
-			}
-		*/
 
 		if resp.StatusCode != http.StatusOK {
 			return PushResponseRejected, fmt.Errorf("bad status: %s", resp.Status)
