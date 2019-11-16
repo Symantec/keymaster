@@ -48,6 +48,21 @@ func factorAuthnHandler(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	// For now we do TOTP only verifyTOTPFactorDataType
+	var otpData verifyTOTPFactorDataType
+	decoder := json.NewDecoder(req.Body)
+	if err := decoder.Decode(&otpData); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	switch otpData.StateToken {
+	case "valid-otp":
+		writeStatus(w, "SUCCESS")
+	default:
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+
+	}
 
 }
 
@@ -211,5 +226,75 @@ func TestMfaOTPFailNoValidDevices(t *testing.T) {
 	}
 	if valid {
 		t.Fatal("should not have succeeded with expired user")
+	}
+}
+
+func TestMfaOTPSuccess(t *testing.T) {
+	pa := &PasswordAuthenticator{authnURL: authnURL,
+		recentAuth: make(map[string]authCacheData),
+		logger:     testlogger.New(t),
+	}
+	response := PrimaryResponseType{
+		StateToken: "valid-otp",
+		Status:     "MFA_REQUIRED",
+		Embedded: EmbeddedDataResponseType{
+			Factor: []MFAFactorsType{
+				MFAFactorsType{
+					Id:         "someid",
+					FactorType: "token:software:totp",
+					VendorName: "OKTA"},
+			}},
+	}
+	expiredUserCachedData := authCacheData{Expires: time.Now().Add(60 * time.Second),
+		Response: response,
+	}
+	goodOTPUser := "goodOTPUser"
+	pa.recentAuth[goodOTPUser] = expiredUserCachedData
+	valid, err := pa.ValidateUserOTP(goodOTPUser, 123456)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !valid {
+		t.Fatal("should have succeeded with good  user")
+	}
+}
+
+func TestMfaPushNonExisting(t *testing.T) {
+	setupServer()
+	/*
+		pa := &PasswordAuthenticator{authnURL: authnURL,
+			recentAuth: make(map[string]authCacheData),
+			logger:     testlogger.New(t),
+		}
+	*/
+	pa, err := NewPublic("somedomain", testlogger.New(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pa.authnURL = authnURL
+	pushResult, err := pa.ValidateUserPush("someuser")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pushResult != PushResponseRejected {
+		t.Fatal("should not have succeeded with unknown user")
+	}
+}
+
+func TestMfaPushExpired(t *testing.T) {
+	setupServer()
+	pa := &PasswordAuthenticator{authnURL: authnURL,
+		recentAuth: make(map[string]authCacheData),
+		logger:     testlogger.New(t),
+	}
+	expiredUserCachedData := authCacheData{Expires: time.Now().Add(-3 * time.Second)}
+	expiredUser := "expiredUser"
+	pa.recentAuth[expiredUser] = expiredUserCachedData
+	pushResult, err := pa.ValidateUserPush(expiredUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pushResult != PushResponseRejected {
+		t.Fatal("should not have succeeded with unknown user")
 	}
 }
