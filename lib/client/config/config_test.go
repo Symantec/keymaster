@@ -1,9 +1,15 @@
 package config
 
 import (
+	"fmt"
 	"io/ioutil"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/Symantec/Dominator/lib/log/testlogger"
 )
 
 const simpleValidConfigFile = `base:
@@ -83,4 +89,32 @@ func TestLoadVerifyConfigFileFailNoSuchFile(t *testing.T) {
 		t.Fatal("Success on loading Nonexistent File!")
 	}
 
+}
+
+func TestGetConfigFromHost(t *testing.T) {
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "%s", simpleValidConfigFile)
+	}))
+	defer ts.Close()
+	tsURL := ts.URL
+	hostname := strings.TrimPrefix(tsURL, "https://")
+
+	tmpfile, err := ioutil.TempFile("", "test_getConfigFromHost_")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer os.Remove(tmpfile.Name()) // clean up
+
+	err = GetConfigFromHost(
+		tmpfile.Name(),
+		hostname,
+		ts.Client(),
+		testlogger.New(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//server.netClient = ts.Client()
+	//server.staticConfig.OpenID.TokenURL = ts.URL
 }

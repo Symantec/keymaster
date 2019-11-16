@@ -1,10 +1,9 @@
 package config
 
 import (
-	"crypto/x509"
+	"net/http"
 
 	"github.com/Symantec/Dominator/lib/log"
-	"github.com/Symantec/keymaster/lib/client/net"
 )
 
 type BaseConfig struct {
@@ -31,8 +30,7 @@ func LoadVerifyConfigFile(configFilename string) (AppConfigFile, error) {
 func GetConfigFromHost(
 	configFilename string,
 	hostname string,
-	rootCAs *x509.CertPool,
-	dialer net.Dialer,
+	client *http.Client,
 	logger log.Logger) error {
-	return getConfigFromHost(configFilename, hostname, rootCAs, dialer, logger)
+	return getConfigFromHost(configFilename, hostname, client, logger)
 }
