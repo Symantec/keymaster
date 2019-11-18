@@ -57,6 +57,7 @@ type baseConfig struct {
 	AutomationUserGroups         []string `yaml:"automation_user_groups"`
 	AutomationUsers              []string `yaml:"automation_users"`
 	DisableUsernameNormalization bool     `yaml:"disable_username_normalization"`
+	EnableLocalTOTP              bool     `yaml:"enable_local_totp"`
 }
 
 type LdapConfig struct {
@@ -149,7 +150,8 @@ func (state *RuntimeState) loadTemplates() (err error) {
 		}
 	}
 	/// Load the oter built in templates
-	extraTemplates := []string{footerTemplateText, loginFormText, secondFactorAuthFormText, profileHTML, usersHTML, headerTemplateText}
+	extraTemplates := []string{footerTemplateText, loginFormText, secondFactorAuthFormText,
+		profileHTML, usersHTML, headerTemplateText, newTOTPHTML}
 	for _, templateString := range extraTemplates {
 		_, err = state.htmlTemplate.Parse(templateString)
 		if err != nil {
@@ -204,6 +206,7 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 	runtimeState.SignerIsReady = make(chan bool, 1)
 	runtimeState.localAuthData = make(map[string]localUserData)
 	runtimeState.vipPushCookie = make(map[string]pushPollTransaction)
+	runtimeState.totpLocalRateLimit = make(map[string]totpRateLimitInfo)
 
 	//verify config
 	if len(runtimeState.Config.Base.HostIdentity) > 0 {
