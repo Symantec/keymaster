@@ -1350,7 +1350,7 @@ func (state *RuntimeState) profileHandler(w http.ResponseWriter, r *http.Request
 		}
 		totpdevices = append(totpdevices, deviceData)
 	}
-	showTOTP := len(totpdevices) > 0 || state.Config.Base.EnableLocalTOTP
+	showTOTP := state.Config.Base.EnableLocalTOTP
 
 	displayData := profilePageTemplateData{
 		Username:             assumedUser,
