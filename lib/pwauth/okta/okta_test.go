@@ -43,6 +43,19 @@ func authnHandler(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+// From: https://developer.okta.com/docs/reference/api/authn/#verify-totp-factor
+const invalidOTPStringFromDoc = `{
+  "errorCode": "E0000068",
+  "errorSummary": "Invalid Passcode/Answer",
+  "errorLink": "E0000068",
+  "errorId": "oaei_IfXcpnTHit_YEKGInpFw",
+  "errorCauses": [
+    {
+      "errorSummary": "Your passcode doesn't match our records. Please try again."
+    }
+  ]
+}`
+
 func factorAuthnHandler(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -58,6 +71,22 @@ func factorAuthnHandler(w http.ResponseWriter, req *http.Request) {
 	switch otpData.StateToken {
 	case "valid-otp":
 		writeStatus(w, "SUCCESS")
+		return
+	case "invalid-otp":
+		w.WriteHeader(http.StatusForbidden)
+		w.Write([]byte(invalidOTPStringFromDoc))
+		return
+	case "push-send-waiting":
+		response := PushResponseType{
+			Status:       "MFA_CHALLENGE",
+			FactorResult: "WAITING",
+		}
+		encoder := json.NewEncoder(w)
+
+		if err := encoder.Encode(response); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+
 	default:
 		w.WriteHeader(http.StatusUnauthorized)
 		return
@@ -225,8 +254,47 @@ func TestMfaOTPFailNoValidDevices(t *testing.T) {
 		t.Fatal(err)
 	}
 	if valid {
-		t.Fatal("should not have succeeded with expired user")
+		t.Fatal("should not have succeeded with no valid mfa")
 	}
+	//lets also test push at that same time
+	pushResponse, err := pa.ValidateUserPush(noOTPCredsUser)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pushResponse != PushResponseRejected {
+		t.Fatal("should not have succeeded with user with no mfa user")
+	}
+}
+
+func TestMFAOTPFailInvalidOTP(t *testing.T) {
+	pa := &PasswordAuthenticator{authnURL: authnURL,
+		recentAuth: make(map[string]authCacheData),
+		logger:     testlogger.New(t),
+	}
+	response := PrimaryResponseType{
+		StateToken: "invalid-otp",
+		Status:     "MFA_REQUIRED",
+		Embedded: EmbeddedDataResponseType{
+			Factor: []MFAFactorsType{
+				MFAFactorsType{
+					Id:         "someid",
+					FactorType: "token:software:totp",
+					VendorName: "OKTA"},
+			}},
+	}
+	userCachedData := authCacheData{Expires: time.Now().Add(60 * time.Second),
+		Response: response,
+	}
+	goodOTPUser := "goodOTPUser"
+	pa.recentAuth[goodOTPUser] = userCachedData
+	valid, err := pa.ValidateUserOTP(goodOTPUser, 123456)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if valid {
+		t.Fatal("should NOT have succeeded with invalid-otp")
+	}
+
 }
 
 func TestMfaOTPSuccess(t *testing.T) {
@@ -296,5 +364,37 @@ func TestMfaPushExpired(t *testing.T) {
 	}
 	if pushResult != PushResponseRejected {
 		t.Fatal("should not have succeeded with unknown user")
+	}
+}
+
+func TestMfaPushWaiting(t *testing.T) {
+	setupServer()
+	pa := &PasswordAuthenticator{authnURL: authnURL,
+		recentAuth: make(map[string]authCacheData),
+		logger:     testlogger.New(t),
+	}
+	response := PrimaryResponseType{
+		StateToken: "push-send-waiting",
+		Status:     "MFA_REQUIRED",
+		Embedded: EmbeddedDataResponseType{
+			Factor: []MFAFactorsType{
+				MFAFactorsType{
+					Id:         "someid",
+					FactorType: "push",
+					VendorName: "OKTA"},
+			}},
+	}
+	needsPushCacheData := authCacheData{
+		Expires:  time.Now().Add(60 * time.Second),
+		Response: response,
+	}
+	pushUserWaiting := "puhsUserWaiting"
+	pa.recentAuth[pushUserWaiting] = needsPushCacheData
+	pushResult, err := pa.ValidateUserPush(pushUserWaiting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pushResult != PushResponseWaiting {
+		t.Fatal("Was supposed to be waiting")
 	}
 }
