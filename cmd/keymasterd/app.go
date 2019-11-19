@@ -37,6 +37,7 @@ import (
 	"github.com/Symantec/keymaster/lib/certgen"
 	"github.com/Symantec/keymaster/lib/instrumentedwriter"
 	"github.com/Symantec/keymaster/lib/pwauth"
+	"github.com/Symantec/keymaster/lib/pwauth/okta"
 	"github.com/Symantec/keymaster/lib/webapi/v0/proto"
 	"github.com/Symantec/keymaster/proto/eventmon"
 	"github.com/Symantec/tricorder/go/healthserver"
@@ -343,9 +344,15 @@ func checkUserPassword(username string, password string, config AppConfigFile, p
 		if err != nil {
 			return false, err
 		}
+		// TODO: Replace these if's by a type switch
 		if isLDAP {
 			metricLogExternalServiceDuration("ldap", time.Since(start))
 		}
+		_, isOktaPwAuth := passwordChecker.(*okta.PasswordAuthenticator)
+		if isOktaPwAuth {
+			metricLogExternalServiceDuration("okta-passwd", time.Since(start))
+		}
+
 		logger.Debugf(3, "pwdChaker output = %d", valid)
 		metricLogAuthOperation(clientType, "password", valid)
 		return valid, nil
