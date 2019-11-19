@@ -3,8 +3,6 @@ package main
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
-	//"strings"
 	"time"
 
 	"github.com/Symantec/keymaster/lib/instrumentedwriter"
@@ -16,48 +14,16 @@ const okta2FAauthPath = "/api/v0/okta2FAAuth"
 
 func (state *RuntimeState) Okta2FAuthHandler(w http.ResponseWriter, r *http.Request) {
 	logger.Printf("Top of Okta2FAuthHandler")
-	if state.sendFailureToClientIfLocked(w, r) {
-		return
-	}
-	if r.Method != "POST" {
-		state.writeFailureResponse(w, r, http.StatusMethodNotAllowed, "")
-		return
-	}
-	//authUser, authType, err := state.checkAuth(w, r, AuthTypeAny)
-	authUser, currentAuthLevel, err := state.checkAuth(w, r, AuthTypeAny)
+	authUser, currentAuthLevel, otpValue, err := state.commonTOTPPostHandler(w, r, AuthTypeAny)
 	if err != nil {
-		logger.Debugf(1, "%v", err)
-		return
-	}
-	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-
-	err = r.ParseForm()
-	if err != nil {
-		logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing form")
-		return
-	}
-
-	var OTPString string
-	if val, ok := r.Form["OTP"]; ok {
-		if len(val) > 1 {
-			state.writeFailureResponse(w, r, http.StatusBadRequest, "Just one OTP Value allowed")
-			logger.Printf("Login with multiple OTP Values")
-			return
-		}
-		logger.Debugf(1, "okta handler otp Val=%+v", val)
-		OTPString = val[0]
-	}
-	otpValue, err := strconv.Atoi(OTPString)
-	if err != nil {
-		logger.Println(err)
-		state.writeFailureResponse(w, r, http.StatusBadRequest, "Error parsing OTP value")
+		//Common handler handles returning the right error response to caller
+		logger.Printf("Error in common Handler")
 		return
 	}
 	oktaAuth, ok := state.passwordChecker.(*okta.PasswordAuthenticator)
 	if !ok {
 		logger.Println("password authenticator is not okta")
-		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Apperent Misconfiguration")
+		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Apparent Misconfiguration")
 		return
 	}
 
@@ -70,9 +36,7 @@ func (state *RuntimeState) Okta2FAuthHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	metricLogExternalServiceDuration("okta-otp", time.Since(start))
-
-	//
-	//metricLogAuthOperation(getClientType(r), proto.AuthTypeSymantecVIP, valid)
+	metricLogAuthOperation(getClientType(r), proto.AuthTypeOkta2FA, valid)
 
 	if !valid {
 		logger.Printf("Invalid OTP value login for %s", authUser)
