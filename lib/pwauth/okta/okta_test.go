@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Symantec/Dominator/lib/log/testlogger"
+	"github.com/Symantec/keymaster/lib/simplestorage/memstore"
 )
 
 var authnURL string
@@ -86,6 +87,24 @@ func factorAuthnHandler(w http.ResponseWriter, req *http.Request) {
 		if err := encoder.Encode(response); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
+		return
+	case "push-send-accept":
+		writeStatus(w, "SUCCESS")
+		return
+	case "push-send-timeout":
+		response := PushResponseType{
+			Status:       "MFA_CHALLENGE",
+			FactorResult: "TIMEOUT",
+		}
+		encoder := json.NewEncoder(w)
+
+		if err := encoder.Encode(response); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		return
+	case "push-send-invalidWrapper":
+		writeStatus(w, "INVALID")
+		return
 
 	default:
 		w.WriteHeader(http.StatusUnauthorized)
@@ -99,7 +118,7 @@ func setupServer() {
 	if authnURL != "" {
 		return
 	}
-	if listener, err := net.Listen("tcp", ""); err != nil {
+	if listener, err := net.Listen("tcp", "127.0.0.1:"); err != nil {
 		panic(err)
 	} else {
 		addr := listener.Addr().String()
@@ -125,6 +144,24 @@ func writeStatus(w http.ResponseWriter, status string) {
 	response := PrimaryResponseType{Status: status}
 	if err := encoder.Encode(response); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
+	}
+}
+
+func TestBaseAPI(t *testing.T) {
+	setupServer()
+	pa, err := NewPublic("somedomain", testlogger.New(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pa.authnURL = authnURL
+	_, err = pa.ValidateUserPush("someuser")
+	if err != nil {
+		t.Fatal(err)
+	}
+	memStore := memstore.New()
+	err = pa.UpdateStorage(memStore)
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -329,17 +366,11 @@ func TestMfaOTPSuccess(t *testing.T) {
 
 func TestMfaPushNonExisting(t *testing.T) {
 	setupServer()
-	/*
-		pa := &PasswordAuthenticator{authnURL: authnURL,
-			recentAuth: make(map[string]authCacheData),
-			logger:     testlogger.New(t),
-		}
-	*/
-	pa, err := NewPublic("somedomain", testlogger.New(t))
-	if err != nil {
-		t.Fatal(err)
+
+	pa := &PasswordAuthenticator{authnURL: authnURL,
+		recentAuth: make(map[string]authCacheData),
+		logger:     testlogger.New(t),
 	}
-	pa.authnURL = authnURL
 	pushResult, err := pa.ValidateUserPush("someuser")
 	if err != nil {
 		t.Fatal(err)
@@ -396,5 +427,101 @@ func TestMfaPushWaiting(t *testing.T) {
 	}
 	if pushResult != PushResponseWaiting {
 		t.Fatal("Was supposed to be waiting")
+	}
+}
+
+func TestMfaPushAccept(t *testing.T) {
+	setupServer()
+	pa := &PasswordAuthenticator{authnURL: authnURL,
+		recentAuth: make(map[string]authCacheData),
+		logger:     testlogger.New(t),
+	}
+	response := PrimaryResponseType{
+		StateToken: "push-send-accept",
+		Status:     "MFA_REQUIRED",
+		Embedded: EmbeddedDataResponseType{
+			Factor: []MFAFactorsType{
+				MFAFactorsType{
+					Id:         "someid",
+					FactorType: "push",
+					VendorName: "OKTA"},
+			}},
+	}
+	userCacheData := authCacheData{
+		Expires:  time.Now().Add(60 * time.Second),
+		Response: response,
+	}
+	username := "puhsUserAccept"
+	pa.recentAuth[username] = userCacheData
+	pushResult, err := pa.ValidateUserPush(username)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pushResult != PushResponseApproved {
+		t.Fatal("Was supposed to be approved")
+	}
+}
+
+func TestMfaPushTimeout(t *testing.T) {
+	setupServer()
+	pa := &PasswordAuthenticator{authnURL: authnURL,
+		recentAuth: make(map[string]authCacheData),
+		logger:     testlogger.New(t),
+	}
+	response := PrimaryResponseType{
+		StateToken: "push-send-timeout",
+		Status:     "MFA_REQUIRED",
+		Embedded: EmbeddedDataResponseType{
+			Factor: []MFAFactorsType{
+				MFAFactorsType{
+					Id:         "someid",
+					FactorType: "push",
+					VendorName: "OKTA"},
+			}},
+	}
+	userCacheData := authCacheData{
+		Expires:  time.Now().Add(60 * time.Second),
+		Response: response,
+	}
+	username := "puhsUserTimeout"
+	pa.recentAuth[username] = userCacheData
+	pushResult, err := pa.ValidateUserPush(username)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pushResult != PushResonseTimeout {
+		t.Fatal("Was supposed to be timeout")
+	}
+}
+
+func TestMfaPushInvalidWrapper(t *testing.T) {
+	setupServer()
+	pa := &PasswordAuthenticator{authnURL: authnURL,
+		recentAuth: make(map[string]authCacheData),
+		logger:     testlogger.New(t),
+	}
+	response := PrimaryResponseType{
+		StateToken: "push-send-invalidWrapper",
+		Status:     "MFA_REQUIRED",
+		Embedded: EmbeddedDataResponseType{
+			Factor: []MFAFactorsType{
+				MFAFactorsType{
+					Id:         "someid",
+					FactorType: "push",
+					VendorName: "OKTA"},
+			}},
+	}
+	userCacheData := authCacheData{
+		Expires:  time.Now().Add(60 * time.Second),
+		Response: response,
+	}
+	username := "puhsUserTimeout"
+	pa.recentAuth[username] = userCacheData
+	pushResult, err := pa.ValidateUserPush(username)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pushResult != PushResponseRejected {
+		t.Fatal("Was supposed to be rejected")
 	}
 }

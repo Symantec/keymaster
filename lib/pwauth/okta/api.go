@@ -29,10 +29,6 @@ const (
 	PushResonseTimeout
 )
 
-func (d PushResponse) String() string {
-	return [...]string{"Rejected", "Approved", "Waiting", "Timeout"}[d]
-}
-
 // New creates a new PasswordAuthenticator using Okta as the backend. The Okta
 // Public Application API is used, so rate limits apply.
 // The Okta domain to check must be given by oktaDomain.
