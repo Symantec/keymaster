@@ -169,12 +169,12 @@ func init() {
 		config, _ := getTLSconfig()
 		s.Listener = tls.NewListener(s.Listener, config)
 	}
-	go server.ListenAndServe(":10640", secureConn)
+	go server.ListenAndServe("127.0.0.1:10640", secureConn)
 
 	//we also make a simple tls listener
 	//
 	config, _ := getTLSconfig()
-	ln, _ := tls.Listen("tcp", ":10639", config)
+	ln, _ := tls.Listen("tcp", "127.0.0.1:10639", config)
 	go func(ln net.Listener) {
 		for {
 			conn, err := ln.Accept()
