@@ -143,6 +143,7 @@ func (state *RuntimeState) oktaPollCheckHandler(w http.ResponseWriter, r *http.R
 	switch pushResponse {
 	case okta.PushResponseApproved:
 		// TODO: add notification on eventmond
+		metricLogAuthOperation(getClientType(r), proto.AuthTypeOkta2FA, true)
 		_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeOkta2FA)
 		if err != nil {
 			logger.Printf("Auth Cookie NOT found ? %s", err)
@@ -155,6 +156,7 @@ func (state *RuntimeState) oktaPollCheckHandler(w http.ResponseWriter, r *http.R
 		state.writeFailureResponse(w, r, http.StatusPreconditionFailed, "Push already sent")
 		return
 	case okta.PushResponseRejected:
+		metricLogAuthOperation(getClientType(r), proto.AuthTypeOkta2FA, false)
 		state.writeFailureResponse(w, r, http.StatusForbidden, "Failure when validating OKTA push")
 		return
 	default:
