@@ -45,8 +45,6 @@ func oktaTestAuthnHandler(w http.ResponseWriter, req *http.Request) {
 		oktaTestWriteStatus(w, "SUCCESS")
 		return
 	case "needs-2FA":
-		//oktaTestWriteStatus(w, "MFA_REQUIRED")
-
 		response := okta.PrimaryResponseType{
 			StateToken:      "valid-otp",
 			ExpiresAtString: "2035-11-03T10:15:57.000Z",
@@ -57,6 +55,11 @@ func oktaTestAuthnHandler(w http.ResponseWriter, req *http.Request) {
 						Id:         "someid",
 						FactorType: "token:software:totp",
 						VendorName: "OKTA"},
+					okta.MFAFactorsType{
+						Id:         "anotherid",
+						FactorType: "push",
+						VendorName: "OKTA",
+					},
 				}},
 		}
 		encoder := json.NewEncoder(w)
@@ -64,8 +67,25 @@ func oktaTestAuthnHandler(w http.ResponseWriter, req *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 		return
-	case "password-expired":
-		oktaTestWriteStatus(w, "PASSWORD_EXPIRED")
+	case "needs-2FA-waiting":
+		response := okta.PrimaryResponseType{
+			StateToken:      "push-send-waiting",
+			ExpiresAtString: "2035-11-03T10:15:57.000Z",
+			Status:          "MFA_REQUIRED",
+			Embedded: okta.EmbeddedDataResponseType{
+				Factor: []okta.MFAFactorsType{
+					okta.MFAFactorsType{
+						Id:         "anotherid",
+						FactorType: "push",
+						VendorName: "OKTA",
+					},
+				}},
+		}
+		encoder := json.NewEncoder(w)
+		if err := encoder.Encode(response); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		//oktaTestWriteStatus(w, "PASSWORD_EXPIRED")
 		return
 	default:
 		w.WriteHeader(http.StatusUnauthorized)
@@ -168,30 +188,11 @@ func TestOkta2FAuthHandlerSuccess(t *testing.T) {
 
 	//Now we can acutally all the otp call
 	// End of Setup
-	/*
-		authCookie, totpSecret, err := setupTestStateWithTOTPSecret(t, state, AuthTypePassword)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		otpValue, err := totp.GenerateCode(totpSecret, time.Now())
-		if err != nil {
-			t.Fatal(err)
-		}
-	*/
-
-	req, err := http.NewRequest("GET", okta2FAauthPath, nil)
-	if err != nil {
-		t.Fatal(err)
-		//return nil, err
-	}
 	cookieVal, err := state.setNewAuthCookie(nil, "a-user", AuthTypeU2F)
 	if err != nil {
 		t.Fatal(err)
 	}
 	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
-	req.AddCookie(&authCookie)
-
 	otpValue := "123456" //does not matter
 	data := url.Values{}
 	data.Set("OTP", otpValue)
@@ -203,6 +204,73 @@ func TestOkta2FAuthHandlerSuccess(t *testing.T) {
 	verifyReq.Header.Set("Content-Type", "application/x-www-form-urlencoded; param=value")
 	verifyReq.AddCookie(&authCookie)
 	_, err = checkRequestHandlerCode(verifyReq, state.Okta2FAuthHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	//now we verifyPoll Success
+	verifyPushReq, err := http.NewRequest("POST", oktaPollCheckPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifyPushReq.AddCookie(&authCookie)
+	_, err = checkRequestHandlerCode(verifyPushReq, state.oktaPollCheckHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOkta2FAPushStartAndWait(t *testing.T) {
+
+	state, passwdFile, err := setupValidRuntimeStateSigner()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(passwdFile.Name()) // clean up
+
+	setupTestOtkaServer()
+	pa, err := okta.NewPublic("some-domain", testlogger.New(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = pa.SetAuthnURL(oktaTestAuthnURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.passwordChecker = pa
+
+	ok, err := pa.PasswordAuthenticate("a-user", []byte("needs-2FA-waiting"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("should have authenticated")
+	}
+
+	//Now we can acutally all the otp call
+	// End of Setup
+	cookieVal, err := state.setNewAuthCookie(nil, "a-user", AuthTypeU2F)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authCookie := http.Cookie{Name: authCookieName, Value: cookieVal}
+
+	//now we verifyPoll Success
+	startPushReq, err := http.NewRequest("POST", oktaPushStartPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	startPushReq.AddCookie(&authCookie)
+	_, err = checkRequestHandlerCode(startPushReq, state.oktaPushStartHandler, http.StatusOK)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pushWaitReq, err := http.NewRequest("POST", oktaPollCheckPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushWaitReq.AddCookie(&authCookie)
+	_, err = checkRequestHandlerCode(pushWaitReq, state.oktaPollCheckHandler, http.StatusPreconditionFailed)
 	if err != nil {
 		t.Fatal(err)
 	}

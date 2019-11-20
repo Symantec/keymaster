@@ -163,6 +163,10 @@ func TestBaseAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	err = pa.SetAuthnURL("http://localhost.locanet")
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestNonExistantUser(t *testing.T) {
