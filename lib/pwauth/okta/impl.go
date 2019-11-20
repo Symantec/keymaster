@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/Symantec/Dominator/lib/log"
-	//"io/ioutil"
 	"net/http"
 	"time"
 )
@@ -101,7 +100,8 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 	if err := decoder.Decode(&response); err != nil {
 		return false, err
 	}
-	pa.logger.Printf("oktaresponse=%+v", response)
+	// TODO: change logger to debug capable
+	//pa.logger.Printf("oktaresponse=%+v", response)
 	switch response.Status {
 	case "SUCCESS", "MFA_REQUIRED":
 		expires, err := time.Parse(time.RFC3339, response.ExpiresAtString)
@@ -109,7 +109,6 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 			expires = time.Now().Add(time.Second * 60)
 		}
 		toCache := authCacheData{Response: response, Expires: expires}
-		//TODO add locking
 		pa.Mutex.Lock()
 		pa.recentAuth[username] = toCache
 		pa.Mutex.Unlock()
@@ -119,34 +118,44 @@ func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 	}
 }
 
-func (pa *PasswordAuthenticator) validateUserOTP(authUser string, otpValue int) (bool, error) {
+func (pa *PasswordAuthenticator) getValidUserResponse(authUser string) (*PrimaryResponseType, error) {
 	pa.Mutex.Lock()
 	userData, ok := pa.recentAuth[authUser]
 	pa.Mutex.Unlock()
 	if !ok {
-		return false, nil
+		return nil, nil
 	}
-	//TODO: check for expiration
 	if userData.Expires.Before(time.Now()) {
-		pa.logger.Printf("expired Value!!! expires=%s", userData.Expires)
 		pa.Mutex.Lock()
 		delete(pa.recentAuth, authUser)
 		pa.Mutex.Unlock()
-		return false, nil
+		return nil, nil
 
 	}
+	return &userData.Response, nil
+}
 
-	for _, factor := range userData.Response.Embedded.Factor {
+func (pa *PasswordAuthenticator) validateUserOTP(authUser string, otpValue int) (bool, error) {
+	userResponse, err := pa.getValidUserResponse(authUser)
+	if err != nil {
+		return false, err
+	}
+	if userResponse == nil {
+		return false, nil
+	}
+
+	for _, factor := range userResponse.Embedded.Factor {
 		if !(factor.FactorType == "token:software:totp" && factor.VendorName == "OKTA") {
 			continue
 		}
 		authURL := fmt.Sprintf(pa.authnURL+factorsVerifyPathExtra, factor.Id)
 		verifyStruct := VerifyTOTPFactorDataType{
-			StateToken: userData.Response.StateToken,
+			StateToken: userResponse.StateToken,
 			PassCode:   fmt.Sprintf("%06d", otpValue),
 		}
-		pa.logger.Printf("AuthURL=%s", authURL)
-		pa.logger.Printf("totpVerifyStruct=%+v", verifyStruct)
+		// TODO: change logger type to allow debug logs
+		// pa.logger.Printf("AuthURL=%s", authURL)
+		// pa.logger.Printf("totpVerifyStruct=%+v", verifyStruct)
 		body := &bytes.Buffer{}
 		encoder := json.NewEncoder(body)
 		encoder.SetIndent("", "    ") // Make life easier for debugging.
@@ -175,7 +184,6 @@ func (pa *PasswordAuthenticator) validateUserOTP(authUser string, otpValue int) 
 		if err := decoder.Decode(&response); err != nil {
 			return false, err
 		}
-		pa.logger.Printf("oktaresponse=%+v", response)
 		if response.Status != "SUCCESS" {
 			return false, nil
 		}
@@ -186,31 +194,24 @@ func (pa *PasswordAuthenticator) validateUserOTP(authUser string, otpValue int) 
 }
 
 func (pa *PasswordAuthenticator) validateUserPush(authUser string) (PushResponse, error) {
-	pa.Mutex.Lock()
-	userData, ok := pa.recentAuth[authUser]
-	pa.Mutex.Unlock()
-	if !ok {
+	userResponse, err := pa.getValidUserResponse(authUser)
+	if err != nil {
+		return PushResponseRejected, err
+	}
+	if userResponse == nil {
 		return PushResponseRejected, nil
 	}
-	//TODO: check for expiration
-	if userData.Expires.Before(time.Now()) {
-		pa.logger.Printf("expired Value!!! expires=%s", userData.Expires)
-		pa.Mutex.Lock()
-		delete(pa.recentAuth, authUser)
-		pa.Mutex.Unlock()
-		return PushResponseRejected, nil
-
-	}
-	for _, factor := range userData.Response.Embedded.Factor {
+	for _, factor := range userResponse.Embedded.Factor {
 		if !(factor.FactorType == "push" && factor.VendorName == "OKTA") {
 			continue
 		}
 		authURL := fmt.Sprintf(pa.authnURL+factorsVerifyPathExtra, factor.Id)
 		verifyStruct := VerifyTOTPFactorDataType{
-			StateToken: userData.Response.StateToken,
+			StateToken: userResponse.StateToken,
 		}
-		pa.logger.Printf("AuthURL=%s", authURL)
-		pa.logger.Printf("totpVerifyStruct=%+v", verifyStruct)
+		// TODO update logger type to allow debug logs
+		// pa.logger.Printf("AuthURL=%s", authURL)
+		// pa.logger.Printf("totpVerifyStruct=%+v", verifyStruct)
 		body := &bytes.Buffer{}
 		encoder := json.NewEncoder(body)
 		encoder.SetIndent("", "    ") // Make life easier for debugging.
@@ -228,7 +229,6 @@ func (pa *PasswordAuthenticator) validateUserPush(authUser string) (PushResponse
 			return PushResponseRejected, err
 		}
 		defer resp.Body.Close()
-
 		if resp.StatusCode != http.StatusOK {
 			return PushResponseRejected, fmt.Errorf("bad status: %s", resp.Status)
 		}
@@ -237,7 +237,6 @@ func (pa *PasswordAuthenticator) validateUserPush(authUser string) (PushResponse
 		if err := decoder.Decode(&response); err != nil {
 			return PushResponseRejected, err
 		}
-		pa.logger.Printf("oktaresponse=%+v", response)
 		switch response.Status {
 		case "SUCCESS":
 			return PushResponseApproved, nil
@@ -247,7 +246,6 @@ func (pa *PasswordAuthenticator) validateUserPush(authUser string) (PushResponse
 			pa.logger.Printf("invalid status")
 			return PushResponseRejected, nil
 		}
-
 		switch response.FactorResult {
 		case "WAITING":
 			return PushResponseWaiting, nil

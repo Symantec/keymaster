@@ -26,7 +26,6 @@ func (state *RuntimeState) Okta2FAuthHandler(w http.ResponseWriter, r *http.Requ
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Apparent Misconfiguration")
 		return
 	}
-
 	start := time.Now()
 	valid, err := oktaAuth.ValidateUserOTP(authUser, otpValue)
 	if err != nil {
@@ -34,10 +33,8 @@ func (state *RuntimeState) Okta2FAuthHandler(w http.ResponseWriter, r *http.Requ
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
 		return
 	}
-
 	metricLogExternalServiceDuration("okta-otp", time.Since(start))
 	metricLogAuthOperation(getClientType(r), proto.AuthTypeOkta2FA, valid)
-
 	if !valid {
 		logger.Printf("Invalid OTP value login for %s", authUser)
 		// TODO if client is html then do a redirect back to vipLoginPage
@@ -45,21 +42,20 @@ func (state *RuntimeState) Okta2FAuthHandler(w http.ResponseWriter, r *http.Requ
 		return
 
 	}
-	/*
-	   // OTP check was  successful
-	   logger.Debugf(1, "Successful vipOTP auth for user: %s", authUser)
-	   eventNotifier.PublishVIPAuthEvent(eventmon.VIPAuthTypeOTP, authUser)
-	*/
+	// OTP check was  successful
+	logger.Debugf(1, "Successful Okta OTP auth for user: %s", authUser)
+
+	// TODO ADD okta events to eventmond
+	//eventNotifier.PublishVIPAuthEvent(eventmon.VIPAuthTypeOTP, authUser)
+
 	_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeOkta2FA)
 	if err != nil {
 		logger.Printf("Auth Cookie NOT found ? %s", err)
 		state.writeFailureResponse(w, r, http.StatusInternalServerError, "Failure when validating VIP token")
 		return
 	}
-
 	// Now we send to the appropiate place
 	returnAcceptType := getPreferredAcceptType(r)
-
 	// TODO: The cert backend should depend also on per user preferences.
 	loginResponse := proto.LoginResponse{Message: "success"} //CertAuthBackend: certBackends
 	switch returnAcceptType {
@@ -70,7 +66,6 @@ func (state *RuntimeState) Okta2FAuthHandler(w http.ResponseWriter, r *http.Requ
 	default:
 		w.WriteHeader(200)
 		json.NewEncoder(w).Encode(loginResponse)
-		//fmt.Fprintf(w, "Success!")
 	}
 	return
 }
@@ -92,8 +87,6 @@ func (state *RuntimeState) oktaPushStartHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
-
-	// TODO: check if okta 2fa is enabled
 
 	oktaAuth, ok := state.passwordChecker.(*okta.PasswordAuthenticator)
 	if !ok {
@@ -135,8 +128,6 @@ func (state *RuntimeState) oktaPollCheckHandler(w http.ResponseWriter, r *http.R
 	}
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 
-	// TODO: check if okta 2fa is enabled
-
 	oktaAuth, ok := state.passwordChecker.(*okta.PasswordAuthenticator)
 	if !ok {
 		logger.Println("password authenticator is not okta")
@@ -151,7 +142,7 @@ func (state *RuntimeState) oktaPollCheckHandler(w http.ResponseWriter, r *http.R
 	}
 	switch pushResponse {
 	case okta.PushResponseApproved:
-		// TODO: add notification
+		// TODO: add notification on eventmond
 		_, err = state.updateAuthCookieAuthlevel(w, r, currentAuthLevel|AuthTypeOkta2FA)
 		if err != nil {
 			logger.Printf("Auth Cookie NOT found ? %s", err)

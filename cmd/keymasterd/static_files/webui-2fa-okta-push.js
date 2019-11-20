@@ -5,7 +5,6 @@
               // Action to be performed when the document is read;
               var destination = document.getElementById("okta_login_destination").innerHTML;
               window.location.href = destination;
-              //window.location.href = "/profile";
           }
       };
       xhr.open("GET", "/api/v0/oktaPollCheck", true);
@@ -31,7 +30,7 @@
               // Action to be performed when the document is read;
               //var destination = document.getElementById("vip_login_destination").innerHTML;
               //window.location.href = destination;
-              cosole.log("success vip push start")
+              cosole.log("success okta push start")
           }
       };
       xhr.open("GET", "/api/v0/oktaPushStart", true);
