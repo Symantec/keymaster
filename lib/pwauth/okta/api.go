@@ -60,3 +60,9 @@ func (pa *PasswordAuthenticator) ValidateUserOTP(authUser string, otpValue int) 
 func (pa *PasswordAuthenticator) ValidateUserPush(authUser string) (PushResponse, error) {
 	return pa.validateUserPush(authUser)
 }
+
+// SetAuthnURL. For testing only, update the internal authURL so that the backend can be tested
+func (pa *PasswordAuthenticator) SetAuthnURL(authnURL string) error {
+	pa.authnURL = authnURL
+	return nil
+}

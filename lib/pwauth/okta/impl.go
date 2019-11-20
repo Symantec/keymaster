@@ -16,12 +16,12 @@ const (
 	factorsVerifyPathExtra = "/factors/%s/verify"
 )
 
-type verifyTOTPFactorDataType struct {
+type VerifyTOTPFactorDataType struct {
 	StateToken string `json:"stateToken,omitempty"`
 	PassCode   string `json:"passCode,omitempty"`
 }
 
-type loginDataType struct {
+type LoginDataType struct {
 	Password string `json:"password,omitempty"`
 	Username string `json:"username,omitempty"`
 }
@@ -72,7 +72,7 @@ func newPublicAuthenticator(oktaDomain string, logger log.Logger) (
 
 func (pa *PasswordAuthenticator) passwordAuthenticate(username string,
 	password []byte) (bool, error) {
-	loginData := loginDataType{Password: string(password), Username: username}
+	loginData := LoginDataType{Password: string(password), Username: username}
 	body := &bytes.Buffer{}
 	encoder := json.NewEncoder(body)
 	encoder.SetIndent("", "    ") // Make life easier for debugging.
@@ -141,7 +141,7 @@ func (pa *PasswordAuthenticator) validateUserOTP(authUser string, otpValue int) 
 			continue
 		}
 		authURL := fmt.Sprintf(pa.authnURL+factorsVerifyPathExtra, factor.Id)
-		verifyStruct := verifyTOTPFactorDataType{
+		verifyStruct := VerifyTOTPFactorDataType{
 			StateToken: userData.Response.StateToken,
 			PassCode:   fmt.Sprintf("%06d", otpValue),
 		}
@@ -206,7 +206,7 @@ func (pa *PasswordAuthenticator) validateUserPush(authUser string) (PushResponse
 			continue
 		}
 		authURL := fmt.Sprintf(pa.authnURL+factorsVerifyPathExtra, factor.Id)
-		verifyStruct := verifyTOTPFactorDataType{
+		verifyStruct := VerifyTOTPFactorDataType{
 			StateToken: userData.Response.StateToken,
 		}
 		pa.logger.Printf("AuthURL=%s", authURL)

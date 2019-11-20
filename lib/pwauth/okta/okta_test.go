@@ -18,7 +18,7 @@ func authnHandler(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	var loginData loginDataType
+	var loginData LoginDataType
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(&loginData); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -63,7 +63,7 @@ func factorAuthnHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	// For now we do TOTP only verifyTOTPFactorDataType
-	var otpData verifyTOTPFactorDataType
+	var otpData VerifyTOTPFactorDataType
 	decoder := json.NewDecoder(req.Body)
 	if err := decoder.Decode(&otpData); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -185,6 +185,10 @@ func TestBadPassword(t *testing.T) {
 	pa := &PasswordAuthenticator{authnURL: authnURL,
 		recentAuth: make(map[string]authCacheData),
 		logger:     testlogger.New(t),
+	}
+	_, err := pa.ValidateUserPush("someuser")
+	if err != nil {
+		t.Fatal(err)
 	}
 	ok, err := pa.PasswordAuthenticate("a-user", []byte("bad-password"))
 	if err != nil {
