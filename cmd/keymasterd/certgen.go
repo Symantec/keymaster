@@ -177,7 +177,7 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 		buf.ReadFrom(file)
 		userPubKey := buf.String()
 		//validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? .*$", userPubKey)
-		validKey, err := regexp.MatchString("^(ssh-rsa|ssh-dss|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? ?.{0,512}\n?$", userPubKey)
+		validKey, err := regexp.MatchString("^(ssh-rsa|ecdsa-sha2-nistp256|ssh-ed25519) [a-zA-Z0-9/+]+=?=? ?.{0,512}\n?$", userPubKey)
 		if err != nil {
 			logger.Println(err)
 			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
@@ -188,6 +188,24 @@ func (state *RuntimeState) postAuthSSHCertHandler(
 			logger.Printf("invalid file, bad re")
 			return
 
+		}
+		userSSH, _, _, _, err := ssh.ParseAuthorizedKey([]byte(userPubKey))
+		if err != nil {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid File, Parsing Failed")
+			logger.Printf("invalid file, unparseable")
+			return
+		}
+		cryptoPubKey := userSSH.(ssh.CryptoPublicKey).CryptoPublicKey()
+		validKey, err = certgen.ValidatePublicKeyStrength(cryptoPubKey)
+		if err != nil {
+			logger.Println(err)
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			return
+		}
+		if !validKey {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid File, Check Key strength/key type")
+			logger.Printf("Invalid File, Check Key strength/key type")
+			return
 		}
 
 		cert, certBytes, err = certgen.GenSSHCertFileString(targetUser, userPubKey, signer, state.HostIdentity, duration)
@@ -300,6 +318,17 @@ func (state *RuntimeState) postAuthX509CertHandler(
 			state.writeFailureResponse(w, r, http.StatusBadRequest,
 				"Cannot parse public key")
 			logger.Printf("Cannot parse public key")
+			return
+		}
+		validKey, err := certgen.ValidatePublicKeyStrength(userPub)
+		if err != nil {
+			logger.Println(err)
+			state.writeFailureResponse(w, r, http.StatusInternalServerError, "")
+			return
+		}
+		if !validKey {
+			state.writeFailureResponse(w, r, http.StatusBadRequest, "Invalid File, Check Key strength/key type")
+			logger.Printf("Invalid File, Check Key strength/key type")
 			return
 		}
 		caCert, err := x509.ParseCertificate(state.caCertDer)
