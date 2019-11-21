@@ -135,7 +135,7 @@ func init() {
 	tlsConfig, _ := getTLSconfig()
 	//_, _ = tls.Listen("tcp", ":11443", config)
 	srv := &http.Server{
-		Addr:      ":22443",
+		Addr:      "127.0.0.1:22443",
 		TLSConfig: tlsConfig,
 	}
 	http.HandleFunc("/", handler)
