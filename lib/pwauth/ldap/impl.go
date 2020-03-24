@@ -13,7 +13,8 @@ import (
 
 const defaultCacheDuration = time.Hour * 96
 const passwordDataType = 1
-const browserResponseTimeoutSeconds = 7
+
+// const browserResponseTimeoutSeconds = 6000
 
 func newAuthenticator(urllist []string, bindPattern []string,
 	timeoutSecs uint, rootCAs *x509.CertPool,
@@ -29,9 +30,9 @@ func newAuthenticator(urllist []string, bindPattern []string,
 	}
 	authenticator.bindPattern = bindPattern
 	authenticator.timeoutSecs = timeoutSecs
-	if timeoutSecs*uint(len(authenticator.ldapURL)) > uint(browserResponseTimeoutSeconds) {
-		authenticator.timeoutSecs = uint(browserResponseTimeoutSeconds) / uint(len(authenticator.ldapURL))
-	}
+	// if timeoutSecs*uint(len(authenticator.ldapURL)) > uint(browserResponseTimeoutSeconds) {
+	// 	authenticator.timeoutSecs = uint(browserResponseTimeoutSeconds) / uint(len(authenticator.ldapURL))
+	// }
 	authenticator.rootCAs = rootCAs
 	authenticator.logger = logger
 	authenticator.expirationDuration = defaultCacheDuration

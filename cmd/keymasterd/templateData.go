@@ -57,7 +57,7 @@ const loginFormText = `
     <div style="min-height:100%;position:relative;">
     {{template "header" .}}
         <div style="padding-bottom:60px; margin:1em auto; max-width:80em; padding-left:20px ">
-        <h2> Keymaster Login </h2>
+        <h2> Keymaster Login (Use Okta ID/Password) </h2>
 	{{if .ErrorMessage}}
 	<p style="color:red;">{{.ErrorMessage}} </p>
 	{{end}}

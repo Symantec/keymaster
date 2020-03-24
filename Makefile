@@ -40,7 +40,7 @@ ${BINARY}-${VERSION}.tar.gz:
 	rsync -av  misc/ ${BINARY}-${VERSION}/misc/
 	cp LICENSE Makefile keymaster.spec README.md ${BINARY}-${VERSION}/
 	tar -cvzf ${BINARY}-${VERSION}.tar.gz ${BINARY}-${VERSION}/
-	rm -rf ${BINARY}-${VERSION}/
+#	rm -rf ${BINARY}-${VERSION}/
 
 rpm:	${BINARY}-${VERSION}.tar.gz
 	rpmbuild -ta ${BINARY}-${VERSION}.tar.gz

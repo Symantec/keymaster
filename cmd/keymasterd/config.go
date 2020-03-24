@@ -78,6 +78,7 @@ type UserInfoLDAPSource struct {
 	UserSearchFilter   string   `yaml:"user_search_filter"`
 	GroupSearchBaseDNs []string `yaml:"group_search_base_dns"`
 	GroupSearchFilter  string   `yaml:"group_search_filter"`
+	GroupUserSearchFilter string   `yaml:"group_user_search_filter"`
 }
 
 type UserInfoSouces struct {
@@ -391,7 +392,7 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 		logger.Debugf(1, "passwordChecker= %+v", runtimeState.passwordChecker)
 	}
 	if len(runtimeState.Config.Ldap.LDAPTargetURLs) > 0 {
-		const timeoutSecs = 3
+		const timeoutSecs = 30
 		pwdCache := &runtimeState
 		if runtimeState.Config.Ldap.DisablePasswordCache {
 			pwdCache = nil

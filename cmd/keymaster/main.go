@@ -231,7 +231,7 @@ func setupCerts(
 		userName,
 		password,
 		strings.Split(configContents.Base.Gen_Cert_URLS, ","),
-		false,
+		true,
 		configContents.Base.AddGroups,
 		client,
 		userAgentString,
@@ -329,7 +329,7 @@ func computeUserAgent() {
 func getHttpClient(rootCAs *x509.CertPool, logger log.DebugLogger) (*http.Client, error) {
 	var dialer libnet.Dialer
 	rawDialer := &net.Dialer{
-		Timeout:   10 * time.Second,
+		Timeout:   30 * time.Second,
 		KeepAlive: 30 * time.Second,
 		DualStack: true,
 	}

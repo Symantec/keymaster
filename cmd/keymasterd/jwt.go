@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -80,7 +81,7 @@ func (state *RuntimeState) getAuthInfoFromAuthJWT(serializedToken string) (rvalu
 		return rvalue, err
 	}
 
-	rvalue.Username = inboundJWT.Subject
+	rvalue.Username = strings.Split(inboundJWT.Subject, ":")[0]
 	rvalue.AuthType = inboundJWT.AuthType
 	rvalue.ExpiresAt = time.Unix(inboundJWT.Expiration, 0)
 	return rvalue, nil

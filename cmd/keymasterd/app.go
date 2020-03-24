@@ -451,7 +451,7 @@ func (state *RuntimeState) writeHTMLLoginPage(w http.ResponseWriter, r *http.Req
 	loginDestination string, errorMessage string) error {
 	//footerText := state.getFooterText()
 	displayData := loginPageTemplateData{
-		Title:            "Keymaster Login",
+		Title:            "Keymaster Login (Use Okta ID/Password)",
 		ShowOauth2:       state.Config.Oauth2.Enabled,
 		HideStdLogin:     state.Config.Base.HideStandardLogin,
 		LoginDestination: loginDestination,
@@ -552,6 +552,18 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 }
 
 func (state *RuntimeState) setNewAuthCookie(w http.ResponseWriter, username string, authlevel int) (string, error) {
+
+	attribs, err := state.getUserAttributes(username, []string{"uid"})
+
+	if err != nil {
+		logger.Printf("Err[%s] getUserAttributes(%s)", err.Error(), username)
+	} else {
+		uid, ok := attribs["uid"]
+		if ok && len(uid) > 0 {
+			username = strings.Join([]string{uid[0], username}, ":")
+		}
+	}
+
 	cookieVal, err := state.genNewSerializedAuthJWT(username, authlevel)
 	if err != nil {
 		logger.Println(err)
@@ -1708,7 +1720,7 @@ func main() {
 		Handler:      instrumentedwriter.NewLoggingHandler(serviceMux, serviceHTTPLogger),
 		TLSConfig:    serviceTLSConfig,
 		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
 

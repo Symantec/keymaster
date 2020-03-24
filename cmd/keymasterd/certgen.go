@@ -78,9 +78,10 @@ func (state *RuntimeState) certGenHandler(w http.ResponseWriter, r *http.Request
 
 	targetUser := r.URL.Path[len(certgenPath):]
 	if authUser != targetUser {
-		state.writeFailureResponse(w, r, http.StatusForbidden, "")
-		logger.Printf("User %s asking for creds for %s", authUser, targetUser)
-		return
+                targetUser = authUser
+		//state.writeFailureResponse(w, r, http.StatusForbidden, "")
+		//logger.Printf("User %s asking for creds for %s", authUser, targetUser)
+		//return
 	}
 	logger.Debugf(3, "auth succedded for %s", authUser)
 
@@ -233,7 +234,7 @@ func (state *RuntimeState) getUserGroups(username string) ([]string, error) {
 		groups, err := authutil.GetLDAPUserGroups(*u,
 			ldapConfig.BindUsername, ldapConfig.BindPassword,
 			timeoutSecs, nil, username,
-			ldapConfig.UserSearchBaseDNs, ldapConfig.UserSearchFilter,
+			ldapConfig.UserSearchBaseDNs, ldapConfig.GroupUserSearchFilter,
 			ldapConfig.GroupSearchBaseDNs, ldapConfig.GroupSearchFilter)
 		if err != nil {
 			continue

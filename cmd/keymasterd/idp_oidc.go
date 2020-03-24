@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
 	//"io/ioutil"
 	"log"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	//"gopkg.in/dgrijalva/jwt-go.v2"
 	"github.com/Symantec/keymaster/lib/authutil"
 	"github.com/Symantec/keymaster/lib/instrumentedwriter"
+
 	//"golang.org/x/crypto/ssh"
 	"gopkg.in/square/go-jose.v2"
 	"gopkg.in/square/go-jose.v2/jwt"
@@ -161,6 +163,18 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 		return
 	}
 	logger.Debugf(1, "AuthUser of idc auth: %s", authUser)
+
+	attribs, err := state.getUserAttributes(authUser, []string{"uid"})
+
+	if err != nil {
+		logger.Printf("Err[%s] getUserAttributes(%s)", err.Error(), authUser)
+	} else {
+		uid, ok := attribs["uid"]
+		if ok && len(uid) > 0 {
+			authUser = strings.Join([]string{uid[0], authUser}, ":")
+		}
+	}
+
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 	// requst MUST be a GET or POST
 	if !(r.Method == "GET" || r.Method == "POST") {
@@ -329,6 +343,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		return
 	}
 	logger.Debugf(3, "idc token handler out=%+v", keymasterToken)
+	keymasterToken.Username = strings.Split(keymasterToken.Username, ":")[0]
 
 	//now is time to extract the values..
 
@@ -475,7 +490,7 @@ func (state *RuntimeState) getUserAttributes(username string, attributes []strin
 		userGroups, err := authutil.GetLDAPUserGroups(*u,
 			ldapConfig.BindUsername, ldapConfig.BindPassword,
 			timeoutSecs, nil, username,
-			ldapConfig.UserSearchBaseDNs, ldapConfig.UserSearchFilter,
+			ldapConfig.UserSearchBaseDNs, ldapConfig.GroupUserSearchFilter,
 			ldapConfig.GroupSearchBaseDNs, ldapConfig.GroupSearchFilter)
 		if err != nil {
 			// TODO: We actually need to check the error, right now we are assuming
