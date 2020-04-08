@@ -164,17 +164,6 @@ func (state *RuntimeState) idpOpenIDCAuthorizationHandler(w http.ResponseWriter,
 	}
 	logger.Debugf(1, "AuthUser of idc auth: %s", authUser)
 
-	attribs, err := state.getUserAttributes(authUser, []string{"uid"})
-
-	if err != nil {
-		logger.Printf("Err[%s] getUserAttributes(%s)", err.Error(), authUser)
-	} else {
-		uid, ok := attribs["uid"]
-		if ok && len(uid) > 0 {
-			authUser = strings.Join([]string{uid[0], authUser}, ":")
-		}
-	}
-
 	w.(*instrumentedwriter.LoggingWriter).SetUsername(authUser)
 	// requst MUST be a GET or POST
 	if !(r.Method == "GET" || r.Method == "POST") {
@@ -343,7 +332,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 		return
 	}
 	logger.Debugf(3, "idc token handler out=%+v", keymasterToken)
-	keymasterToken.Username = strings.Split(keymasterToken.Username, ":")[0]
+	//keymasterToken.Username = strings.Split(keymasterToken.Username, ":")[0]
 
 	//now is time to extract the values..
 
@@ -466,7 +455,7 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 
 }
 
-func (state *RuntimeState) getUserAttributes(username string, attributes []string) (map[string][]string, error) {
+func (state *RuntimeState) getUserAttributesOkta(username string, attributes []string) (map[string][]string, error) {
 	ldapConfig := state.Config.UserInfo.Ldap
 	var timeoutSecs uint
 	timeoutSecs = 2
@@ -484,6 +473,50 @@ func (state *RuntimeState) getUserAttributes(username string, attributes []strin
 			ldapConfig.BindUsername, ldapConfig.BindPassword,
 			timeoutSecs, nil, username,
 			ldapConfig.UserSearchBaseDNs, ldapConfig.UserSearchFilter, attributes)
+		if err != nil {
+			continue
+		}
+		userGroups, err := authutil.GetLDAPUserGroups(*u,
+			ldapConfig.BindUsername, ldapConfig.BindPassword,
+			timeoutSecs, nil, username,
+			ldapConfig.UserSearchBaseDNs, ldapConfig.GroupUserSearchFilter,
+			ldapConfig.GroupSearchBaseDNs, ldapConfig.GroupSearchFilter)
+		if err != nil {
+			// TODO: We actually need to check the error, right now we are assuming
+			// the user does not exists and go with that.
+			logger.Printf("Failed get userGroups for user '%s'", username)
+		} else {
+			logger.Debugf(1, "Got groups for username %s: %s", username, userGroups)
+			attributeMap["groups"] = userGroups
+		}
+		return attributeMap, nil
+
+	}
+	if ldapConfig.LDAPTargetURLs == "" {
+		return nil, nil
+	}
+	err := errors.New("error getting the groups")
+	return nil, err
+}
+
+func (state *RuntimeState) getUserAttributes(username string, attributes []string) (map[string][]string, error) {
+	ldapConfig := state.Config.UserInfo.Ldap
+	var timeoutSecs uint
+	timeoutSecs = 2
+	//for _, ldapUrl := range ldapConfig.LDAPTargetURLs {
+	for _, ldapUrl := range strings.Split(ldapConfig.LDAPTargetURLs, ",") {
+		if len(ldapUrl) < 1 {
+			continue
+		}
+		u, err := authutil.ParseLDAPURL(ldapUrl)
+		if err != nil {
+			logger.Printf("Failed to parse ldapurl '%s'", ldapUrl)
+			continue
+		}
+		attributeMap, err := authutil.GetLDAPUserAttributes(*u,
+			ldapConfig.BindUsername, ldapConfig.BindPassword,
+			timeoutSecs, nil, username,
+			ldapConfig.UserSearchBaseDNs, "(uid=%s)", attributes)
 		if err != nil {
 			continue
 		}

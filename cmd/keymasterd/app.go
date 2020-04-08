@@ -553,14 +553,15 @@ func (state *RuntimeState) sendFailureToClientIfLocked(w http.ResponseWriter, r 
 
 func (state *RuntimeState) setNewAuthCookie(w http.ResponseWriter, username string, authlevel int) (string, error) {
 
-	attribs, err := state.getUserAttributes(username, []string{"uid"})
+	attribs, err := state.getUserAttributesOkta(username, []string{"uid"})
 
 	if err != nil {
-		logger.Printf("Err[%s] getUserAttributes(%s)", err.Error(), username)
+		logger.Printf("Err[%s] getUserAttributesOkta(%s)", err.Error(), username)
 	} else {
 		uid, ok := attribs["uid"]
 		if ok && len(uid) > 0 {
-			username = strings.Join([]string{uid[0], username}, ":")
+			// username = strings.Join([]string{uid[0], username}, ":")
+			username = uid[0]
 		}
 	}
 
@@ -729,6 +730,16 @@ func (state *RuntimeState) checkAuth(w http.ResponseWriter, r *http.Request, req
 			state.writeFailureResponse(w, r, http.StatusUnauthorized, "Invalid Username/Password")
 			err := errors.New("Invalid Credentials")
 			return "", AuthTypeNone, err
+		}
+		attribs, err := state.getUserAttributesOkta(user, []string{"uid"})
+		if err != nil {
+			logger.Printf("Err[%s] getUserAttributesOkta(%s)", err.Error(), user)
+		} else {
+			uid, ok := attribs["uid"]
+			if ok && len(uid) > 0 {
+				// user = strings.Join([]string{uid[0], user}, ":")
+				user = uid[0]
+			}
 		}
 		return user, AuthTypePassword, nil
 	}
