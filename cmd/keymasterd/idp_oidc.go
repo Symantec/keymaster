@@ -458,8 +458,8 @@ func (state *RuntimeState) idpOpenIDCTokenHandler(w http.ResponseWriter, r *http
 func (state *RuntimeState) getUserAttributesOkta(username string, attributes []string) (map[string][]string, error) {
 	ldapConfig := state.Config.UserInfo.Ldap
 	var timeoutSecs uint
-	timeoutSecs = 2
-	//for _, ldapUrl := range ldapConfig.LDAPTargetURLs {
+	timeoutSecs = 5
+	//for _, ldapUrl := ra5nge ldapConfig.LDAPTargetURLs {
 	for _, ldapUrl := range strings.Split(ldapConfig.LDAPTargetURLs, ",") {
 		if len(ldapUrl) < 1 {
 			continue
@@ -502,7 +502,7 @@ func (state *RuntimeState) getUserAttributesOkta(username string, attributes []s
 func (state *RuntimeState) getUserAttributes(username string, attributes []string) (map[string][]string, error) {
 	ldapConfig := state.Config.UserInfo.Ldap
 	var timeoutSecs uint
-	timeoutSecs = 2
+	timeoutSecs = 5
 	//for _, ldapUrl := range ldapConfig.LDAPTargetURLs {
 	for _, ldapUrl := range strings.Split(ldapConfig.LDAPTargetURLs, ",") {
 		if len(ldapUrl) < 1 {
