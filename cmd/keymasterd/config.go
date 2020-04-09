@@ -71,13 +71,13 @@ type OktaConfig struct {
 }
 
 type UserInfoLDAPSource struct {
-	BindUsername          string   `yaml:"bind_username"`
-	BindPassword          string   `yaml:"bind_password"`
-	LDAPTargetURLs        string   `yaml:"ldap_target_urls"`
-	UserSearchBaseDNs     []string `yaml:"user_search_base_dns"`
-	UserSearchFilter      string   `yaml:"user_search_filter"`
-	GroupSearchBaseDNs    []string `yaml:"group_search_base_dns"`
-	GroupSearchFilter     string   `yaml:"group_search_filter"`
+	BindUsername       string   `yaml:"bind_username"`
+	BindPassword       string   `yaml:"bind_password"`
+	LDAPTargetURLs     string   `yaml:"ldap_target_urls"`
+	UserSearchBaseDNs  []string `yaml:"user_search_base_dns"`
+	UserSearchFilter   string   `yaml:"user_search_filter"`
+	GroupSearchBaseDNs []string `yaml:"group_search_base_dns"`
+	GroupSearchFilter  string   `yaml:"group_search_filter"`
 	GroupUserSearchFilter string   `yaml:"group_user_search_filter"`
 }
 
@@ -295,23 +295,22 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 	}
 
 	if strings.HasPrefix(string(runtimeState.SSHCARawFileContent[:]), "-----BEGIN RSA PRIVATE KEY-----") {
-		// signer, err := getSignerFromPEMBytes(runtimeState.SSHCARawFileContent)
-		// if err != nil {
-		// 	logger.Printf("Cannot parse Priave Key file")
-		// 	return nil, err
-		// }
-		// runtimeState.caCertDer, err = generateCADer(&runtimeState, signer)
-		// if err != nil {
-		// 	logger.Printf("Cannot generate CA Der")
-		// 	return nil, err
-		// }
+		signer, err := getSignerFromPEMBytes(runtimeState.SSHCARawFileContent)
+		if err != nil {
+			logger.Printf("Cannot parse Priave Key file")
+			return nil, err
+		}
+		runtimeState.caCertDer, err = generateCADer(&runtimeState, signer)
+		if err != nil {
+			logger.Printf("Cannot generate CA Der")
+			return nil, err
+		}
 
-		// // Assignmet of signer MUST be the last operation after
-		// // all error checks
-		// runtimeState.Signer = signer
-		// runtimeState.signerPublicKeyToKeymasterKeys()
-		// runtimeState.SignerIsReady <- true
-		<-runtimeState.SignerIsReady
+		// Assignmet of signer MUST be the last operation after
+		// all error checks
+		runtimeState.Signer = signer
+		runtimeState.signerPublicKeyToKeymasterKeys()
+		runtimeState.SignerIsReady <- true
 
 	} else {
 		if runtimeState.ClientCAPool == nil {
