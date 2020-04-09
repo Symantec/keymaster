@@ -469,16 +469,19 @@ func (state *RuntimeState) getUserAttributesOkta(username string, attributes []s
 			logger.Printf("Failed to parse ldapurl '%s'", ldapUrl)
 			continue
 		}
+		groupSearchUserName := username
 		attributeMap, err := authutil.GetLDAPUserAttributes(*u,
 			ldapConfig.BindUsername, ldapConfig.BindPassword,
 			timeoutSecs, nil, username,
 			ldapConfig.UserSearchBaseDNs, ldapConfig.UserSearchFilter, attributes)
 		if err != nil {
 			continue
+		} else {
+			groupSearchUserName = attributeMap["uid"][0]
 		}
 		userGroups, err := authutil.GetLDAPUserGroups(*u,
 			ldapConfig.BindUsername, ldapConfig.BindPassword,
-			timeoutSecs, nil, username,
+			timeoutSecs, nil, groupSearchUserName,
 			ldapConfig.UserSearchBaseDNs, ldapConfig.GroupUserSearchFilter,
 			ldapConfig.GroupSearchBaseDNs, ldapConfig.GroupSearchFilter)
 		if err != nil {
