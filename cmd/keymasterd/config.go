@@ -208,7 +208,6 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 	runtimeState.localAuthData = make(map[string]localUserData)
 	runtimeState.vipPushCookie = make(map[string]pushPollTransaction)
 	runtimeState.totpLocalRateLimit = make(map[string]totpRateLimitInfo)
-	runtimeState.Signer = nil
 
 	//verify config
 	if len(runtimeState.Config.Base.HostIdentity) > 0 {
@@ -312,7 +311,6 @@ func loadVerifyConfigFile(configFilename string) (*RuntimeState, error) {
 		// runtimeState.Signer = signer
 		// runtimeState.signerPublicKeyToKeymasterKeys()
 		// runtimeState.SignerIsReady <- true
-
 		<-runtimeState.SignerIsReady
 
 	} else {
