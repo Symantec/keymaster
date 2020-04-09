@@ -17,7 +17,7 @@ VERSION=1.7.0
 #LDFLAGS=-ldflags "-X github.com/ariejan/roll/core.Version=${VERSION} -X github.com/ariejan/roll/core.BuildTime=${BUILD_TIME}"
 
 all:	init-config-host
-	cd $(GOPATH)/src; go install -ldflags "-X main.Version=${VERSION}" github.com/Symantec/keymaster/cmd/*
+	cd $(GOPATH)/src; go install -ldflags "-X main.Version=${VERSION} -s -w" github.com/Symantec/keymaster/cmd/*
 
 win-client:
 	cd $(GOPATH)\src && go install -ldflags "-X main.Version=${VERSION}" github.com\Symantec\keymaster\cmd\keymaster
