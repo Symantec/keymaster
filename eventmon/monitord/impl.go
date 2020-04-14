@@ -14,8 +14,11 @@ import (
 	"time"
 
 	"github.com/Symantec/Dominator/lib/log"
+	"github.com/Symantec/Dominator/lib/log/nulllogger"
 	"github.com/Symantec/Dominator/lib/log/prefixlogger"
+	"github.com/Symantec/Dominator/lib/log/teelogger"
 	"github.com/Symantec/Dominator/lib/verstr"
+	"github.com/Symantec/keymaster/eventmon/systeelogger"
 	"github.com/Symantec/keymaster/proto/eventmon"
 	"golang.org/x/crypto/ssh"
 )
@@ -26,6 +29,9 @@ const (
 
 var (
 	ErrorKeymasterDaemonNotReady = errors.New("keymasterd not ready")
+	One                          = systeelogger.New()
+	Two                          = nulllogger.New() //remain for the future use
+	Teelog                       teelogger.Logger
 )
 
 func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
@@ -37,6 +43,8 @@ func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 	webLoginChannel := make(chan string, bufferLength)
 	x509RawCertChannel := make(chan []byte, bufferLength)
 	x509CertChannel := make(chan *x509.Certificate, bufferLength)
+	Teelog := teelogger.New(One, Two)
+	defer One.Close()
 	monitor := &Monitor{
 		keymasterServerHostname: keymasterServerHostname,
 		keymasterServerPortNum:  keymasterServerPortNum,
@@ -59,7 +67,7 @@ func newMonitor(keymasterServerHostname string, keymasterServerPortNum uint,
 		X509CertChannel:             x509CertChannel,
 		keymasterStatus:             make(map[string]error),
 	}
-	go monitor.monitorForever(logger)
+	go monitor.monitorForever(logger, Teelog)
 	return monitor, nil
 }
 
@@ -72,13 +80,13 @@ func checkForEvent(channel <-chan struct{}) bool {
 	}
 }
 
-func (m *Monitor) monitorForever(logger log.Logger) {
+func (m *Monitor) monitorForever(logger log.Logger, Teelog log.Logger) {
 	for ; ; time.Sleep(time.Minute * 2) {
-		m.updateNotifierList(logger)
+		m.updateNotifierList(logger, Teelog)
 	}
 }
 
-func (m *Monitor) updateNotifierList(logger log.Logger) {
+func (m *Monitor) updateNotifierList(logger log.Logger, Teelog log.Logger) {
 	addrsToDelete := make(map[string]struct{})
 	for addr := range m.closers {
 		addrsToDelete[addr] = struct{}{}
@@ -95,7 +103,7 @@ func (m *Monitor) updateNotifierList(logger log.Logger) {
 			closeChannel := make(chan struct{}, 1)
 			m.closers[addr] = closeChannel
 			go m.startMonitoring(addr, closeChannel,
-				prefixlogger.New(addr+": ", logger))
+				prefixlogger.New(addr+": ", logger), Teelog)
 		}
 	}
 	for addr := range addrsToDelete {
@@ -115,7 +123,7 @@ func (m *Monitor) setKeymasterStatus(addr string, err error) {
 }
 
 func (m *Monitor) startMonitoring(ip string, closeChannel <-chan struct{},
-	logger log.Logger) {
+	logger log.Logger, Teelog log.Logger) {
 	m.setKeymasterStatus(ip, errors.New("not yet probed"))
 	addr := fmt.Sprintf("%s:%d", ip, m.keymasterServerPortNum)
 	reportedNotReady := false
@@ -140,7 +148,7 @@ func (m *Monitor) startMonitoring(ip string, closeChannel <-chan struct{},
 			continue
 		}
 		logger.Println("connected, starting monitoring")
-		forget, err := m.monitor(conn, closeChannel, logger)
+		forget, err := m.monitor(conn, closeChannel, ip, logger, Teelog)
 		if forget {
 			return
 		}
@@ -175,6 +183,7 @@ func (m *Monitor) connect(rawConn net.Conn) (net.Conn, error) {
 	}
 	conn := tls.Client(rawConn,
 		&tls.Config{ServerName: m.keymasterServerHostname})
+
 	if err := conn.Handshake(); err != nil {
 		return nil, err
 	}
@@ -195,7 +204,7 @@ func (m *Monitor) connect(rawConn net.Conn) (net.Conn, error) {
 }
 
 func (m *Monitor) monitor(conn net.Conn, closeChannel <-chan struct{},
-	logger log.Logger) (bool, error) {
+	ip string, logger log.Logger, Teelog log.Logger) (bool, error) {
 	closedChannel := make(chan struct{}, 1)
 	exitChannel := make(chan struct{})
 	go func() {
@@ -219,7 +228,7 @@ func (m *Monitor) monitor(conn net.Conn, closeChannel <-chan struct{},
 			}
 			return false, err
 		} else {
-			m.notify(receiveData, logger)
+			m.notify(receiveData, ip, logger, Teelog)
 		}
 	}
 }
@@ -265,7 +274,7 @@ func (m *Monitor) writeHtml(writer io.Writer) {
 	fmt.Fprintln(writer, "</table>")
 }
 
-func (m *Monitor) notify(event eventmon.EventV0, logger log.Logger) {
+func (m *Monitor) notify(event eventmon.EventV0, ip string, logger log.Logger, Teelog log.Logger) {
 	switch event.Type {
 	case eventmon.EventTypeAuth:
 		authType := event.AuthType
@@ -282,6 +291,7 @@ func (m *Monitor) notify(event eventmon.EventV0, logger log.Logger) {
 			}
 		}
 		logger.Printf("User %s authentication: %s\n", authType, event.Username)
+		Teelog.Print(fmt.Sprintf("%s: User %s authentication: %s", ip, authType, event.Username))
 		select { // Non-blocking notification.
 		case m.authChannel <- AuthInfo{
 			AuthType:    event.AuthType,
@@ -293,6 +303,7 @@ func (m *Monitor) notify(event eventmon.EventV0, logger log.Logger) {
 	case eventmon.EventTypeServiceProviderLogin:
 		logger.Printf("User %s logged into service: %s\n",
 			event.Username, event.ServiceProviderUrl)
+		Teelog.Print(fmt.Sprintf("%s: User %s logged into service: %s", ip, event.Username, event.ServiceProviderUrl))
 		select { // Non-blocking notification.
 		case m.serviceProviderLoginChannel <- SPLoginInfo{
 			URL:      event.ServiceProviderUrl,
@@ -307,19 +318,25 @@ func (m *Monitor) notify(event eventmon.EventV0, logger log.Logger) {
 		}
 		if pubKey, err := ssh.ParsePublicKey(event.CertData); err != nil {
 			logger.Println(err)
+			Teelog.Print(fmt.Sprintf("%s: "+err.Error(), ip))
 		} else if sshCert, ok := pubKey.(*ssh.Certificate); !ok {
 			logger.Println("SSH public key is not a certificate")
+			Teelog.Print(fmt.Sprintf("%s: SSH public key is not a certificate"))
+
 		} else {
 			switch len(sshCert.ValidPrincipals) {
 			case 0:
 				logger.Println(
 					"Received SSH certificate with no valid principals")
+				Teelog.Print(fmt.Sprintf("%s: Received SSH certificate with no valid principals", ip))
 			case 1:
 				logger.Printf("Received SSH certificate for: %s",
 					sshCert.ValidPrincipals[0])
+				Teelog.Print(fmt.Sprintf("%s: Received SSH certificate for: %s", ip, sshCert.ValidPrincipals[0]))
 			default:
 				logger.Printf("Received SSH certificate for: %s",
 					sshCert.ValidPrincipals)
+				Teelog.Print(fmt.Sprintf("%s: Received SSH certificate for: %s", ip, sshCert.ValidPrincipals))
 			}
 			select { // Non-blocking notification.
 			case m.sshCertChannel <- sshCert:
@@ -342,6 +359,7 @@ func (m *Monitor) notify(event eventmon.EventV0, logger log.Logger) {
 		} else {
 			logger.Printf("Received X509 certificate for: %s\n",
 				x509Cert.Subject.CommonName)
+			Teelog.Print(fmt.Sprintf("%s: Received X509 certificate for: %s", ip, x509Cert.Subject.CommonName))
 			select { // Non-blocking notification.
 			case m.x509CertChannel <- x509Cert:
 			default:
@@ -349,5 +367,6 @@ func (m *Monitor) notify(event eventmon.EventV0, logger log.Logger) {
 		}
 	default:
 		logger.Printf("Invalid event type: %s\n", event.Type)
+		Teelog.Print(fmt.Sprintf("%s: Invalid event type: %s", ip, event.Type))
 	}
 }
