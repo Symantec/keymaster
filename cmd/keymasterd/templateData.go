@@ -91,6 +91,7 @@ type secondFactorAuthTemplateData struct {
 	ShowVIP          bool
 	ShowU2F          bool
 	ShowTOTP         bool
+	ShowOktaOTP      bool
 	LoginDestination string
 }
 
@@ -159,6 +160,18 @@ const secondFactorAuthFormText = `
             </p>
         </form>
 	{{end}}
+
+        {{if .ShowOktaOTP}}
+	<div id="okta_login_destination" style="display: none;">{{.LoginDestination}}</div>
+        <form enctype="application/x-www-form-urlencoded" action="/api/v0/okta2FAAuth" method="post">
+            <p>
+            Enter TOTP token value: <INPUT TYPE="text" NAME="OTP" SIZE=18  autocomplete="off">
+            <INPUT TYPE="hidden" NAME="login_destination" VALUE={{.LoginDestination}}>
+            <input type="submit" value="Submit" />
+            </p>
+        </form>
+	{{end}}
+
 
 	</div>
 	{{template "footer" . }}
